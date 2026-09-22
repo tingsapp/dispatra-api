@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: dispatra
+      POSTGRES_USER: dispatra_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a database owner password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dispatra_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dispatra_owner -d dispatra"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  dispatra_postgres:
