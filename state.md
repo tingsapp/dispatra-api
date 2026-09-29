@@ -20,6 +20,8 @@ Road distance and duration (2026-09-29): `travel.order_travel` replaces `order_d
 
 Order road path (2026-09-29): `GET /orders/{id}/road-path` (dispatcher) returns decoded `routes.polyline.encodedPolyline` points from one Routes call through the Order's stops in precedence order; `order_route` is shared with `order_travel`. Demo routing or stops without coordinates return 409. Verification: `tests/test_pricing_and_routing.py` passed (6 tests, including decoding Google's documented sample polyline with a mocked response); live call returned the path for DDO-9450.
 
+Production web origin (2026-09-29): the API explicitly trusts `https://dispatra.vercel.app` for state-changing requests while retaining the configured `WEB_ORIGINS` list and the `X-Requested-With` check. This supports the web project’s same-origin `/api/*` Vercel proxy. A focused CSRF test covers the official origin; live login remains to be verified after deployment.
+
 ## Boundaries
 
 Inbound email intake, AI agents, automatic dispatch/invoicing, Stripe collection, payroll, push delivery, native background tracking and durable offline client queues are not implemented in this manual phase. Road provider responses are not persistently cached. Evidence images are stored in PostgreSQL pending object-storage and retention work. An issued Invoice is not automatically emailed or paid; explicit sends queue email, and recipient delivery has not been verified. Partial quantity or failed delivery remains an issue requiring dispatcher resolution; full recovery/rebooking is not implemented.

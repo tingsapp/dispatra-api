@@ -117,6 +117,8 @@ def test_dispatcher_reset_revokes_customer_sessions(client,accounts):
 def test_csrf_and_validation_redaction(client):
     response=client.post('/api/v1/auth/login',headers={'Origin':'https://attacker.example'},json=dict(portal='platform',login_id='owner',password=PASSWORD))
     assert response.status_code==403
+    response=client.post('/api/v1/auth/login',headers={'Origin':'https://dispatra.vercel.app'},json={})
+    assert response.status_code==422  # Official web origin reaches request validation.
     response=client.post('/api/v1/auth/login',json=dict(portal='platform',login_id='owner',password='x'*129))
     assert response.status_code==422
     assert 'x'*129 not in response.text

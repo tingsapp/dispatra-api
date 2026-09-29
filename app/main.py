@@ -12,7 +12,8 @@ from .schemas import ErrorEnvelope
 app = FastAPI(title='Dispatra API', version='0.2.0', responses={
     status: {'model': ErrorEnvelope} for status in [400,401,403,404,409,422,429,503]
 })
-origins = set(os.environ.get('WEB_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(','))
+origins = {origin.strip() for origin in os.environ.get('WEB_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()}
+origins.add('https://dispatra.vercel.app')
 
 def error(request, status, message, fields=None):
     return JSONResponse(status_code=status, content={'error': {
