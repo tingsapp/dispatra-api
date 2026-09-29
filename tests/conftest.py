@@ -10,6 +10,7 @@ owner_url = os.environ['TEST_OWNER_DATABASE_URL']
 assert owner_url.rsplit('/',1)[-1].endswith('_test'), 'Use a database named *_test'
 os.environ['DATABASE_URL'] = os.environ['TEST_DATABASE_URL']
 os.environ['COOKIE_SECURE'] = 'false'
+os.environ['ROUTING_PROVIDER'] = 'demo'
 os.environ['WEB_ORIGINS'] = 'http://testserver,http://127.0.0.1:3000'
 from app.main import app
 from app.models import User
@@ -21,9 +22,9 @@ PASSWORD = 'Initial-password-123!'
 @pytest.fixture(autouse=True)
 def reset_database():
     with owner_engine.begin() as c:
-        c.execute(text('TRUNCATE organizations, customers, users, login_sessions, audit_events, operations, login_buckets CASCADE'))
+        c.execute(text('TRUNCATE organizations, shippers, users, login_sessions, audit_events, operations, login_buckets CASCADE'))
     with Session(owner_engine) as db, db.begin():
-        db.add(User(scope='platform',login_id='owner',role='PLATFORM_OWNER',password_hash=hash_password(PASSWORD)))
+        db.add(User(scope='platform',login_id='owner',role='ADMIN',password_hash=hash_password(PASSWORD)))
 
 @pytest.fixture
 def client():

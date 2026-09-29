@@ -23,7 +23,7 @@ def test_concurrent_customer_create_replay(client, accounts):
     assert [r.status_code for r in results] == [201,201]
     assert results[0].json() == results[1].json()
     with owner_engine.connect() as db:
-        assert db.scalar(text("SELECT count(*) FROM customers WHERE number='C-003'"))==1
+        assert db.scalar(text("SELECT count(*) FROM shippers WHERE number='C-003'"))==1
         assert db.scalar(text("SELECT count(*) FROM outbox_events WHERE entity_id=:id AND event_type='customer.created'"),{'id':results[0].json()['id']})==1
 
 def test_password_spaces_preserved_and_secure_cookie(client, accounts):

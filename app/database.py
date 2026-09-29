@@ -6,9 +6,9 @@ from fastapi import HTTPException
 # Runtime credentials must never be the migration/owner credentials.
 engine = create_engine(os.environ.get("DATABASE_URL", "postgresql+psycopg://dispatra_app@localhost:5432/dispatra"), pool_pre_ping=True)
 
-def context(db: Session, organization_id=None, platform=False, customer_id=None):
-    db.execute(text("SELECT set_config('app.organization_id', :org, true), set_config('app.platform', :platform, true), set_config('app.customer_id', :customer, true)"),
-               {"org": str(organization_id or ''), "platform": 'true' if platform else 'false', "customer": str(customer_id or '')})
+def context(db: Session, organization_id=None, platform=False, shipper_id=None, driver_id=None):
+    db.execute(text("SELECT set_config('app.organization_id', :org, true), set_config('app.platform', :platform, true), set_config('app.shipper_id', :shipper, true), set_config('app.driver_id', :driver, true)"),
+               {"org": str(organization_id or ''), "platform": 'true' if platform else 'false', "shipper": str(shipper_id or ''), "driver": str(driver_id or '')})
 
 def session():
     with Session(engine, expire_on_commit=False) as db:

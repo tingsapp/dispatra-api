@@ -9,7 +9,7 @@ from .routes import router
 from .database import engine
 from .schemas import ErrorEnvelope
 
-app = FastAPI(title='Dispatra API', version='0.1.0', responses={
+app = FastAPI(title='Dispatra API', version='0.2.0', responses={
     status: {'model': ErrorEnvelope} for status in [400,401,403,404,409,422,429,503]
 })
 origins = set(os.environ.get('WEB_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(','))
@@ -27,7 +27,7 @@ async def boundary(request: Request, call_next):
         request.headers.get('origin') not in origins or request.headers.get('x-requested-with') != 'Dispatra'
     ):
         response = error(request, 403, 'Request origin could not be verified.')
-    elif not request.headers.get('content-length', '0').isdigit() or int(request.headers.get('content-length', '0')) > 32768:
+    elif not request.headers.get('content-length', '0').isdigit() or int(request.headers.get('content-length', '0')) > (3_000_000 if request.url.path.endswith('/evidence') else 262144):
         response = error(request, 413, 'Request is too large.')
     else:
         response = await call_next(request)
@@ -62,6 +62,21 @@ def ready() -> dict[str,str]:
         role = connection.execute(text('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user')).one()
         if role.rolsuper or role.rolbypassrls: raise HTTPException(503, 'Runtime database role is not restricted.')
         connection.execute(text('SELECT id FROM organizations LIMIT 0'))
+        connection.execute(text('SELECT id, pricing FROM orders LIMIT 0'))
+        connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
+        connection.execute(text('SELECT id, snapshot FROM invoices LIMIT 0'))
+        connection.execute(text('SELECT id, status FROM email_deliveries LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
+from .operations.routes_directory import router as directory_router
+from .operations.routes_orders import router as orders_router
+from .operations.routes_driver import router as driver_router
+from .operations.reporting import router as reporting_router
+for operational_router in [directory_router, orders_router, driver_router, reporting_router]:
+    app.include_router(operational_router)
+
+from .payments.routes import router as payments_router
+app.include_router(payments_router)
+from .platform.routes import router as platform_router
+app.include_router(platform_router)

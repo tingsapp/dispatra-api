@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Controls the persistent workspace-local PostgreSQL installation (not test data).
+set -euo pipefail
+api_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+pg_root="$api_dir/.local/postgres-runtime"
+export LD_LIBRARY_PATH="$pg_root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+pg_ctl="$pg_root/usr/lib/postgresql/16/bin/pg_ctl"
+case "${1:-status}" in
+  start)
+    if "$pg_ctl" -D "$api_dir/.local/postgres-data" status >/dev/null 2>&1; then
+      echo 'Local demo database is already running.'
+    else
+      "$pg_ctl" -D "$api_dir/.local/postgres-data" -l "$api_dir/.local/postgres.log" start
+    fi ;;
+  stop) "$pg_ctl" -D "$api_dir/.local/postgres-data" stop -m fast ;;
+  status) "$pg_ctl" -D "$api_dir/.local/postgres-data" status ;;
+  *) echo 'Usage: scripts/local-db start|stop|status' >&2; exit 2 ;;
+esac

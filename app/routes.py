@@ -5,8 +5,9 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 from . import auth, services
 from .database import session
-from .models import Organization, Customer, User, LoginSession
-from .schemas import (Login, AccountView, OrganizationCreate, OrganizationView, CustomerCreate,
+from .models import User, LoginSession
+from .operations.models import Shipper
+from .schemas import (Login, AccountView, CustomerCreate,
                       CustomerAccessView, CustomerView, ProfileUpdate, PasswordChange, PasswordReset)
 from .security import digest
 
@@ -25,27 +26,26 @@ def me(db: DB, user: User = Depends(auth.authenticated)):
 @router.post('/auth/logout', status_code=204)
 def logout(request: Request, response: Response, db: DB):
     token = request.cookies.get(auth.COOKIE)
-    if token: db.execute(delete(LoginSession).where(LoginSession.token_hash == digest(token)))
+    if token:
+        login_session = db.get(LoginSession,digest(token))
+        if login_session:
+            from .database import context
+            context(db,login_session.organization_id)
+            account = db.get(User,login_session.user_id)
+            if account and account.driver_id:
+                from .operations.execution import close_duty_on_logout
+                close_duty_on_logout(db,account)
+            db.delete(login_session)
     response.delete_cookie(auth.COOKIE, path='/', secure=auth.SECURE, httponly=True, samesite='strict')
 
 @router.post('/auth/password', status_code=204)
 def password(data: PasswordChange, response: Response, db: DB, user: User = Depends(auth.authenticated)):
     auth.change_password(db, user, data, response)
 
-@router.get('/platform/organizations', response_model=list[OrganizationView])
-def organizations(db: DB, after: UUID | None = None, limit: int = Query(50, ge=1, le=100), user: User = Depends(auth.platform)):
-    query = select(Organization).order_by(Organization.id).limit(limit)
-    if after: query = query.where(Organization.id > after)
-    return db.scalars(query).all()
-
-@router.post('/platform/organizations', response_model=OrganizationView, status_code=201)
-def organization(data: OrganizationCreate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.platform)):
-    return services.create_organization(db, user, data, idempotency_key)
-
 @router.get('/companies/{slug}/customers', response_model=list[CustomerAccessView])
 def customers(slug: str, db: DB, after: UUID | None = None, limit: int = Query(50, ge=1, le=100), user: User = Depends(auth.dispatcher)):
-    query = select(Customer, User.login_id).join(User, User.customer_id == Customer.id).where(Customer.organization_id == user.organization_id).order_by(Customer.id).limit(limit)
-    if after: query = query.where(Customer.id > after)
+    query = select(Shipper, User.login_id).join(User, User.shipper_id == Shipper.id).where(Shipper.organization_id == user.organization_id).order_by(Shipper.id).limit(limit)
+    if after: query = query.where(Shipper.id > after)
     return [{**CustomerView.model_validate(c).model_dump(), 'login_id': login} for c, login in db.execute(query)]
 
 @router.post('/companies/{slug}/customers', response_model=CustomerAccessView, status_code=201)
@@ -58,7 +58,7 @@ def reset_password(slug: str, customer_id: UUID, data: PasswordReset, db: DB, us
 
 @router.get('/companies/{slug}/profile', response_model=CustomerView)
 def profile(slug: str, db: DB, user: User = Depends(auth.customer)):
-    return db.scalar(select(Customer).where(Customer.id == user.customer_id, Customer.organization_id == user.organization_id))
+    return db.scalar(select(Shipper).where(Shipper.id == user.shipper_id, Shipper.organization_id == user.organization_id))
 
 @router.patch('/companies/{slug}/profile', response_model=CustomerView)
 def update_profile(slug: str, data: ProfileUpdate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.customer)):

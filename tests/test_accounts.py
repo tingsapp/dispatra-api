@@ -7,13 +7,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import DBAPIError
 from app.main import app
 from app.database import engine, context
-from app.models import Customer, User, Organization, LoginSession
+from app.models import User, Organization, LoginSession
+from app.operations.models import Shipper
 from app.security import digest
 from conftest import login, company, customer, post, PASSWORD, HEADERS, owner_engine
 
 def test_complete_first_login_profile_persistence(client, accounts):
     me=login(client,'customer','acme','customer')
-    assert me['role']=='CUSTOMER' and 'password' not in str(me)
+    assert me['role']=='SHIPPER' and 'password' not in str(me)
     profile=client.get('/api/v1/companies/acme/profile').json()
     assert profile['id']==accounts[2]['id']
     assert profile['contact_name']==''
@@ -44,25 +45,25 @@ def test_rls_fail_closed_and_transaction_reset(accounts):
     acme,other,first,second,foreign=accounts
     with Session(engine) as db:
         with db.begin():
-            assert db.scalars(select(Customer)).all()==[]
+            assert db.scalars(select(Shipper)).all()==[]
             context(db, acme['id'])
-            assert {str(c.id) for c in db.scalars(select(Customer))}=={first['id'],second['id']}
+            assert {str(c.id) for c in db.scalars(select(Shipper))}=={first['id'],second['id']}
         db.expunge_all()
         with db.begin():
-            assert db.scalars(select(Customer)).all()==[]
-            context(db, acme['id'], customer_id=first['id'])
-            assert [str(c.id) for c in db.scalars(select(Customer))]==[first['id']]
+            assert db.scalars(select(Shipper)).all()==[]
+            context(db, acme['id'], shipper_id=first['id'])
+            assert [str(c.id) for c in db.scalars(select(Shipper))]==[first['id']]
     with pytest.raises(DBAPIError):
         with Session(engine) as db, db.begin():
             context(db,acme['id'])
-            db.add(Customer(organization_id=other['id'],number='ILLEGAL',name='Leak'))
+            db.add(Shipper(organization_id=other["id"],number="ILLEGAL",name="Leak",warehouse=None))
             db.flush()
 
 def test_foreign_customer_link_rejected_by_database(accounts):
     acme,other,first,second,foreign=accounts
     with pytest.raises(DBAPIError):
         with Session(owner_engine) as db, db.begin():
-            db.add(User(organization_id=acme['id'],customer_id=foreign['id'],scope=acme['id'],login_id='invalid',role='CUSTOMER',password_hash='not-a-real-hash'))
+            db.add(User(organization_id=acme['id'],shipper_id=foreign['id'],scope=acme['id'],login_id='invalid',role='SHIPPER',password_hash='not-a-real-hash'))
             db.flush()
 
 def test_idempotency_and_atomic_uniqueness(client):
