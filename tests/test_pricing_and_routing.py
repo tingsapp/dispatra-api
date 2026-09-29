@@ -98,6 +98,27 @@ def test_order_travel_returns_road_distance_and_minutes_for_distance_and_hourly_
     with pytest.raises(HTTPException): travel.order_travel(None,SimpleNamespace(),data)
 
 
+def test_order_road_path_decodes_google_polyline(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from app.operations import travel
+    calls=[]
+    class Reply:
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        # Google's documented sample: (38.5,-120.2) -> (40.7,-120.95) -> (43.252,-126.453)
+        def read(self,limit): return json.dumps({'routes':[{'polyline':{'encodedPolyline':'_p~iF~ps|U_ulLnnqC_mqNvxq`@'}}]}).encode()
+    def open_request(request,timeout):
+        calls.append(request); return Reply()
+    monkeypatch.setenv('ROUTING_PROVIDER','google');monkeypatch.setenv('GOOGLE_ROUTES_API_KEY','unit-test-not-a-key')
+    monkeypatch.setattr(travel.urllib.request,'urlopen',open_request)
+    data=Booking.model_validate(booking(uuid4(),uuid4(),uuid4()))
+    assert travel.order_road_path(None,SimpleNamespace(),data)==[[38.5,-120.2],[40.7,-120.95],[43.252,-126.453]]
+    assert calls[0].get_header('X-goog-fieldmask')=='routes.polyline.encodedPolyline'
+    monkeypatch.setenv('ROUTING_PROVIDER','demo')
+    with pytest.raises(HTTPException): travel.order_road_path(None,SimpleNamespace(),data)
+
+
 def test_zone_weight_uses_movement_totals_not_sum_of_package_maxima():
     raw=booking(uuid4(),uuid4(),uuid4())
     first=raw['items'][0]

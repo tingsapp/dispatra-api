@@ -122,7 +122,7 @@ Verify tenant isolation with a non-owner PostgreSQL role; account creation/login
 
 ### Web projections
 
-Provide typed Monitor, Analytics, Driver profile/activity and delivery-proof responses; dispatcher Quotes are cursor-paginated. `/booking-preferences` exposes only currency, timezone, measurement units and the company's GST/HST, provincial tax and fuel surcharge switches and rates to booking actors; `/booking-drivers` exposes only the id and name of active Drivers, and the Shipper profile includes the name of the Rate Card that prices its Orders. Driver stop-issue reporting derives the Order from an assigned stop and applies the same route-ownership checks as operational commands. Every evidence/document download enforces session and tenant/customer scope.
+Provide typed Monitor, Analytics, Driver profile/activity and delivery-proof responses; dispatcher Quotes are cursor-paginated. `/booking-preferences` exposes only currency, timezone, measurement units and the company's GST/HST, provincial tax and fuel surcharge switches and rates to booking actors; `/booking-drivers` exposes only the id and name of active Drivers, and the Shipper profile includes the name of the Rate Card that prices its Orders. Dispatchers can read `/orders/{id}/road-path`: the Google Routes driving path through the Order's stops in precedence order, for map display only (never pricing), requested per call and not stored. Driver stop-issue reporting derives the Order from an assigned stop and applies the same route-ownership checks as operational commands. Every evidence/document download enforces session and tenant/customer scope.
 
 ## Public entity IDs
 

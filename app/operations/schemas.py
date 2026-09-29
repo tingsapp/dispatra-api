@@ -764,6 +764,11 @@ class DeliveryProofView(BaseModel):
     evidence: list[ProofEvidence]
 
 
+class RoadPathView(BaseModel):
+    """Driving path through an Order's stops as [latitude, longitude] points, for map display only."""
+    points: list[tuple[float, float]]
+
+
 class BookingDriverView(BaseModel):
     """Shipper-safe driver choice: identity and display name only."""
     model_config = ConfigDict(from_attributes=True)

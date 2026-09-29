@@ -11,7 +11,7 @@ from . import orders, dispatch, billing, issues, queries, mail
 from .common import record, settings
 from .models import Order, Route, Invoice, Quote, Issue, Shipper, Catalog, EmailDelivery
 from .schemas import (Booking, OrderUpdate, OrderView, PriceView, QuoteView, Assignment,
-    AssignmentView, RouteView, RouteCommand, Finalize, InvoiceView, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, QuoteSend, EmailDeliveryView)
+    AssignmentView, RouteView, RouteCommand, Finalize, InvoiceView, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView)
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Manual orders and billing'])
 
@@ -77,6 +77,14 @@ def list_orders(slug: str, db: DB, after: UUID | None = None, limit: int = Query
 @router.get('/orders/{identity}', response_model=OrderView)
 def get_order(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
     return orders.order_view(orders.visible_order(db,user,identity),user)
+
+
+@router.get('/orders/{identity}/road-path', response_model=RoadPathView)
+def order_road_path(slug: str, identity: UUID, db: DB, user: User = Depends(auth.dispatcher)):
+    """Dispatcher map geometry from one Google Routes request per call; clients cache it per Order version."""
+    from .travel import order_road_path as road_path
+    row = record(db, Order, user, identity)
+    return {'points': road_path(db, user, Booking.model_validate(row.facts))}
 
 
 @router.put('/orders/{identity}', response_model=OrderView)
