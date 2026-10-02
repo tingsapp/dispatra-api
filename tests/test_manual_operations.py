@@ -40,7 +40,7 @@ def setup(client):
     shipper_body = dict(name='Alice Shipper',kind='BUSINESS',company_name='Fresh Test',email='alice@example.com',phone='6045550101',warehouse=address(),rate_card_id=fixed)
     shipper = check(post(client,BASE+'/shippers',shipper_body),201)
     vehicle = check(post(client,BASE+'/vehicles',dict(name='Test Van',type_id=type_id,plate='TEST123',province='BC',payload_kg=1000,volume_m3=12,length_cm=300,width_cm=180,height_cm=180,pallet_capacity=2)),201)
-    driver_body = dict(name='Dana Driver',email='dana@example.com',phone='6045550102',address=address(),vehicle_id=vehicle['id'],employment='OWNER_OPERATOR',revenue_share_percent=60,fuel_surcharge_share_percent=100)
+    driver_body = dict(name='Dana Driver',email='dana@example.com',phone='6045550102',address=address(),vehicle_id=vehicle['id'])
     driver = check(post(client,BASE+'/drivers',driver_body),201)
     with TestClient(app,headers=HEADERS) as mobile:
         login(mobile,'driver','acme','dana@example.com',driver['initial_password'])
@@ -86,15 +86,14 @@ def test_manual_delivery_invoice_and_immutable_pricing(setup):
     assert finish(w,route)['status']=='COMPLETED'
     done=check(client.get(BASE+f'/orders/{order["id"]}'))
     assert done['status']=='COMPLETED'
-    # Completed earnings retain the original shares even if the driver's terms change.
-    check(client.put(BASE+'/drivers/'+w['driver']['id'],json={'version':w['driver']['version'],'data':{**w['driver_body'],'revenue_share_percent':80}},headers={'Idempotency-Key':str(uuid4())}))
     settings=check(client.get(BASE+'/settings')); settings['data']['gst_percent']='20'
     check(client.put(BASE+'/settings',json={'version':settings['version'],'data':settings['data']},headers={'Idempotency-Key':str(uuid4())}))
     invoice=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}),201)
     assert invoice['total']=='128.18' and invoice['snapshot']['pricing']['stage']=='FINAL'
     again=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}),201)
     assert invoice['id']==again['id']
-    assert check(client.get(BASE+f'/drivers/{w["driver"]["id"]}/activity'))['estimated_payout']=='84.08'
+    activity=check(client.get(BASE+f'/drivers/{w["driver"]["id"]}/activity'))
+    assert activity['completed_orders']==1 and 'estimated_payout' not in activity
     assert 'Invoice' in client.get(BASE+f'/invoices/{invoice["id"]}/document').text
     report=check(client.get(BASE+'/analytics'))
     assert report['completed_orders']==1

@@ -79,8 +79,7 @@ def seed_demo(db):
         length_cm=300, width_cm=180, height_cm=180, pallet_capacity=2, maximum_stops=20,
         description='Fictional demonstration vehicle.'), 'demo-v1-vehicle-create')
     driver = save_driver(db, dispatcher, DriverData(name='Demo Driver', email='driver@example.com',
-        phone='6045550102', address=address, vehicle_id=UUID(vehicle['id']),
-        employment='OWNER_OPERATOR', revenue_share_percent=60, fuel_surcharge_share_percent=100),
+        phone='6045550102', address=address, vehicle_id=UUID(vehicle['id'])),
         'demo-v1-driver-create')
     shipper_user = db.scalar(select(User).where(User.organization_id == org.id, User.shipper_id == UUID(shipper['id'])))
     driver_user = db.scalar(select(User).where(User.organization_id == org.id, User.driver_id == UUID(driver['id'])))

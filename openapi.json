@@ -16115,22 +16115,6 @@
             "type": "integer",
             "title": "Completed Orders"
           },
-          "estimated_payout": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Estimated Payout"
-          },
-          "payout_basis": {
-            "type": "string",
-            "title": "Payout Basis"
-          },
           "app_connectivity": {
             "type": "string",
             "title": "App Connectivity"
@@ -16179,8 +16163,6 @@
         "type": "object",
         "required": [
           "completed_orders",
-          "estimated_payout",
-          "payout_basis",
           "app_connectivity",
           "app_last_seen",
           "gps_captured",
@@ -16229,45 +16211,6 @@
             ],
             "title": "Vehicle Id"
           },
-          "employment": {
-            "type": "string",
-            "enum": [
-              "EMPLOYEE",
-              "OWNER_OPERATOR"
-            ],
-            "title": "Employment",
-            "default": "EMPLOYEE"
-          },
-          "revenue_share_percent": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 100.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              }
-            ],
-            "title": "Revenue Share Percent",
-            "default": "0"
-          },
-          "fuel_surcharge_share_percent": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 100.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              }
-            ],
-            "title": "Fuel Surcharge Share Percent",
-            "default": "0"
-          },
           "qualifications": {
             "items": {
               "type": "string",
@@ -16315,19 +16258,6 @@
             "minimum": 1.0,
             "title": "Maximum Work Minutes",
             "default": 480
-          },
-          "maximum_active_orders": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 100.0,
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Maximum Active Orders"
           },
           "active": {
             "type": "boolean",
@@ -19809,23 +19739,6 @@
             "title": "Vin",
             "default": ""
           },
-          "running_cost_per_km": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 10000000.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Running Cost Per Km"
-          },
           "availability": {
             "type": "string",
             "enum": [
@@ -20049,18 +19962,6 @@
             "maxLength": 50,
             "title": "Vin",
             "default": ""
-          },
-          "running_cost_per_km": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Running Cost Per Km"
           },
           "availability": {
             "type": "string",

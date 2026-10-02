@@ -155,8 +155,6 @@ def complete_order(db, actor, identity, data, key):
             visit.status, visit.completed_at = 'COMPLETED', completed_at
             changed(db, actor, visit, 'stop.completed_by_dispatcher')
         row.status, row.completed_at = 'COMPLETED', completed_at
-        from .billing import freeze_payout
-        freeze_payout(db, actor, row)
         changed(db, actor, row, 'order.completed_by_dispatcher')
         remaining = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id, Order.route_id == route.id,
             Order.status.in_(['NEW', 'ASSIGNED', 'IN_PROGRESS'])))

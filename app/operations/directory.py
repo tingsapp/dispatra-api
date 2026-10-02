@@ -175,7 +175,6 @@ def save_driver(db, actor, data, key, identity=None):
         nonlocal password
         company_lock(db, actor)
         payload = data.data if identity else data
-        if not identity and payload.maximum_active_orders is not None: raise HTTPException(422, 'New drivers inherit the company active Order limit.')
         if payload.vehicle_id:
             vehicle = record(db, Vehicle, actor, payload.vehicle_id, True)
             if not vehicle.active: raise HTTPException(422, 'Choose an active vehicle.')

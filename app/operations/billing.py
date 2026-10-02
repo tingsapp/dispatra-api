@@ -20,23 +20,6 @@ def retain_price(db, order):
         order_version=order.version, snapshot=order.pricing))
 
 
-def freeze_payout(db, actor, order):
-    if not order.route_id: return
-    route = record(db, Route, actor, order.route_id)
-    driver = record(db, Driver, actor, route.driver_id)
-    terms = order.payout or driver.data
-    if terms['employment'] != 'OWNER_OPERATOR':
-        order.payout = {'employment':'EMPLOYEE','driver_id':str(driver.id),'estimate':None,'basis':'NOT_APPLICABLE'}
-        return
-    freight_share = Decimal(terms['revenue_share_percent'])
-    extra_share = Decimal(terms['fuel_surcharge_share_percent'])
-    freight = sum((Decimal(l['amount']) for l in order.pricing.get('lines',[]) if l['group'] in {'FREIGHT','SERVICE'}), Decimal(0))
-    extras = sum((Decimal(l['amount']) for l in order.pricing.get('lines',[]) if l['group'] == 'FUEL'), Decimal(0))
-    order.payout = {'employment':'OWNER_OPERATOR', 'driver_id': str(driver.id), 'revenue_share_percent': str(freight_share),
-        'fuel_surcharge_share_percent': str(extra_share), 'estimate': str(money(money(max(0,freight)*freight_share/100) + money(extras*extra_share/100))),
-        'basis': 'ESTIMATE_NOT_PAYMENT', 'currency': order.pricing.get('currency','CAD')}
-
-
 def settle(db, actor, order, actual_minutes=None):
     if order.pricing.get('status') != 'PRICED': raise HTTPException(409, 'Pricing review is required.')
     retain_price(db, order)
@@ -49,7 +32,6 @@ def settle(db, actor, order, actual_minutes=None):
         if not arrivals or not deliveries: raise HTTPException(409,'Confirm actual billable minutes; arrival evidence is incomplete.')
         actual_minutes = max(1,ceil((max(deliveries)-min(arrivals)).total_seconds()/60))
     order.pricing = calculate(Booking.model_validate(order.facts), order.pricing['context'], actual_minutes, final=True)
-    freeze_payout(db, actor, order)
 
 
 def create_invoice(db, actor, identity, data, key):

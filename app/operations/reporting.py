@@ -111,9 +111,8 @@ def driver_activity(slug: str, identity: UUID, db: DB, user: User = Depends(auth
     current = db.scalar(select(Route).where(Route.organization_id == user.organization_id,Route.driver_id == identity,Route.status.in_(['PLANNED','IN_PROGRESS'])))
     point = db.scalar(select(Location).join(DutySession,DutySession.id == Location.duty_id).where(Location.organization_id == user.organization_id,
         Location.driver_id == identity,or_(DutySession.ended_at.is_(None),Location.captured_at <= DutySession.ended_at)).order_by(Location.captured_at.desc()).limit(1))
-    earnings = sum((Decimal(o.payout['estimate']) for o in completed if o.payout and o.payout.get('estimate') is not None),Decimal(0))
-    return {'completed_orders':len(completed), 'estimated_payout':str(money(earnings)) if driver.data['employment'] == 'OWNER_OPERATOR' or any(o.payout and o.payout.get('estimate') is not None for o in completed) else None,
-        'payout_basis':'ESTIMATE_NOT_PAYMENT','app_connectivity': 'UNKNOWN' if driver.last_seen_at is None else 'CONNECTED' if now()-driver.last_seen_at < timedelta(minutes=2) else 'STALE',
+    return {'completed_orders':len(completed),
+        'app_connectivity': 'UNKNOWN' if driver.last_seen_at is None else 'CONNECTED' if now()-driver.last_seen_at < timedelta(minutes=2) else 'STALE',
         'app_last_seen':driver.last_seen_at,'gps_captured':point.captured_at if point else None,
         'location_permission':driver.location_permission,'current_route':str(current.id) if current else None}
 

@@ -163,8 +163,6 @@ def complete_stop(db, actor, identity, visit_id, data, key):
             unresolved = db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.resolved.is_(False)))
             if not unresolved:
                 order.status, order.completed_at = 'COMPLETED', data.captured_at
-                from .billing import freeze_payout
-                freeze_payout(db, actor, order)
                 changed(db, actor, order, 'order.completed')
         changed(db, actor, route, 'route.progress')
         return route_view(db, actor, route)

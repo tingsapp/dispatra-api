@@ -136,7 +136,6 @@ class Order(TenantRecord, Base):
     booking: Mapped[dict] = mapped_column(JSONB)
     pricing: Mapped[dict] = mapped_column(JSONB)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    payout: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class OrderStop(TenantRecord, Base):

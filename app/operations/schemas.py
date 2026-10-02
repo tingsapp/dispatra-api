@@ -215,7 +215,6 @@ class VehicleData(Input):
     make_model: str = Field(default='', max_length=160)
     year: int | None = Field(default=None, ge=1886, le=2100)
     vin: str = Field(default='', max_length=50)
-    running_cost_per_km: Money | None = None
     availability: Literal['AVAILABLE', 'UNAVAILABLE'] = 'AVAILABLE'
     unavailable_reason: str = Field(default='', max_length=500)
     unavailable_from: AwareDatetime | None = None
@@ -256,21 +255,15 @@ class DriverData(Input):
     phone: Annotated[str, Field(min_length=3, max_length=50)]
     address: Address
     vehicle_id: UUID | None = None
-    employment: Literal['EMPLOYEE', 'OWNER_OPERATOR'] = 'EMPLOYEE'
-    revenue_share_percent: Percent = Decimal('0')
-    fuel_surcharge_share_percent: Percent = Decimal('0')
     qualifications: list[Name] = Field(default_factory=list, max_length=30)
     crew_size: int = Field(default=1, ge=1, le=10)
     shift_start: AwareDatetime | None = None
     shift_end: AwareDatetime | None = None
     maximum_work_minutes: int = Field(default=480, ge=1, le=1440)
-    maximum_active_orders: int | None = Field(default=None, ge=1, le=100)
     active: bool = True
     @model_validator(mode='after')
     def validate_driver(self):
         self.email = str(self.email).lower()
-        if self.employment == 'EMPLOYEE' and (self.revenue_share_percent or self.fuel_surcharge_share_percent):
-            raise ValueError('Payout shares apply only to Owner-operators')
         if (self.shift_start is None) != (self.shift_end is None): raise ValueError('Provide both shift boundaries')
         if self.shift_start and self.shift_end <= self.shift_start: raise ValueError('Shift end must follow start')
         return self
@@ -646,8 +639,6 @@ class DriverProfileView(BaseModel):
 
 class DriverActivityView(BaseModel):
     completed_orders: int
-    estimated_payout: Decimal | None
-    payout_basis: str
     app_connectivity: str
     app_last_seen: datetime | None
     gps_captured: datetime | None

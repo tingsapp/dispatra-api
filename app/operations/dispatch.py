@@ -39,7 +39,7 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
     duty = db.scalar(select(DutySession).where(DutySession.organization_id == actor.organization_id, DutySession.driver_id == driver.id, DutySession.ended_at.is_(None)))
     if not duty: raise HTTPException(409, 'Driver must be On Duty before assignment.')
     _, config = settings(db, actor)
-    if len(orders) > (driver.data.get('maximum_active_orders') or config.maximum_active_orders):
+    if len(orders) > config.maximum_active_orders:
         raise HTTPException(409, 'Driver maximum active Orders exceeded.')
     start = driver.data.get('shift_start'); end = driver.data.get('shift_end')
     if start and planned_at < datetime.fromisoformat(start): raise HTTPException(409, 'Route begins before the driver shift.')

@@ -184,7 +184,7 @@ def test_suspension_closes_open_driver_duty(client, companies):
     base = '/api/v1/companies/acme'
     login(client, 'dispatch', 'acme', 'dispatcher')
     address = dict(text='123 Main Street, Vancouver, BC V5Y 1V4, Canada', city='Vancouver', province='BC', postal_code='V5Y 1V4', latitude=49.26, longitude=-123.11)
-    driver = check(post(client, base + '/drivers', dict(name='Dana Driver', email='dana@example.com', phone='6045550102', address=address, employment='EMPLOYEE')), 201)
+    driver = check(post(client, base + '/drivers', dict(name='Dana Driver', email='dana@example.com', phone='6045550102', address=address)), 201)
     with TestClient(app, headers=HEADERS) as mobile:
         login(mobile, 'driver', 'acme', 'dana@example.com', driver['initial_password'])
         check(post(mobile, base + '/driver/duty', {'location_permission': 'GRANTED'}), 201)

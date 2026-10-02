@@ -37,8 +37,6 @@ def resolve(db, actor, identity, data, key):
         unresolved = db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.resolved.is_(False)))
         if order.status == 'IN_PROGRESS' and order.route_id and not pending and not unresolved:
             order.status, order.completed_at = 'COMPLETED', now()
-            from .billing import freeze_payout
-            freeze_payout(db, actor, order)
             changed(db, actor, order, 'order.completed')
         return jsonable_encoder(dump(row))
     return command(db, actor, key, 'issue-resolve:' + str(identity), data.model_dump(), run)
