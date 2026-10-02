@@ -6,7 +6,7 @@ from app.database import context
 from sqlalchemy import select, delete
 from app.models import now
 from app.services import audit
-from .models import Order, OrderStop, OrderItem, Issue, Driver
+from .models import Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
 from .schemas import Booking, OrderView
 from .common import record, command, version, changed, company_lock, operational_shipper
 from .pricing import quote
@@ -138,3 +138,31 @@ def cancel_order(db, actor, identity, data, key):
         row.status = 'CANCELLED'; changed(db, actor, row, 'order.cancelled')
         return order_view(row, actor)
     return command(db, actor, key, 'order-cancel:' + str(identity), data.model_dump(), run)
+
+
+def complete_order(db, actor, identity, data, key):
+    """Dispatcher override: close an assigned Order's remaining visits without driver POD."""
+    def run():
+        company_lock(db, actor)
+        row = visible_order(db, actor, identity, True); version(row, data.version)
+        if actor.role != 'DISPATCHER': raise HTTPException(403, 'Dispatcher access required.')
+        if row.status not in {'ASSIGNED', 'IN_PROGRESS'} or not row.route_id: raise HTTPException(409, 'Only an assigned or in-progress Order can be completed.')
+        route = record(db, Route, actor, row.route_id, True)
+        completed_at = now()
+        visits = list(db.scalars(select(RouteStop).join(OrderStop, OrderStop.id == RouteStop.stop_id).where(RouteStop.organization_id == actor.organization_id,
+            RouteStop.route_id == route.id, OrderStop.order_id == row.id, RouteStop.status != 'COMPLETED').with_for_update(of=RouteStop)))
+        for visit in visits:
+            visit.status, visit.completed_at = 'COMPLETED', completed_at
+            changed(db, actor, visit, 'stop.completed_by_dispatcher')
+        row.status, row.completed_at = 'COMPLETED', completed_at
+        from .billing import freeze_payout
+        freeze_payout(db, actor, row)
+        changed(db, actor, row, 'order.completed_by_dispatcher')
+        remaining = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id, Order.route_id == route.id,
+            Order.status.in_(['NEW', 'ASSIGNED', 'IN_PROGRESS'])))
+        if not remaining and route.status in {'PLANNED', 'IN_PROGRESS'}:
+            route.status, route.completed_at = 'COMPLETED', completed_at
+            changed(db, actor, route, 'route.completed')
+        else: changed(db, actor, route, 'route.progress')
+        return order_view(row, actor)
+    return command(db, actor, key, 'order-complete:' + str(identity), data.model_dump(), run)

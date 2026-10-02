@@ -23,6 +23,13 @@ def route_view(db, actor, row):
     return result
 
 
+BODY_EQUIPMENT = {'refrigeration', 'open deck'}
+
+
+def equipment_key(value):
+    return ' '.join(str(value).replace('_', ' ').casefold().split())
+
+
 def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
     if vehicle.data.get('availability') == 'UNAVAILABLE': raise HTTPException(409, 'Vehicle is unavailable.')
     if not driver.active or not vehicle.active: raise HTTPException(409, 'Driver and vehicle must be active.')
@@ -39,8 +46,6 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
     for order in orders:
         if order.pricing.get('status') != 'PRICED': raise HTTPException(409, 'Order needs pricing review before assignment.')
         if order.status == 'NEW' and datetime.fromisoformat(order.pricing['expires_at']) < now(): raise HTTPException(409, 'Order quote has expired; reprice it before assignment.')
-        if order.facts.get('vehicle_type_id') and order.facts['vehicle_type_id'] != str(vehicle.type_id):
-            raise HTTPException(409, 'Vehicle type does not match the booking.')
         for stop in order.facts['stops']:
             if stop['kind'] == 'PICKUP' and ' '.join(stop['address']['city'].casefold().split()) != driver.service_city:
                 raise HTTPException(409, 'Pickup city is outside the driver service area.')
@@ -49,6 +54,12 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
         if any(i['dangerous_goods'] for i in order.facts['items']) and 'DG' not in driver.data['qualifications']:
             raise HTTPException(409, 'Driver requires a verified DG qualification.')
         context = order.pricing['context']
+        # Meets or exceeds: a truck of another type may take the order when it has the required body; route planning checks the load fits it.
+        required = context.get('vehicle') if order.facts.get('vehicle_type_id') else None
+        if required and order.facts['vehicle_type_id'] != str(vehicle.type_id):
+            needs = {equipment_key(item) for item in required.get('equipment', [])} & BODY_EQUIPMENT
+            if not needs <= {equipment_key(item) for item in vehicle.data.get('equipment', [])}:
+                raise HTTPException(409, 'Vehicle lacks the refrigeration or open deck the booking requires.')
         if context['service'].get('exclusive_vehicle') and len(orders) > 1:
             raise HTTPException(409, 'Exclusive service cannot share a Route.')
         for accessory in context['accessorials']:

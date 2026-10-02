@@ -97,6 +97,11 @@ def cancel(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: Op
     return orders.cancel_order(db,user,identity,data,idempotency_key)
 
 
+@router.post('/orders/{identity}/complete', response_model=OrderView)
+def complete(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    return orders.complete_order(db,user,identity,data,idempotency_key)
+
+
 @router.post('/orders/{identity}/assign', response_model=AssignmentView)
 def assign(slug: str, identity: UUID, data: Assignment, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
     return dispatch.assign(db,user,identity,data,idempotency_key)

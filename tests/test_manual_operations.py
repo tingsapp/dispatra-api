@@ -323,3 +323,26 @@ def test_dispatcher_driver_edit_saves_duty_without_starting_tracking(setup):
     assert client.put(BASE + f'/drivers/{identity}', json=stale_duty, headers={'Idempotency-Key': str(uuid4())}).status_code == 409
     assert check(client.get(BASE + f'/drivers/{identity}'))['on_duty'] is True
     assert client.put(BASE + f'/drivers/{identity}', json=body, headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+
+
+def test_dispatcher_completes_assigned_order_without_driver_pod(setup):
+    w=setup;client=w['client']
+    first,second=new_order(w),new_order(w)
+    assert check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']}),409)
+    route=assign(w,first)
+    first=check(client.get(BASE+f'/orders/{first["id"]}'))
+    route=assign(w,check(client.get(BASE+f'/orders/{second["id"]}')),route)
+    check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']-1}),409)
+    key=str(uuid4())
+    done=check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']},key))
+    assert done['status']=='COMPLETED' and done['completed_at']
+    assert check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']},key))['id']==done['id']
+    route=next(r for r in check(client.get(BASE+'/routes')) if r['id']==route['id'])
+    assert route['status']=='PLANNED'
+    second=check(client.get(BASE+f'/orders/{second["id"]}'))
+    check(post(client,BASE+f'/orders/{second["id"]}/complete',{'version':second['version']}))
+    route=next(r for r in check(client.get(BASE+'/routes')) if r['id']==route['id'])
+    assert route['status']=='COMPLETED' and all(visit['status']=='COMPLETED' for visit in route['stops'])
+    assert check(post(w['mobile'],BASE+f'/orders/{first["id"]}/complete',{'version':done['version']}),403)
+    invoice=check(post(client,BASE+f'/orders/{first["id"]}/invoice',{'version':done['version']}),201)
+    assert invoice['snapshot']['pricing']['stage']=='FINAL'
