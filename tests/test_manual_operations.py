@@ -44,7 +44,7 @@ def setup(client):
     driver = check(post(client,BASE+'/drivers',driver_body),201)
     with TestClient(app,headers=HEADERS) as mobile:
         login(mobile,'driver','acme','dana@example.com',driver['initial_password'])
-        duty = check(post(mobile,BASE+'/driver/duty',{'location_permission':'GRANTED'}),201)
+        duty = check(post(mobile,BASE+'/driver/duty',{}),201)
         yield dict(client=client,mobile=mobile,catalog=catalog,rates=rates,type_id=type_id,service=service,
             fixed=fixed,shipper=shipper,shipper_body=shipper_body,vehicle=vehicle,driver=driver,driver_body=driver_body,duty=duty)
 
@@ -83,18 +83,19 @@ def test_manual_delivery_invoice_and_immutable_pricing(setup):
     order=new_order(w)
     assert order['pricing']['total']=='128.18'
     route=assign(w,order)
-    assert finish(w,route)['status']=='COMPLETED'
-    done=check(client.get(BASE+f'/orders/{order["id"]}'))
-    assert done['status']=='COMPLETED'
     settings=check(client.get(BASE+'/settings')); settings['data']['gst_percent']='20'
     check(client.put(BASE+'/settings',json={'version':settings['version'],'data':settings['data']},headers={'Idempotency-Key':str(uuid4())}))
+    assert finish(w,route)['status']=='COMPLETED'
+    done=check(client.get(BASE+f'/orders/{order["id"]}'))
+    assert done['status']=='INVOICED'
     invoice=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}),201)
     assert invoice['total']=='128.18' and invoice['snapshot']['pricing']['stage']=='FINAL'
+    assert len(check(client.get(BASE+'/invoices')))==1
     again=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}),201)
     assert invoice['id']==again['id']
     activity=check(client.get(BASE+f'/drivers/{w["driver"]["id"]}/activity'))
     assert activity['completed_orders']==1 and 'estimated_payout' not in activity
-    assert 'Invoice' in client.get(BASE+f'/invoices/{invoice["id"]}/document').text
+    document = client.get(BASE+f'/invoices/{invoice["id"]}/document'); assert document.headers['content-type'] == 'application/pdf' and document.content.startswith(b'%PDF-') and invoice['number'].encode() in document.content
     report=check(client.get(BASE+'/analytics'))
     assert report['completed_orders']==1
     assert report['rows'][0]['shipper_name'] and report['rows'][0]['driver_name']
@@ -102,6 +103,7 @@ def test_manual_delivery_invoice_and_immutable_pricing(setup):
     assert report['rows'][0]['service_name'] and report['rows'][0]['vehicle_unit']
     with owner_engine.connect() as db:
         assert db.scalar(text('select count(*) from invoices'))==1
+        assert db.scalar(text('select count(*) from email_deliveries'))==1
         assert db.scalar(text('select count(*) from pricing_revisions'))==1
 
 
@@ -198,11 +200,15 @@ def test_assignment_capacity_city_dg_and_stale_version(setup):
 def test_multiple_orders_route_and_locked_mutations(setup):
     w=setup;one=new_order(w);two=new_order(w)
     route=assign(w,one);original_ids={v['stop_id']:v['id'] for v in route['stops']}
+    without_route=post(w['client'],BASE+f'/orders/{two["id"]}/assign',dict(version=two['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat()))
+    assert without_route.status_code==409 and 'planned Route' in without_route.json()['error']['message']
     route=assign(w,two,route)
     assert len(route['stops'])==4
     assert all(original_ids.get(v['stop_id'],v['id'])==v['id'] for v in route['stops'])
     route=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'])))
     third=new_order(w)
+    in_progress=post(w['client'],BASE+f'/orders/{third["id"]}/assign',dict(version=third['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat()))
+    assert in_progress.status_code==409 and 'in-progress Route' in in_progress.json()['error']['message']
     body=dict(version=1,driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],route_id=route['id'],route_version=route['version'],planned_at=datetime.now(timezone.utc).isoformat())
     assert post(w['client'],BASE+f'/orders/{third["id"]}/assign',body).status_code==409
     assert post(w['client'],BASE+f'/routes/{route["id"]}/release',dict(version=route['version'],generation=route['generation'])).status_code==409
@@ -231,6 +237,10 @@ def test_duty_boundary_and_quote_review(setup):
     data=dict(duty_id=duty['id'],captured_at=datetime.now(timezone.utc).isoformat(),latitude=49.2,longitude=-123.1,accuracy_m=5,location_permission='GRANTED')
     assert post(mobile,BASE+'/driver/location',data).status_code==409
     assert post(mobile,BASE+'/driver/location',{**data,'captured_at':before.isoformat()}).status_code==201
+    unavailable=new_order(w)
+    assignment=dict(version=unavailable['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat())
+    rejected=post(w['client'],BASE+f'/orders/{unavailable["id"]}/assign',assignment)
+    assert rejected.status_code==409 and 'On Duty' in rejected.json()['error']['message']
     distance=next(r['id'] for r in w['rates'] if r['data']['method']=='BASE_PLUS_DISTANCE' and r['active'])
     order=new_order(w,rate_card_id=distance)
     assert order['pricing']['status']=='NEEDS_ATTENTION'
@@ -334,7 +344,7 @@ def test_dispatcher_completes_assigned_order_without_driver_pod(setup):
     check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']-1}),409)
     key=str(uuid4())
     done=check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']},key))
-    assert done['status']=='COMPLETED' and done['completed_at']
+    assert done['status']=='INVOICED' and done['completed_at']
     assert check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']},key))['id']==done['id']
     route=next(r for r in check(client.get(BASE+'/routes')) if r['id']==route['id'])
     assert route['status']=='PLANNED'
@@ -343,5 +353,114 @@ def test_dispatcher_completes_assigned_order_without_driver_pod(setup):
     route=next(r for r in check(client.get(BASE+'/routes')) if r['id']==route['id'])
     assert route['status']=='COMPLETED' and all(visit['status']=='COMPLETED' for visit in route['stops'])
     assert check(post(w['mobile'],BASE+f'/orders/{first["id"]}/complete',{'version':done['version']}),403)
+    proof=check(client.get(BASE+f'/orders/{first["id"]}/delivery-proof'))
+    assert len(proof)==1 and proof[0]['completed_by_dispatcher'] is True and proof[0]['evidence']==[]
     invoice=check(post(client,BASE+f'/orders/{first["id"]}/invoice',{'version':done['version']}),201)
     assert invoice['snapshot']['pricing']['stage']=='FINAL'
+
+
+def test_hourly_dispatcher_completion_waits_for_actual_minutes(setup):
+    w=setup;client=w['client']
+    hourly=next(r['id'] for r in w['rates'] if r['data']['method']=='HOURLY')
+    order=new_order(w,rate_card_id=hourly,estimated_minutes=60)
+    assert order['pricing']['status']=='PRICED'
+    assign(w,order)
+    assigned=check(client.get(BASE+f'/orders/{order["id"]}'))
+    done=check(post(client,BASE+f'/orders/{order["id"]}/complete',{'version':assigned['version']}))
+    assert done['status']=='COMPLETED'
+    assert check(client.get(BASE+'/invoices'))==[]
+    assert any(item['kind']=='INVOICE' and item['order_id']==order['id'] for item in check(client.get(BASE+'/monitor'))['needs_attention'])
+    invoice=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version'],'actual_minutes':75}),201)
+    assert invoice['snapshot']['pricing']['stage']=='FINAL'
+    assert check(client.get(BASE+f'/orders/{order["id"]}'))['status']=='INVOICED'
+    assert not any(item['kind']=='INVOICE' and item['order_id']==order['id'] for item in check(client.get(BASE+'/monitor'))['needs_attention'])
+    with owner_engine.connect() as db:
+        assert db.scalar(text('select count(*) from email_deliveries where invoice_id = :id'),{'id':invoice['id']})==1
+
+
+def test_driver_orders_profile_and_viewable_proof(setup):
+    w=setup;client=w['client'];mobile=w['mobile']
+    profile=check(mobile.get(BASE+'/driver/profile'))
+    assert profile['number'] and profile['vehicle_name']=='Test Van · TEST123'
+    updated=check(mobile.patch(BASE+'/driver/profile',json={'version':profile['version'],'phone':'604 555 0199'},headers={'Idempotency-Key':str(uuid4())}))
+    assert updated['phone']=='604 555 0199' and updated['version']==profile['version']+1
+    assert mobile.patch(BASE+'/driver/profile',json={'version':profile['version'],'phone':'6045550000'},headers={'Idempotency-Key':str(uuid4())}).status_code==409
+    assert client.patch(BASE+'/driver/profile',json={'version':1,'phone':'6045550000'},headers={'Idempotency-Key':str(uuid4())}).status_code==403
+    unassigned=new_order(w);order=new_order(w)
+    assert check(mobile.get(BASE+'/driver/orders'))==[]
+    route=assign(w,order)
+    listed=check(mobile.get(BASE+'/driver/orders'))
+    assert [row['id'] for row in listed]==[order['id']] and listed[0]['status']=='ASSIGNED' and listed[0]['route_status']=='PLANNED'
+    assert listed[0]['service_name'] and [s['kind'] for s in listed[0]['stops']]==['PICKUP','DROPOFF']
+    assert listed[0]['shipper']=={'name':'Alice Shipper','company_name':'Fresh Test','phone':'6045550101','email':'alice@example.com'}
+    assert 'warehouse' not in listed[0]['shipper']
+    assert not {'pricing','booking','facts','subtotal','internal_notes'} & set(listed[0]) and 'subtotal' not in str(listed)
+    finish(w,route)
+    assert check(mobile.get(BASE+'/driver/orders'))[0]['status']=='INVOICED'
+    assert unassigned['id'] not in {row['id'] for row in check(mobile.get(BASE+'/driver/orders'))}
+    proof=check(client.get(BASE+f'/orders/{order["id"]}/delivery-proof'))
+    assert proof[0]['completed_by_dispatcher'] is False and [e['kind'] for e in proof[0]['evidence']]==['SIGNATURE']
+    image=client.get(BASE+f'/evidence/{proof[0]["evidence"][0]["id"]}')
+    assert image.status_code==200 and image.headers['content-type']=='image/png' and image.headers['content-disposition'].startswith('inline')
+    assert image.content.startswith(b'\x89PNG')
+    with TestClient(app,headers=HEADERS) as portal:
+        login(portal,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
+        assert check(portal.get(BASE+f'/orders/{order["id"]}/delivery-proof'))[0]['evidence'][0]['id']==proof[0]['evidence'][0]['id']
+        assert portal.get(BASE+f'/evidence/{proof[0]["evidence"][0]["id"]}').status_code==200
+        assert portal.get(BASE+'/driver/orders').status_code==403
+
+
+def test_order_tracking_live_location_privacy(setup):
+    w=setup;client=w['client'];mobile=w['mobile']
+    other=check(post(client,BASE+'/shippers',{**w['shipper_body'],'name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
+    stamp=lambda: datetime.now(timezone.utc).isoformat()
+    locate=lambda: check(post(mobile,BASE+'/driver/location',dict(duty_id=w['duty']['id'],captured_at=stamp(),latitude=49.2601,longitude=-123.1101,accuracy_m=8,location_permission='GRANTED')),201)
+    start=lambda route: check(post(mobile,BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'])))
+    def complete_next(route):
+        nxt=next(v for v in route['stops'] if v['status']!='COMPLETED')
+        route=check(post(mobile,BASE+f'/driver/routes/{route["id"]}/stops/{nxt["id"]}/arrive',dict(version=route['version'],generation=route['generation'],captured_at=stamp())))
+        data=dict(version=route['version'],generation=route['generation'],captured_at=stamp(),
+            quantities={i['id']:i['quantity'] for i in route['items'] if i['pickup_id' if nxt['stop']['kind']=='PICKUP' else 'delivery_id']==nxt['stop_id']})
+        if nxt['stop']['kind']=='DROPOFF':
+            ev=check(post(mobile,BASE+f'/driver/stops/{nxt["stop_id"]}/evidence',dict(kind='SIGNATURE',media_type='image/png',captured_at=stamp(),content_base64=base64.b64encode(b'\x89PNG\r\n\x1a\nsig').decode())),201)
+            data.update(recipient_name='Receiver',evidence_ids=[ev['id']])
+        return check(post(mobile,BASE+f'/driver/routes/{route["id"]}/stops/{nxt["id"]}/complete',data))
+    def complete_all(route):
+        while any(v['status']!='COMPLETED' for v in route['stops']): route=complete_next(route)
+        return check(post(mobile,BASE+f'/driver/routes/{route["id"]}/finish',dict(version=route['version'],generation=route['generation'])))
+    with TestClient(app,headers=HEADERS) as alice, TestClient(app,headers=HEADERS) as bob:
+        login(alice,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
+        login(bob,'customer','acme',other['email'],other['initial_password'])
+        track=lambda c,o: check(c.get(BASE+f'/orders/{o["id"]}/tracking'))
+        # Dedicated route: the shipper sees the live position for the whole trip.
+        order=new_order(w)
+        booked=track(alice,order); assert booked['stage']=='BOOKED' and booked['driver'] is None and booked['live'] is False
+        route=assign(w,order)
+        assigned=track(alice,order)
+        assert assigned['stage']=='ASSIGNED' and assigned['driver']['first_name']=='Dana' and assigned['driver']['vehicle_type'] and assigned['dedicated'] is True
+        assert assigned['location'] is None and [e['kind'] for e in assigned['events']]==['BOOKED','ASSIGNED']
+        assert bob.get(BASE+f'/orders/{order["id"]}/tracking').status_code==404
+        route=start(route); locate()
+        moving=track(alice,order)
+        assert moving['stage']=='TO_PICKUP' and moving['live'] is True and moving['location']['latitude']==49.2601 and moving['stops_before_next']==0
+        assert moving['eta'] and all(stop['eta'] for stop in moving['stops'])
+        complete_all(route)
+        done=track(alice,order)
+        assert done['stage']=='DELIVERED' and done['live'] is False and done['location'] is None
+        assert {'STARTED','PICKUP_ARRIVED','PICKUP_COMPLETED','DROPOFF_ARRIVED','DROPOFF_COMPLETED'} <= {e['kind'] for e in done['events']}
+        # Shared route: live position only while the driver's next visit is this shipper's stop.
+        mine=new_order(w);theirs=check(post(client,BASE+'/orders',booking(other['id'],w['service'],w['type_id'])),201)
+        route=assign(w,mine);route=assign(w,check(client.get(BASE+f'/orders/{theirs["id"]}')),route)
+        route=start(route); locate()
+        mine_stops={s['id'] for s in mine['facts']['stops']}
+        seen=set()
+        while any(v['status']!='COMPLETED' for v in route['stops']):
+            nxt=next(v for v in route['stops'] if v['status']!='COMPLETED')
+            view=track(alice,mine)
+            assert view['dedicated'] is False and {s['id'] for s in view['stops']}==mine_stops
+            if view['stage']!='DELIVERED':
+                assert view['live']==(nxt['stop_id'] in mine_stops) and (view['location'] is not None)==view['live']
+                assert check(client.get(BASE+f'/orders/{mine["id"]}/tracking'))['live'] is True
+                seen.add(view['live'])
+            route=complete_next(route)
+        assert track(alice,mine)['stage']=='DELIVERED' and seen=={True,False}

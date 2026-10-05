@@ -31,7 +31,7 @@ def configuration():
     return host, port, username, password, sender
 
 
-def send(delivery):
+def send(delivery, attachment=None):
     host, port, username, password, sender = configuration()
     message = EmailMessage()
     message['From'] = sender
@@ -41,6 +41,9 @@ def send(delivery):
     message['Date'] = format_datetime(now())
     message.set_content(delivery.body_text)
     message.add_alternative(delivery.body_html, subtype='html')
+    if attachment is not None:
+        filename, content = attachment
+        message.add_attachment(content, maintype='application', subtype='pdf', filename=filename)
     try:
         smtp = smtplib.SMTP_SSL(host, port, timeout=20, context=ssl.create_default_context())
     except (smtplib.SMTPException, OSError):

@@ -399,7 +399,7 @@ class EvidenceInput(Input):
 
 
 class DutyStart(Input):
-    location_permission: Literal['GRANTED', 'DENIED']
+    location_permission: Literal['GRANTED', 'DENIED', 'UNKNOWN'] | None = None
 
 
 class DutyEnd(Version):
@@ -502,6 +502,14 @@ class InvoiceView(RecordView):
     subtotal: Decimal
     tax: Decimal
     total: Decimal
+
+
+class DriverNotificationView(RecordView):
+    title: str
+    body: str
+    order_id: UUID | None
+    route_id: UUID | None
+    read_at: datetime | None
 
 
 class QuoteSend(Version):
@@ -627,6 +635,8 @@ class ShipperProfileUpdate(Version):
 
 class DriverProfileView(BaseModel):
     id: UUID
+    version: int
+    number: str
     name: str
     email: str
     phone: str
@@ -635,6 +645,46 @@ class DriverProfileView(BaseModel):
     vehicle_id: UUID | None
     duty: DutyView | None
     location_permission: str
+    vehicle_name: str | None = None
+
+
+class DriverProfileUpdate(Version):
+    phone: Annotated[str, Field(min_length=3, max_length=50)]
+
+
+class DriverOrderStop(BaseModel):
+    id: UUID
+    kind: str
+    address: Address
+    contact_name: str
+    phone: str
+    instructions: str
+    window_start: datetime | None
+    window_end: datetime | None
+    unattended_allowed: bool
+    photo_required: bool
+
+
+class DriverShipperContact(BaseModel):
+    name: str
+    company_name: str
+    phone: str
+    email: EmailStr | Literal['']
+
+
+class DriverOrderView(BaseModel):
+    """Driver projection of an assigned Order: no price, payer, billing or private notes."""
+    id: UUID
+    number: str
+    status: str
+    scheduled_at: datetime
+    completed_at: datetime | None
+    route_id: UUID
+    route_status: str
+    service_name: str
+    shipper: DriverShipperContact
+    stops: list[DriverOrderStop]
+    items: list[ItemInput]
 
 
 class DriverActivityView(BaseModel):
@@ -752,7 +802,59 @@ class DeliveryProofView(BaseModel):
     completed_at: datetime
     recipient_name: str
     unattended: bool
+    completed_by_dispatcher: bool = False
     evidence: list[ProofEvidence]
+
+
+class TrackingStop(BaseModel):
+    id: UUID
+    kind: str
+    address: Address
+    window_start: datetime | None
+    window_end: datetime | None
+    planned_at: datetime | None
+    eta: datetime | None
+    arrived_at: datetime | None
+    completed_at: datetime | None
+    status: str
+
+
+class TrackingEvent(BaseModel):
+    kind: str
+    label: str
+    at: datetime
+
+
+class TrackingDriver(BaseModel):
+    first_name: str
+    vehicle_type: str | None
+
+
+class TrackingLocation(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_m: float | None
+    captured_at: datetime
+
+
+class TrackingView(BaseModel):
+    """Order tracking for its Shipper or a dispatcher; `location` is present only while `live` and fresh."""
+    order_id: UUID
+    status: str
+    stage: Literal['BOOKED', 'ASSIGNED', 'TO_PICKUP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
+    dedicated: bool
+    driver: TrackingDriver | None
+    stops: list[TrackingStop]
+    stops_before_next: int | None
+    eta: datetime | None
+    delay_minutes: int
+    late: bool
+    live: bool
+    location: TrackingLocation | None
+    location_stale: bool
+    events: list[TrackingEvent]
+    open_issue: bool
+    updated_at: datetime
 
 
 class RoadPathView(BaseModel):

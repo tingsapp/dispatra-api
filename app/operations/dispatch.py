@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_
 from app.models import User, now
 from app.services import audit
 from .models import Order, Driver, Vehicle, Route, RouteStop, OrderStop, DutySession
@@ -113,6 +113,15 @@ def assign(db, actor, identity, data, key):
             if route.status != 'PLANNED' or route.locked: raise HTTPException(409, 'Executing or locked Routes cannot change.')
             if route.driver_id != driver.id or route.vehicle_id != vehicle.id: raise HTTPException(409, 'Route custody does not match the selection.')
         else:
+            active = db.scalar(select(Route).where(Route.organization_id == actor.organization_id,
+                Route.status.in_(['PLANNED', 'IN_PROGRESS']),
+                or_(Route.driver_id == driver.id, Route.vehicle_id == vehicle.id)).with_for_update())
+            if active:
+                if active.driver_id != driver.id or active.vehicle_id != vehicle.id:
+                    raise HTTPException(409, 'The driver or vehicle already belongs to another active Route.')
+                if active.status == 'PLANNED' and not active.locked:
+                    raise HTTPException(409, 'Driver already has a planned Route; include its Route ID and version to add this Order.')
+                raise HTTPException(409, 'Driver already has a locked or in-progress Route; finish it before assigning another Order.')
             route = Route(organization_id=actor.organization_id, driver_id=driver.id, vehicle_id=vehicle.id,
                 status='PLANNED', planned_at=data.planned_at, plan={})
             db.add(route); db.flush()

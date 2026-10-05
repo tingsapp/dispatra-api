@@ -1,6 +1,6 @@
 # Dispatra API
 
-FastAPI/PostgreSQL backend for company accounts and the manual delivery workflow. Dispatchers and Shippers create Orders through shared validation and pricing services. Dispatchers assign drivers and vehicles; drivers execute ordered visits and submit evidence; dispatchers issue invoices after verified completion. Explicit quote/invoice email runs through a separate worker; inbound email, AI agents and automatic dispatch/invoicing are later phases.
+FastAPI/PostgreSQL backend for company accounts and the manual delivery workflow. Dispatchers and Shippers create Orders through shared validation and pricing services. Dispatchers assign drivers and vehicles; drivers execute ordered visits and submit evidence. Verified completion issues one Invoice and queues its email in the same transaction. A separate worker delivers queued email; inbound email, AI agents and automatic dispatch are later phases.
 
 ## Local setup
 
@@ -128,7 +128,7 @@ All paths below are beneath `/api/v1/companies/{slug}`. Mutations require an all
 | Route start / execution / finish | `POST /driver/routes/{id}/start`, `POST /driver/routes/{id}/stops/{visit}/arrive`, `POST /driver/routes/{id}/stops/{visit}/complete`, `POST /driver/routes/{id}/finish` |
 | Evidence | `POST/GET /driver/stops/{stop}/evidence`, `GET /evidence/{id}`, `GET /orders/{id}/delivery-proof` |
 | Issues and resolution | `POST /orders/{id}/issues`, `GET /issues`, `POST /issues/{id}/resolve` |
-| Manual invoicing | `POST /orders/{id}/invoice`, `GET /invoices`, `GET /invoices/{id}`, `GET /invoices/{id}/document` |
+| Invoice review and recovery | `POST /orders/{id}/invoice`, `GET /invoices`, `GET /invoices/{id}`, `GET /invoices/{id}/document` |
 | Operational reporting | `GET /monitor`, `GET /analytics`, `GET /analytics/export.csv`, `GET /drivers/{id}/activity` |
 
 Logins use `/api/v1/auth/login` with `portal: dispatch`, `customer`, or `driver`, the company slug, email/login ID, and password. A new operational Shipper or Driver and its user account are created in one transaction. The generated password is returned once, is never persisted in idempotency results, and is absent on replay. If the first response is lost, use the reset workflow. Existing customer-account endpoints remain compatible; operational Shipper email changes are managed by the dispatcher, and Warehouse Address edits use the structured Shipper endpoint.
@@ -155,11 +155,11 @@ Drivers record arrival and confirm actual quantities at every ordered visit. A s
 
 Offline clients retain action UUIDs, expected versions, generation, capture times, dependencies, and evidence until the server acknowledges them. Start Route requires an online request; saved execution actions can be replayed in order. End Duty defines the final allowed capture time; later uploads can contain only earlier samples. Logout and driver password reset close open duty sessions.
 
-Completed Orders become invoice-eligible; invoicing is explicitly requested by the dispatcher in this manual phase. One database-unique invoice per Order prevents duplicate issuance even with different command keys. Printable HTML is available for local printing/PDF export. Explicit quote and invoice email uses the separate SMTP worker; payment processing is not performed. Owner-operator payouts use the configured share of freight plus service, and the separate share of fuel surcharge; percentages freeze at completion. These are estimates, never payroll/payment records.
+Valid completion issues one frozen Invoice and queues email to the saved billing address in the same transaction. An hourly Order completed by a dispatcher without pickup arrival evidence stays `COMPLETED` until a dispatcher supplies actual billable minutes through `POST /orders/{id}/invoice`. One database-unique invoice per Order prevents duplicate issuance even with different command keys. The Invoice document is an API-served PDF. The separate SMTP worker must be running to deliver queued email; payment processing is not performed.
 
 ## Quote and invoice email
 
-A dispatcher queues a priced, unexpired prospect quote with `POST /quotes/{id}/send` and `{ "version": 1, "recipient": "buyer@example.com" }`. An issued invoice uses its frozen billing email with `POST /invoices/{id}/send` and `{ "version": 1 }`. Both commands require an `Idempotency-Key` and return a delivery record with `PENDING` status. `GET /email-deliveries/{id}` reports `PENDING`, `SENDING`, `SENT`, `FAILED`, or `UNKNOWN`. A resend is a new explicit command after the preceding attempt reaches a terminal state. Neither quote creation nor invoice issuance sends mail implicitly.
+A dispatcher queues a priced, unexpired prospect quote with `POST /quotes/{id}/send` and `{ "version": 1, "recipient": "buyer@example.com" }`. Completion queues invoice email automatically; `POST /invoices/{id}/send` and `{ "version": 1 }` is available for dispatcher recovery or an explicit resend. Explicit commands require an `Idempotency-Key` and return a delivery record with `PENDING` status. `GET /email-deliveries/{id}` reports `PENDING`, `SENDING`, `SENT`, `FAILED`, or `UNKNOWN`. A resend is a new explicit command after the preceding attempt reaches a terminal state. Queueing is not proof of SMTP acceptance or inbox delivery.
 
 Configure the server-only `SMTP_*` values from `.env.example` in private `.env`. For Gmail app-password submission use `smtp.gmail.com`, port 465 with TLS, and the complete Gmail address as both username and sender. Run a separate worker alongside the API:
 
@@ -167,7 +167,11 @@ Configure the server-only `SMTP_*` values from `.env.example` in private `.env`.
 .venv/bin/python -m app.operations.email_worker
 ```
 
-`--once` processes currently eligible requests and exits. The worker claims only email events and commits before SMTP I/O. A temporary failure retries up to five times. A rejected message becomes `FAILED`; an uncertain acceptance or interrupted send becomes `UNKNOWN` and is never auto-resubmitted. Inspect that status before explicitly sending again. SMTP does not provide provider-side idempotency, so this conservative boundary avoids automatic duplicate invoices but cannot prove delivery to a recipient's inbox. The API never returns the app password or email body in the delivery-status projection.
+`--once` processes currently eligible requests and exits. Invoice email includes the frozen PDF as an attachment. The worker claims only email events and commits before SMTP I/O. A temporary failure retries up to five times. A rejected message becomes `FAILED`; an uncertain acceptance or interrupted send becomes `UNKNOWN` and is never auto-resubmitted. Inspect that status before explicitly sending again. SMTP does not provide provider-side idempotency, so this conservative boundary avoids automatic duplicate invoices but cannot prove delivery to a recipient's inbox. The API never returns the app password or email body in the delivery-status projection.
+
+## Events, sync and notifications
+
+Audited company mutations append rows to `events` and create recipient `notifications` in the same transaction (`app/events`). Every web and native client polls `GET /api/v1/companies/{slug}/sync?cursor=` and waits the returned `next_poll_ms`; set `SYNC_POLL_MS` (default 15000, bounded 1000–300000) to tune it per deployment without client changes. A worker or later agent reads the log with `app.events.feed.consume`/`advance` under its own consumer name. Events are not yet pruned, and remote push and email for notifications are later slices.
 
 ## Verification and contracts
 
@@ -204,3 +208,9 @@ Shippers use `/{company}/shipper-portal/payment-methods` to view invoice terms a
 API: `GET /api/v1/companies/{slug}/shipper/payment-methods`; `POST .../payment-methods/setup` with `{"consent":true}` and an Idempotency-Key. Both require a Shipper session, and setup requires the usual origin header. The browser sends no customer/account IDs or return URLs. Provider failure is explicit and must not create a local saved-card claim.
 
 Provisioning reserves a database reference before calling Stripe, reusing its ID as the provider idempotency key. If a customer ID was not persisted within 23 hours, creation is blocked: an administrator must reconcile the reservation against Stripe request logs/metadata and attach the verified customer ID before retrying. Do not delete the reservation and blindly create another customer. Card removal, Connect onboarding UI, automatic collection and Stripe invoice settlement are separate features.
+
+## Native Android driver client
+
+The [driver app](../driver/README.md) uses `POST /api/v1/auth/driver/login` with `{organization, login_id, password}` and sends the returned opaque token as `Authorization: Bearer dm_…`, plus `X-Requested-With: Dispatra`. It does not send a browser session cookie or spoof an Origin. Browser CSRF rules are unchanged. `POST /api/v1/auth/driver/password` returns a replacement native session; logout and administrative revocation invalidate these same sessions.
+
+Migration `0019_driver_notifications` stores private assignment/release inbox records. `GET /api/v1/companies/{slug}/driver/notifications` lists the driver’s newest messages; `POST /driver/notifications/{id}/read` requires version and idempotency key. The inbox is polled by the app; Firebase remote push is not configured.

@@ -1,4 +1,4 @@
-"""Explicit dispatcher email commands; SMTP runs after the transaction commits."""
+"""Invoice and quote email queueing; SMTP runs after the transaction commits."""
 from datetime import datetime
 from html import escape
 from uuid import uuid4
@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from app.models import now
 from app.services import audit
-from .common import command, record, settings, version
+from .common import command, record, settings, version, company_lock
 from .models import EmailDelivery, Invoice, Quote
 from .schemas import EmailDeliveryView
 
@@ -74,21 +74,32 @@ def send_quote(db, actor, identity, data, key):
     return command(db, actor, key, 'quote-send:' + str(identity), data.model_dump(mode='json'), run)
 
 
+def queue_invoice(db, actor, row):
+    snap = row.snapshot
+    recipient = snap['booking']['payer']['email'].strip().lower()
+    if not recipient:
+        raise HTTPException(409, 'Invoice billing email is missing.')
+    title = f'Invoice {row.number}'
+    details = [f"Order: {snap['order_number']}", f"Issued: {snap['issued_at']}",
+               f"Due: {snap['due_date']}"]
+    body_text, body_html = _message(snap['issuer']['company_name'], title,
+        snap['booking']['payer']['company_name'] or snap['booking']['payer']['name'],
+        snap['pricing'], details)
+    return _queue(db, actor, recipient=recipient,
+        subject=f"{snap['issuer']['company_name']} — {title}",
+        body_text=body_text, body_html=body_html, invoice_id=row.id)
+
+
 def send_invoice(db, actor, identity, data, key):
     def run():
+        company_lock(db, actor)
         row = record(db, Invoice, actor, identity)
         version(row, data.version)
-        snap = row.snapshot
-        recipient = snap['booking']['payer']['email'].strip().lower()
-        if not recipient:
-            raise HTTPException(409, 'Invoice billing email is missing.')
-        title = f'Invoice {row.number}'
-        details = [f"Order: {snap['order_number']}", f"Issued: {snap['issued_at']}",
-                   f"Due: {snap['due_date']}"]
-        body_text, body_html = _message(snap['issuer']['company_name'], title,
-            snap['booking']['payer']['company_name'] or snap['booking']['payer']['name'],
-            snap['pricing'], details)
-        return _queue(db, actor, recipient=recipient,
-            subject=f"{snap['issuer']['company_name']} — {title}",
-            body_text=body_text, body_html=body_html, invoice_id=row.id)
+        pending = db.scalar(select(EmailDelivery).where(
+            EmailDelivery.organization_id == actor.organization_id,
+            EmailDelivery.invoice_id == row.id,
+            EmailDelivery.status.in_(['PENDING', 'SENDING'])).order_by(EmailDelivery.created_at.desc()).limit(1))
+        if pending:
+            return EmailDeliveryView.model_validate(pending).model_dump(mode='json')
+        return queue_invoice(db, actor, row)
     return command(db, actor, key, 'invoice-send:' + str(identity), data.model_dump(mode='json'), run)

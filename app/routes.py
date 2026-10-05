@@ -1,6 +1,6 @@
 from uuid import UUID
 from typing import Annotated
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, HTTPException
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 from . import auth, services
@@ -8,7 +8,7 @@ from .database import session
 from .models import User, LoginSession
 from .operations.models import Shipper
 from .schemas import (Login, AccountView, CustomerCreate,
-                      CustomerAccessView, CustomerView, ProfileUpdate, PasswordChange, PasswordReset)
+                      CustomerAccessView, CustomerView, ProfileUpdate, PasswordChange, PasswordReset, DriverLogin, DriverSession)
 from .security import digest
 
 router = APIRouter(prefix='/api/v1')
@@ -19,13 +19,24 @@ OperationKey = Annotated[str, Header(alias='Idempotency-Key', min_length=16, max
 def login(data: Login, request: Request, response: Response, db: DB):
     return auth.login(db, data, request, response)
 
+@router.post('/auth/driver/login', response_model=DriverSession)
+def driver_login(data: DriverLogin, request: Request, response: Response, db: DB):
+    response.headers['Cache-Control'] = 'no-store'
+    return auth.login(db, data, request, response, mobile=True)
+
+@router.post('/auth/driver/password', response_model=DriverSession)
+def driver_password(data: PasswordChange, response: Response, db: DB, user: User = Depends(auth.authenticated)):
+    response.headers['Cache-Control'] = 'no-store'
+    if user.role != 'DRIVER': raise HTTPException(403, 'Driver access required.')
+    return auth.change_password(db, user, data, response, mobile=True)
+
 @router.get('/auth/me', response_model=AccountView)
 def me(db: DB, user: User = Depends(auth.authenticated)):
     return auth.account_view(db, user)
 
 @router.post('/auth/logout', status_code=204)
 def logout(request: Request, response: Response, db: DB):
-    token = request.cookies.get(auth.COOKIE)
+    token = auth.request_token(request)
     if token:
         login_session = db.get(LoginSession,digest(token))
         if login_session:

@@ -6,23 +6,49 @@ from app import auth
 from app.models import User
 from app.routes import DB, OperationKey
 from . import execution, dispatch
-from .common import record
-from .models import Route, Driver, Evidence, OrderStop, Order, DutySession
+from .common import record, version, command, changed
+from .models import Route, Driver, Evidence, OrderStop, Order, DutySession, Vehicle, Catalog
 from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, RouteView, ProofEvidence
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Driver execution'])
 
 
-from .schemas import DriverProfileView
+from .schemas import DriverProfileView, DriverProfileUpdate, DriverOrderView
 
 @router.get('/driver/profile', response_model=DriverProfileView)
 def profile(slug: str, db: DB, user: User = Depends(auth.driver)):
     row = record(db,Driver,user,user.driver_id)
     duty = db.scalar(select(DutySession).where(DutySession.organization_id == user.organization_id, DutySession.driver_id == row.id, DutySession.ended_at.is_(None)))
-    return {'id': row.id, 'name': row.name, 'email': row.email, 'phone': row.phone,
+    vehicle = record(db,Vehicle,user,row.vehicle_id) if row.vehicle_id else None
+    return {'id': row.id, 'version': row.version, 'number': row.number, 'name': row.name, 'email': row.email, 'phone': row.phone,
         'address': row.address, 'service_city': row.service_city, 'vehicle_id': row.vehicle_id,
         'duty': DutyView.model_validate(duty).model_dump(mode='json') if duty else None,
-        'location_permission': row.location_permission}
+        'location_permission': row.location_permission,
+        'vehicle_name': ' · '.join(filter(None, [vehicle.data.get('name'), vehicle.data.get('plate')])) if vehicle else None}
+
+
+@router.patch('/driver/profile', response_model=DriverProfileView)
+def profile_update(slug: str, data: DriverProfileUpdate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
+    def run():
+        row = record(db,Driver,user,user.driver_id,True); version(row,data.version)
+        row.phone = data.phone.strip()
+        changed(db,user,row,'driver.profile_updated')
+        return {'driver_id': str(row.id)}
+    command(db,user,idempotency_key,'driver-profile',data.model_dump(mode='json'),run)
+    return profile(slug,db,user)
+
+
+@router.get('/driver/orders', response_model=list[DriverOrderView])
+def driver_orders(slug: str, db: DB, user: User = Depends(auth.driver)):
+    rows = db.execute(select(Order,Route.status).join(Route,Route.id == Order.route_id).where(Order.organization_id == user.organization_id,
+        Route.organization_id == user.organization_id, Route.driver_id == user.driver_id, Order.status != 'CANCELLED').order_by(Order.scheduled_at.desc())).all()
+    services = {c.id: c.data.get('name','') for c in db.scalars(select(Catalog).where(Catalog.organization_id == user.organization_id, Catalog.id.in_({o.service_id for o,_ in rows})))} if rows else {}
+    return [{'id': o.id, 'number': o.number, 'status': o.status, 'scheduled_at': o.scheduled_at, 'completed_at': o.completed_at,
+        'route_id': o.route_id, 'route_status': route_status, 'service_name': services.get(o.service_id,''),
+        'shipper': {k: o.booking['shipper'].get(k, '') for k in ('name','company_name','phone','email')},
+        'stops': [{k: stop.get(k, default) for k, default in [('id',None),('kind',None),('address',None),('contact_name',''),('phone',''),('instructions',''),
+            ('window_start',None),('window_end',None),('unattended_allowed',False),('photo_required',False)]} for stop in o.facts['stops']],
+        'items': o.facts['items']} for o, route_status in rows]
 
 
 @router.post('/driver/duty', response_model=DutyView, status_code=201)
@@ -92,7 +118,8 @@ def download(slug: str, identity: UUID, db: DB, user: User = Depends(auth.compan
     if user.role == 'SHIPPER' and order.shipper_id != user.shipper_id: raise HTTPException(404,'Evidence not found.')
     if user.role == 'DRIVER' and row.driver_id != user.driver_id: raise HTTPException(404,'Evidence not found.')
     return Response(base64.b64decode(row.content),media_type=row.media_type,
-        headers={'Content-Disposition': f'attachment; filename="{row.id}.{"png" if row.media_type == "image/png" else "jpg"}"'})
+        headers={'Content-Disposition': f'inline; filename="{row.id}.{"png" if row.media_type == "image/png" else "jpg"}"',
+            'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff'})
 
 
 from .schemas import ArrivalCommand
@@ -110,3 +137,15 @@ def stop_issue(slug: str, identity: UUID, data: IssueInput, db: DB, idempotency_
     from . import issues
     stop = record(db,OrderStop,user,identity)
     return issues.report(db,user,stop.order_id,data.model_copy(update={'stop_id':identity}),idempotency_key)
+
+
+from app.events.routes import mark_read, page
+from .schemas import DriverNotificationView, Version
+
+@router.get('/driver/notifications', response_model=list[DriverNotificationView])
+def notifications(slug: str, db: DB, limit: int = Query(100, ge=1, le=200), user: User = Depends(auth.driver)):
+    return page(db, user, limit)
+
+@router.post('/driver/notifications/{identity}/read', response_model=DriverNotificationView)
+def read_notification(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
+    return mark_read(db, user, identity, data, idempotency_key, DriverNotificationView)

@@ -5,12 +5,14 @@ from sqlalchemy import select, text, delete
 from sqlalchemy.orm import Session
 from .models import Organization, User, AuditEvent, Operation, LoginSession, OutboxEvent
 from .database import context
+from .events import publish
 from .security import hash_password, verify
 from .schemas import CustomerAccessView, CustomerView
 
-def audit(db, actor, action, entity_id, organization_id):
+def audit(db, actor, action, entity_id, organization_id, actor_type='USER'):
     db.add(AuditEvent(actor_id=actor.id, action=action, entity_id=entity_id, organization_id=organization_id))
     db.add(OutboxEvent(organization_id=organization_id, event_type=action, entity_id=entity_id))
+    publish.record(db, actor, action, entity_id, organization_id, actor_type)
 
 def once(db, actor, key, operation, payload, run):
     scoped = f'{actor.id}:{operation}:{key}'

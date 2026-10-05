@@ -1,4 +1,5 @@
 from typing import Annotated, Literal
+from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
 
@@ -84,6 +85,15 @@ class AccountView(BaseModel):
     organization: OrganizationView | None
     driver_id: UUID | None = None
     shipper_id: UUID | None = None
+
+class DriverLogin(Login):
+    organization: Slug
+    portal: Literal['driver'] = 'driver'
+
+class DriverSession(BaseModel):
+    token: str
+    expires_at: datetime
+    account: AccountView
 
 class ErrorBody(BaseModel):
     code: str

@@ -24,7 +24,11 @@ def error(request, status, message, fields=None):
 @app.middleware('http')
 async def boundary(request: Request, call_next):
     request.state.request_id = str(uuid4())
-    if request.method not in {'GET','HEAD','OPTIONS'} and (
+    native_request = (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
+        and request.headers.get('x-requested-with') == 'Dispatra'
+        and (request.url.path == '/api/v1/auth/driver/login'
+             or request.headers.get('authorization', '').startswith('Bearer dm_')))
+    if request.method not in {'GET','HEAD','OPTIONS'} and not native_request and (
         request.headers.get('origin') not in origins or request.headers.get('x-requested-with') != 'Dispatra'
     ):
         response = error(request, 403, 'Request origin could not be verified.')
@@ -67,6 +71,7 @@ def ready() -> dict[str,str]:
         connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
         connection.execute(text('SELECT id, snapshot FROM invoices LIMIT 0'))
         connection.execute(text('SELECT id, status FROM email_deliveries LIMIT 0'))
+        connection.execute(text('SELECT seq, tx FROM events LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
@@ -81,3 +86,5 @@ from .payments.routes import router as payments_router
 app.include_router(payments_router)
 from .platform.routes import router as platform_router
 app.include_router(platform_router)
+from .events.routes import router as events_router
+app.include_router(events_router)

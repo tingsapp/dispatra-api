@@ -153,6 +153,7 @@ def complete_order(db, actor, identity, data, key):
             RouteStop.route_id == route.id, OrderStop.order_id == row.id, RouteStop.status != 'COMPLETED').with_for_update(of=RouteStop)))
         for visit in visits:
             visit.status, visit.completed_at = 'COMPLETED', completed_at
+            visit.movements = {**(visit.movements or {}), 'completed_by': 'DISPATCHER'}
             changed(db, actor, visit, 'stop.completed_by_dispatcher')
         row.status, row.completed_at = 'COMPLETED', completed_at
         changed(db, actor, row, 'order.completed_by_dispatcher')
@@ -162,5 +163,7 @@ def complete_order(db, actor, identity, data, key):
             route.status, route.completed_at = 'COMPLETED', completed_at
             changed(db, actor, route, 'route.completed')
         else: changed(db, actor, route, 'route.progress')
+        from .billing import auto_invoice
+        auto_invoice(db, actor, row)
         return order_view(row, actor)
     return command(db, actor, key, 'order-complete:' + str(identity), data.model_dump(), run)

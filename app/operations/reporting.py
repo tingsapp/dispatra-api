@@ -121,6 +121,7 @@ def driver_activity(slug: str, identity: UUID, db: DB, user: User = Depends(auth
 def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     routes = list(db.scalars(select(Route).where(Route.organization_id == user.organization_id,Route.status.in_(['PLANNED','IN_PROGRESS']))))
     orders = list(db.scalars(select(Order).where(Order.organization_id == user.organization_id,Order.status.in_(['NEW','ASSIGNED','IN_PROGRESS']))))
+    invoice_holds = list(db.scalars(select(Order).where(Order.organization_id == user.organization_id, Order.status == 'COMPLETED')))
     issues = list(db.scalars(select(Issue).where(Issue.organization_id == user.organization_id,Issue.resolved.is_(False))))
     drivers = list(db.scalars(select(Driver).where(Driver.organization_id == user.organization_id,Driver.active.is_(True))))
     route_ids = [route.id for route in routes]
@@ -152,7 +153,9 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
                    'attention_flags':[flag for flag,_ in attention[o.id]]} for o in orders],
         'needs_attention':[{'id':str(i.id),'order_id':str(i.order_id),'kind':i.kind,'description':i.description} for i in issues] +
             [{'id':None,'order_id':str(o.id),'kind':flag,'description':description}
-                for o in orders for flag,description in attention[o.id]]}
+                for o in orders for flag,description in attention[o.id]] +
+            [{'id':None,'order_id':str(o.id),'kind':'INVOICE','description':'Invoice needs actual billable time review.'
+                if o.pricing.get('method') == 'HOURLY' else 'Invoice needs review.'} for o in invoice_holds]}
 
 
 

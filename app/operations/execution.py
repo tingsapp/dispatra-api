@@ -30,9 +30,9 @@ def start_duty(db, actor, data, key):
         current = db.scalar(select(DutySession).where(DutySession.organization_id == actor.organization_id,
             DutySession.driver_id == actor.driver_id, DutySession.ended_at.is_(None)))
         if current: raise HTTPException(409, 'Driver is already On Duty.')
-        if data.location_permission != 'GRANTED': raise HTTPException(409, 'Location permission is required to start duty.')
         row = DutySession(organization_id=actor.organization_id, driver_id=actor.driver_id, started_at=now())
-        driver.last_seen_at, driver.location_permission = now(), data.location_permission
+        driver.last_seen_at = now()
+        if data.location_permission is not None: driver.location_permission = data.location_permission
         db.add(row); db.flush(); audit(db, actor, 'duty.started', row.id, actor.organization_id)
         return jsonable_encoder(dump(row))
     return command(db, actor, key, 'duty-start', data.model_dump(), run)
@@ -164,6 +164,8 @@ def complete_stop(db, actor, identity, visit_id, data, key):
             if not unresolved:
                 order.status, order.completed_at = 'COMPLETED', data.captured_at
                 changed(db, actor, order, 'order.completed')
+                from .billing import auto_invoice
+                auto_invoice(db, actor, order)
         changed(db, actor, route, 'route.progress')
         return route_view(db, actor, route)
     return command(db, actor, key, 'stop:' + str(visit_id), data.model_dump(mode='json'), run)

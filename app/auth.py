@@ -18,13 +18,16 @@ def account_view(db, user):
     return AccountView(id=user.id, login_id=user.login_id, display_name=user.display_name, role=user.role, driver_id=user.driver_id, shipper_id=user.shipper_id,
                        organization=OrganizationView.model_validate(org) if org else None)
 
-def start_session(db, user, response):
-    token = secrets.token_urlsafe(32)
+def start_session(db, user, response, mobile=False):
+    token = ('dm_' if mobile else 'ws_') + secrets.token_urlsafe(32)
+    expires_at = now() + timedelta(hours=12)
     db.add(LoginSession(token_hash=digest(token), user_id=user.id, organization_id=user.organization_id,
-                        expires_at=now() + timedelta(hours=12)))
-    response.set_cookie(COOKIE, token, httponly=True, secure=SECURE, samesite='strict', max_age=43200, path='/')
+                        expires_at=expires_at))
+    if not mobile:
+        response.set_cookie(COOKIE, token, httponly=True, secure=SECURE, samesite='strict', max_age=43200, path='/')
+    return {'token': token, 'expires_at': expires_at, 'account': account_view(db, user)}
 
-def login(db, data, request, response):
+def login(db, data, request, response, mobile=False):
     ip = request.client.host if request.client else 'unknown'
     rate_limit('ip:' + ip, 100)
     rate_limit(f'login:{data.organization}:{data.login_id}', 10)
@@ -51,18 +54,27 @@ def login(db, data, request, response):
     context(db, user.organization_id, user.role == 'ADMIN', user.shipper_id, user.driver_id)
     old = request.cookies.get(COOKIE)
     if old: db.execute(delete(LoginSession).where(LoginSession.token_hash == digest(old)))
-    start_session(db, user, response)
+    issued = start_session(db, user, response, mobile)
     user.last_login_at = now()
     audit(db, user, 'session.started', user.id, user.organization_id)
-    return account_view(db, user)
+    return issued if mobile else account_view(db, user)
+
+def request_token(request):
+    authorization = request.headers.get('authorization')
+    if authorization:
+        if request.cookies.get(COOKIE) or not authorization.startswith('Bearer dm_'):
+            raise HTTPException(401, 'Please sign in.')
+        return authorization[7:]
+    return request.cookies.get(COOKIE, '')
 
 def authenticated(request: Request, db: Session = Depends(session)):
-    token = request.cookies.get(COOKIE, '')
+    token = request_token(request)
     login_session = db.get(LoginSession, digest(token)) if token else None
     if not login_session or login_session.expires_at <= now(): raise HTTPException(401, 'Please sign in.')
     context(db, login_session.organization_id)
     user = db.get(User, login_session.user_id)
     if not user or not user.active: raise HTTPException(401, 'Please sign in.')
+    if token.startswith('dm_') and user.role != 'DRIVER': raise HTTPException(403, 'Driver access required.')
     if user.organization_id:
         org = db.get(Organization, user.organization_id)
         if not org or not org.active: raise HTTPException(401, 'Please sign in.')
@@ -94,15 +106,16 @@ def customer(user: User = Depends(company_user)):
     if user.role != 'SHIPPER': raise HTTPException(403, 'Shipper access required.')
     return user
 
-def change_password(db, user, data, response):
+def change_password(db, user, data, response, mobile=False):
     # Serialize password/reset changes, including existing concurrent sessions.
     db.refresh(user, with_for_update=True)
     rate_limit('password:' + str(user.id), 10)
     if not verify(data.current_password, user.password_hash): raise HTTPException(400, 'Current password is incorrect.')
     user.password_hash = hash_password(data.new_password)
     db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
-    start_session(db, user, response)
+    issued = start_session(db, user, response, mobile)
     audit(db, user, 'password.changed', user.id, user.organization_id)
+    return issued
 
 
 def driver(user: User = Depends(company_user)):

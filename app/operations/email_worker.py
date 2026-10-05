@@ -14,7 +14,7 @@ from app.database import context, engine
 from app.models import OutboxEvent, User, now
 from app.services import audit
 from . import outbox, smtp_transport
-from .models import EmailDelivery
+from .models import EmailDelivery, Invoice
 
 EVENT_TYPE = 'email.requested'
 
@@ -44,7 +44,7 @@ def _transition(db, event, status, error_code=None):
     if status == 'SENT': row.sent_at = now()
     if status in {'SENT', 'FAILED', 'UNKNOWN'}:
         actor = db.get(User, row.requested_by)
-        audit(db, actor, 'email.' + status.lower(), row.id, row.organization_id)
+        audit(db, actor, 'email.' + status.lower(), row.id, row.organization_id, 'SYSTEM')
     return row
 
 
@@ -62,13 +62,22 @@ def process_event(organization_id: UUID, event_id: UUID, worker_id: str):
             _transition(db, event, 'UNKNOWN', 'WORKER_INTERRUPTED')
             outbox.acknowledge(db, organization_id, event_id, worker_id)
             return
+        attachment = None
+        if row.invoice_id:
+            from .billing import invoice_document
+            invoice = db.scalar(select(Invoice).where(Invoice.organization_id == organization_id, Invoice.id == row.invoice_id))
+            if invoice is None:
+                _transition(db, event, 'FAILED', 'INVOICE_MISSING')
+                outbox.acknowledge(db, organization_id, event_id, worker_id)
+                return
+            attachment = (f'{invoice.number}.pdf', invoice_document(invoice))
         _transition(db, event, 'SENDING')
         # Snapshot the exact message before releasing the transaction.
         message = row
         db.expunge(message)
 
     try:
-        smtp_transport.send(message)
+        smtp_transport.send(message, attachment)
     except smtp_transport.TemporaryFailure as failure:
         with Session(engine) as db, db.begin():
             context(db, organization_id)

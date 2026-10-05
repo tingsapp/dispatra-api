@@ -2,7 +2,7 @@ from uuid import UUID
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from app import auth
 from app.models import User
@@ -11,7 +11,7 @@ from . import orders, dispatch, billing, issues, queries, mail
 from .common import record, settings
 from .models import Order, Route, Invoice, Quote, Issue, Shipper, Catalog, EmailDelivery
 from .schemas import (Booking, OrderUpdate, OrderView, PriceView, QuoteView, Assignment,
-    AssignmentView, RouteView, RouteCommand, Finalize, InvoiceView, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView)
+    AssignmentView, RouteView, RouteCommand, Finalize, InvoiceView, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView, TrackingView)
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Manual orders and billing'])
 
@@ -79,11 +79,17 @@ def get_order(slug: str, identity: UUID, db: DB, user: User = Depends(booking_ac
     return orders.order_view(orders.visible_order(db,user,identity),user)
 
 
+@router.get('/orders/{identity}/tracking', response_model=TrackingView)
+def order_tracking(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
+    from .tracking import order_tracking as tracking
+    return tracking(db, user, identity)
+
+
 @router.get('/orders/{identity}/road-path', response_model=RoadPathView)
-def order_road_path(slug: str, identity: UUID, db: DB, user: User = Depends(auth.dispatcher)):
-    """Dispatcher map geometry from one Google Routes request per call; clients cache it per Order version."""
+def order_road_path(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
+    """Map geometry through the Order's own stops from one Google Routes request per call; clients cache it per Order version."""
     from .travel import order_road_path as road_path
-    row = record(db, Order, user, identity)
+    row = orders.visible_order(db, user, identity)
     return {'points': road_path(db, user, Booking.model_validate(row.facts))}
 
 
@@ -154,10 +160,10 @@ def get_invoice(slug: str, identity: UUID, db: DB, user: User = Depends(booking_
     return billing.invoice_view(visible_invoice(db,user,identity),user)
 
 
-@router.get('/invoices/{identity}/document', response_class=HTMLResponse)
+@router.get('/invoices/{identity}/document', response_class=Response, responses={200: {'content': {'application/pdf': {}}}})
 def document(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
     row = visible_invoice(db,user,identity)
-    return HTMLResponse(billing.invoice_document(row),headers={'Content-Disposition': f'attachment; filename="{row.number}.html"', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'"})
+    return Response(billing.invoice_document(row),media_type='application/pdf',headers={'Content-Disposition': f'inline; filename="{row.number}.pdf"'})
 
 
 @router.post('/orders/{identity}/issues', response_model=IssueView, status_code=201)
@@ -186,9 +192,12 @@ def delivery_proof(slug: str, identity: UUID, db: DB, user: User = Depends(booki
         OrderStop.kind == 'DROPOFF',RouteStop.status == 'COMPLETED')).all()
     result=[]
     for visit,stop in visits:
-        evidence=db.scalars(select(Evidence).where(Evidence.organization_id == user.organization_id,Evidence.stop_id == stop.id)).all()
+        evidence=db.scalars(select(Evidence).where(Evidence.organization_id == user.organization_id,Evidence.stop_id == stop.id).order_by(Evidence.captured_at)).all()
+        accepted=visit.movements.get('evidence_ids')
+        if accepted is not None: evidence=[e for e in evidence if str(e.id) in accepted]
         result.append({'stop_id':str(stop.id),'address':stop.data['address'],'completed_at':visit.completed_at,
             'recipient_name':visit.movements.get('recipient_name',''),'unattended':visit.movements.get('unattended',False),
+            'completed_by_dispatcher':visit.movements.get('completed_by') == 'DISPATCHER',
             'evidence':[{'id':str(e.id),'kind':e.kind,'captured_at':e.captured_at} for e in evidence]})
     return result
 
