@@ -82,13 +82,9 @@ def default_rate(db, actor):
 
 def shipper_view(db, actor, row):
     """`rate_card_name` is the card that prices this shipper's orders: its own, else the company Default."""
-    from app.payments.models import StripeConnection
-    from app.payments import provider
-    card_setup = provider.configured() and db.scalar(select(StripeConnection.id).where(StripeConnection.organization_id == actor.organization_id, StripeConnection.livemode == provider.livemode())) is not None
     card = record(db, RateCard, actor, row.rate_card_id) if row.rate_card_id else default_rate(db, actor)
     return jsonable_encoder({**{k: v for k, v in dump(row).items() if k not in {'contact_name', 'address'}},
-        'rate_card_name': card.data['name'] if card else None,
-        'credit_card': {'status': 'SETUP_AVAILABLE' if card_setup else 'NOT_CONFIGURED', 'provider': 'STRIPE'}})
+        'rate_card_name': card.data['name'] if card else None})
 
 
 def save_shipper(db, actor, data, key, identity=None):

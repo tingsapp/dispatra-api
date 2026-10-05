@@ -543,7 +543,6 @@ class ShipperView(RecordView):
     terms: str
     discount: Discount
     instructions: str
-    credit_card: dict
     archived_at: datetime | None = None
     initial_password: str | None = None
 

@@ -18,7 +18,6 @@ from .database import context
 from .models import User, LoginSession, LoginBucket, now
 # Register every mapped table so users' composite driver/customer foreign keys resolve in a standalone run.
 from .operations import models as _operational_models  # noqa: F401
-from .payments import models as _payment_models  # noqa: F401
 from .schemas import LoginID, Password
 from .security import hash_password, digest
 from .services import audit

@@ -6,6 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
 Name = Annotated[str, Field(min_length=1, max_length=160)]
 LoginID = Annotated[str, Field(min_length=3, max_length=254, pattern=r'^[a-z0-9][a-z0-9@._+-]*$')]
 Password = Annotated[str, Field(min_length=12, max_length=128)]
+# First URL segments that can never be a company slug; mirrors RESERVED_SLUGS in the web client's pageRoutes.ts.
+RESERVED_SLUGS = frozenset({'admin', 'platform', 'prototype', 'api', 'assets', 'static', 'app', 'health', 'ready', 'login', 'signup', 'customer', 'dispatch',
+    'shipper', 'driver', 'www', 'pricing', 'about', 'contact', 'blog', 'help', 'docs', 'terms', 'privacy', 'support'})
 Slug = Annotated[str, Field(min_length=2, max_length=63, pattern=r'^[a-z0-9]+(?:-[a-z0-9]+)*$')]
 
 class Input(BaseModel):
@@ -33,7 +36,7 @@ class OrganizationCreate(Input):
     @field_validator('slug')
     @classmethod
     def reserved(cls, v):
-        if v in {'admin','api','platform','prototype','assets','health','ready','login','customer','dispatch','www'}:
+        if v in RESERVED_SLUGS:
             raise ValueError('Choose another company identifier')
         return v
 

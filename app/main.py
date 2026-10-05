@@ -82,9 +82,9 @@ from .operations.reporting import router as reporting_router
 for operational_router in [directory_router, orders_router, driver_router, reporting_router]:
     app.include_router(operational_router)
 
-from .payments.routes import router as payments_router
-app.include_router(payments_router)
 from .platform.routes import router as platform_router
 app.include_router(platform_router)
 from .events.routes import router as events_router
 app.include_router(events_router)
+from .intake.routes import router as intake_router
+app.include_router(intake_router)

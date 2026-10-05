@@ -90,7 +90,7 @@ def save_children(db, actor, row, booking):
     db.flush()
 
 
-def create_order(db, actor, data, key):
+def create_order(db, actor, data, key, source=None):
     booking = authorized_booking(actor, data)
     def run():
         company_lock(db, actor)
@@ -98,7 +98,7 @@ def create_order(db, actor, data, key):
         identity = uuid4()
         row = Order(id=identity, organization_id=actor.organization_id, number=issue_number(db, actor, Order, 'O'),
             shipper_id=booking.shipper_id, billing_shipper_id=booking.billing_shipper_id or booking.shipper_id,
-            service_id=booking.service_id, source='SHIPPER_PORTAL' if actor.role == 'SHIPPER' else 'DISPATCHER', status='NEW',
+            service_id=booking.service_id, source=source or ('SHIPPER_PORTAL' if actor.role == 'SHIPPER' else 'DISPATCHER'), status='NEW',
             scheduled_at=booking.scheduled_at, facts=booking.model_dump(mode='json'),
             booking=booking_snapshot(db, actor, booking), pricing=price_or_review(db, actor, booking))
         db.add(row); db.flush()

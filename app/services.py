@@ -10,6 +10,8 @@ from .security import hash_password, verify
 from .schemas import CustomerAccessView, CustomerView
 
 def audit(db, actor, action, entity_id, organization_id, actor_type='USER'):
+    # The Order agent acts through a Shipper's own account but is recorded as `AGENT`.
+    actor_type = getattr(actor, 'actor_type', None) or actor_type
     db.add(AuditEvent(actor_id=actor.id, action=action, entity_id=entity_id, organization_id=organization_id))
     db.add(OutboxEvent(organization_id=organization_id, event_type=action, entity_id=entity_id))
     publish.record(db, actor, action, entity_id, organization_id, actor_type)

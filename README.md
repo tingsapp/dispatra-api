@@ -1,6 +1,6 @@
 # Dispatra API
 
-FastAPI/PostgreSQL backend for company accounts and the manual delivery workflow. Dispatchers and Shippers create Orders through shared validation and pricing services. Dispatchers assign drivers and vehicles; drivers execute ordered visits and submit evidence. Verified completion issues one Invoice and queues its email in the same transaction. A separate worker delivers queued email; inbound email, AI agents and automatic dispatch are later phases.
+FastAPI/PostgreSQL backend for company accounts and the manual delivery workflow. Dispatchers and Shippers create Orders through shared validation and pricing services. Dispatchers assign drivers and vehicles; drivers execute ordered visits and submit evidence. Verified completion issues one Invoice and queues its email in the same transaction. A separate worker delivers queued email. The Order agent worker reads company order mailboxes and books complete emails; automatic dispatch is a later phase.
 
 ## Local setup
 
@@ -88,7 +88,7 @@ This ensures the installation's admin and creates the dedicated `demo` company (
 | --- | --- | --- |
 | Admin (platform) | `admin@example.com` | `/admin` |
 | Dispatcher | `dispatcher@example.com` | `/demo/` |
-| Shipper | `shipper@example.com` | `/demo/shipper-portal` |
+| Shipper | `shipper@example.com` | `/demo/shipper` |
 | Driver | `driver@example.com` | `/demo/driver` |
 
 All four seeded demo accounts start with password `123456`, stored as separate Argon2 hashes in PostgreSQL. The first run writes a private, Git-ignored `.local/demo-accounts.json` file (mode 0600) containing initial login details. Reruns preserve passwords, profile edits, disabled accounts, and pricing edits. The admin is created only when the installation has none; an admin created earlier with `app.bootstrap` is kept unchanged and reported with no password. Change the demo admin password at `/admin/profile`, and never run `app.demo` on a production database. The command refuses an unrelated company already using `demo`; it is never run automatically on application startup. For a new database, use `--credentials-file` with a new path if an older credentials file already exists. The file contains initial credentials only and is not updated by later password changes.
@@ -169,6 +169,16 @@ Configure the server-only `SMTP_*` values from `.env.example` in private `.env`.
 
 `--once` processes currently eligible requests and exits. Invoice email includes the frozen PDF as an attachment. The worker claims only email events and commits before SMTP I/O. A temporary failure retries up to five times. A rejected message becomes `FAILED`; an uncertain acceptance or interrupted send becomes `UNKNOWN` and is never auto-resubmitted. Inspect that status before explicitly sending again. SMTP does not provide provider-side idempotency, so this conservative boundary avoids automatic duplicate invoices but cannot prove delivery to a recipient's inbox. The API never returns the app password or email body in the delivery-status projection.
 
+## Order agent (email intake)
+
+A dispatcher connects one company IMAP mailbox under Profile → Mailbox (host, port 993, username, app password, folder, optional default service). The password is checked by signing in, then stored encrypted with the server-only `MAILBOX_ENCRYPTION_KEY` (a Fernet key; see `.env.example`) and never returned. Mailbox hosts that resolve to private, loopback or other non-public addresses are refused. Run the agent worker alongside the API:
+
+```sh
+.venv/bin/python -m app.intake.worker
+```
+
+Every minute (`--interval`, minimum 15 s; `--once` runs one cycle) it reads new mail read-only (messages stay unread; the first connection starts at the mailbox's current end, so earlier mail is never imported) and stores each Message-ID once. OpenAI (`OPENAI_API_KEY`, model `ORDER_AGENT_MODEL`, default `gpt-5.5`, `store=false`) extracts structured booking facts only; deterministic code then maps units to kg/cm, verifies addresses through Google Geocoding (`GOOGLE_GEOCODING_API_KEY`, falling back to `GOOGLE_ROUTES_API_KEY`; requires `ROUTING_PROVIDER=google` and the Geocoding API enabled) and validates the shared `Booking` schema. An Order is created automatically only when every required fact is present, the sender is an active Shipper's email and the receiving provider's topmost `Authentication-Results` shows DMARC or aligned DKIM pass; the agent then books through `orders.create_order` as that Shipper's own account, recorded as `AGENT`, with source `EMAIL`. Otherwise the email waits for a dispatcher as `NEEDS_REVIEW` (with the exact missing facts), `UNKNOWN_SENDER`, `NOT_AN_ORDER` or `FAILED` (AI errors retry up to three times). Emails that are not Orders yet appear as Draft rows in the dispatcher's Orders list, where they can complete a draft in the normal order form, link an unknown sender to a Shipper, ask the agent to read an email again, or discard it. Logs contain error class names only.
+
 ## Events, sync and notifications
 
 Audited company mutations append rows to `events` and create recipient `notifications` in the same transaction (`app/events`). Every web and native client polls `GET /api/v1/companies/{slug}/sync?cursor=` and waits the returned `next_poll_ms`; set `SYNC_POLL_MS` (default 15000, bounded 1000–300000) to tune it per deployment without client changes. A worker or later agent reads the log with `app.events.feed.consume`/`advance` under its own consumer name. Events are not yet pruned, and remote push and email for notifications are later slices.
@@ -189,25 +199,6 @@ The [operations module map](app/operations/README.md) describes command and quer
 ## Web API contract
 
 The original dispatcher UI and role portals now call these operational endpoints while retaining their established layouts. `/prototype` remains a separate local demonstration. Booking actors can read `/booking-preferences` (units/timezone/currency only); dispatcher quote history uses paginated `GET /quotes`; driver issue reports use `POST /driver/stops/{id}/issue`. Proof and reporting projections are typed in OpenAPI. See the [client state](../client/state.md).
-
-## Shipper payment methods (Stripe Connect)
-
-Shippers use `/{company}/shipper-portal/payment-methods` to view invoice terms and saved cards, then consent and choose **Add credit card**. Card details are collected on Stripe-hosted Checkout in setup mode; cards attach to a customer in that dispatch company's connected account. The API reads current masked card details from Stripe after return. No webhook or return-query flag is used as proof of card setup; this flow does not charge cards or settle invoices.
-
-1. Enable Stripe Connect on your platform and finish onboarding the company's connected account through Stripe. The account must belong to that platform and have charges enabled.
-2. Set server-only `STRIPE_SECRET_KEY` to the platform key in private `.env` (start with test mode). Set `PUBLIC_WEB_URL` to the exact client origin, such as `http://localhost:3000` locally or `https://dispatra.com` in production. No publishable key is needed for hosted Checkout.
-3. Load `.env`, migrate, then link the company using administrator database credentials:
-
-```sh
-.venv/bin/alembic upgrade head
-.venv/bin/python -m app.payments.configure --company demo --account acct_YOUR_CONNECTED_ACCOUNT
-```
-
-4. Restart the API after changing environment settings. Open Payment Methods as a Shipper. Test cards must only be used with Stripe test keys. Live/test customer references and account links are separate; an existing company link cannot be silently reassigned.
-
-API: `GET /api/v1/companies/{slug}/shipper/payment-methods`; `POST .../payment-methods/setup` with `{"consent":true}` and an Idempotency-Key. Both require a Shipper session, and setup requires the usual origin header. The browser sends no customer/account IDs or return URLs. Provider failure is explicit and must not create a local saved-card claim.
-
-Provisioning reserves a database reference before calling Stripe, reusing its ID as the provider idempotency key. If a customer ID was not persisted within 23 hours, creation is blocked: an administrator must reconcile the reservation against Stripe request logs/metadata and attach the verified customer ID before retrying. Do not delete the reservation and blindly create another customer. Card removal, Connect onboarding UI, automatic collection and Stripe invoice settlement are separate features.
 
 ## Native Android driver client
 

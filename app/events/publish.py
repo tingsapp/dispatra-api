@@ -62,11 +62,13 @@ def resolve(db, action, entity_id):
     """Audience and references from the entity's state at commit; missing rows fall back to dispatchers only."""
     from app.models import User
     from app.operations import models as m
+    from app.intake.models import EmailIntake, MailboxConnection
     kind = action.split('.', 1)[0]
     entity = {'customer': 'shipper', 'pricing': 'settings'}.get(kind, kind)
     model = {'order': m.Order, 'route': m.Route, 'stop': m.RouteStop, 'evidence': m.Evidence, 'issue': m.Issue,
         'invoice': m.Invoice, 'email': m.EmailDelivery, 'duty': m.DutySession, 'driver': m.Driver, 'shipper': m.Shipper,
-        'vehicle': m.Vehicle, 'quote': m.Quote, 'rate': m.RateCard, 'catalog': m.Catalog, 'notification': Notification}.get(entity)
+        'vehicle': m.Vehicle, 'quote': m.Quote, 'rate': m.RateCard, 'catalog': m.Catalog, 'notification': Notification,
+        'intake': EmailIntake, 'mailbox': MailboxConnection}.get(entity)
     row = db.get(model, entity_id) if model else None
     result = Audience(entity, getattr(row, 'version', None))
     if row is None:

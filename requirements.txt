@@ -5,3 +5,5 @@ alembic>=1.13,<2
 psycopg[binary]>=3.2,<4
 pwdlib[argon2]>=0.2,<1
 email-validator>=2,<3
+openai>=3.24,<4
+cryptography>=46,<47

@@ -53,7 +53,11 @@ def notes(db, action, entity_id, audience, actor, recipients):
 
     if action == 'order.created' and order:
         result = []
-        if by_shipper:
+        if actor.kind == 'AGENT':
+            owner = db.get(m.Shipper, order.shipper_id)
+            result += to(dispatch(), 'INFO', 'New order from email', f'{number} was created from an email by {owner.name if owner else "a Shipper"}.')
+            result += to(shipper(), 'INFO', 'Order received', f'{number} was created from your email.')
+        elif by_shipper:
             owner = db.get(m.Shipper, order.shipper_id)
             result += to(dispatch(), 'INFO', 'New order booked', f'{number} was booked by {owner.name if owner else "a Shipper"}.')
         if order.pricing.get('status') != 'PRICED':
@@ -92,6 +96,17 @@ def notes(db, action, entity_id, audience, actor, recipients):
         if action == 'email.failed':
             return to(dispatch(), 'WARNING', 'Email not sent', f'A {document} email could not be delivered. Review it and send again.')
         return to(dispatch(), 'CRITICAL', 'Email status unknown', f'A {document} email may have been delivered. Confirm with the recipient before sending again.')
+    if action == 'intake.needs_review':
+        from app.intake.models import EmailIntake
+        intake = db.get(EmailIntake, entity_id)
+        owner = db.get(m.Shipper, intake.shipper_id) if intake and intake.shipper_id else None
+        return to(dispatch(), 'WARNING', 'Email order needs review', f'An email from {owner.name if owner else "a Shipper"} needs details before it can become an Order.')
+    if action == 'intake.unknown_sender':
+        return to(dispatch(), 'WARNING', 'Email from unknown sender', 'An order email from an address that is not a Shipper is waiting for review.')
+    if action == 'intake.failed':
+        return to(dispatch(), 'WARNING', 'Order email not processed', 'An order email could not be read automatically. Review it in Email orders.')
+    if action == 'mailbox.failed':
+        return to(dispatch(), 'CRITICAL', 'Order mailbox disconnected', 'Dispatra cannot read the order mailbox. Check the mailbox settings.')
     if action in {'duty.started_by_dispatcher', 'duty.ended_by_dispatcher'}:
         on = action == 'duty.started_by_dispatcher'
         return to(driver(), 'INFO', 'On duty' if on else 'Off duty', f'Dispatch set you {"on" if on else "off"} duty.')

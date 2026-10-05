@@ -249,3 +249,14 @@ def test_bootstrap_command_in_a_fresh_interpreter():
     assert created.returncode == 0, created.stderr
     assert 'Fresh-Owner-Pass-3' not in created.stdout + created.stderr
     assert 'Platform owner exists: fresh-owner' in run_bootstrap('--status').stdout
+
+
+def test_reserved_route_words_cannot_be_company_slugs(client):
+    from conftest import login, post, PASSWORD
+    from app.schemas import RESERVED_SLUGS
+    login(client)
+    assert {'admin', 'shipper', 'driver', 'pricing', 'signup', 'help'} <= RESERVED_SLUGS
+    for slug in ['shipper', 'driver', 'pricing']:
+        response = post(client, '/api/v1/platform/organizations', dict(name='Taken', slug=slug, admin_login='dispatcher', password=PASSWORD))
+        assert response.status_code == 422, response.text
+    assert post(client, '/api/v1/platform/organizations', dict(name='Shipper Co', slug='shipper-co', admin_login='dispatcher', password=PASSWORD)).status_code == 201

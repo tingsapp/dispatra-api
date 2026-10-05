@@ -92,7 +92,7 @@ def seed_demo(db):
     return {'company': org.slug, 'pricing': pricing, 'accounts': [
         {'role': 'ADMIN', 'portal': 'platform', 'path': '/admin', 'login_id': admin.login_id, 'initial_password': admin_password},
         {'role': 'DISPATCHER', 'portal': 'dispatch', 'path': '/demo/', 'login_id': dispatcher.login_id, 'initial_password': password},
-        {'role': 'SHIPPER', 'portal': 'customer', 'path': '/demo/shipper-portal', 'login_id': shipper_user.login_id, 'initial_password': shipper['initial_password']},
+        {'role': 'SHIPPER', 'portal': 'customer', 'path': '/demo/shipper', 'login_id': shipper_user.login_id, 'initial_password': shipper['initial_password']},
         {'role': 'DRIVER', 'portal': 'driver', 'path': '/demo/driver', 'login_id': driver_user.login_id, 'initial_password': driver['initial_password']},
     ]}
 
