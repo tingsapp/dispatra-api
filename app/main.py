@@ -88,3 +88,5 @@ from .events.routes import router as events_router
 app.include_router(events_router)
 from .intake.routes import router as intake_router
 app.include_router(intake_router)
+from .dispatch.routes import router as dispatch_router
+app.include_router(dispatch_router)

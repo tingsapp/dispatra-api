@@ -69,6 +69,7 @@ class Inbox:
 def agent(client, monkeypatch):
     inbox, extracted = Inbox(), {'value': facts()}
     monkeypatch.setattr(mailbox, 'check', lambda *args: None)
+    monkeypatch.setattr(mailbox, 'check_smtp', lambda *args: None)
     monkeypatch.setattr(mailbox, 'fetch_new', inbox.fetch)
     def fake_extract(email, context):
         value = extracted['value']
@@ -84,8 +85,10 @@ def agent(client, monkeypatch):
     fixed = next(c['id'] for c in rates if c['data']['method'] == 'FIXED')
     shipper = check(post(client, BASE + '/shippers', dict(name='Alice Shipper', kind='BUSINESS', company_name='Fresh Test', email='alice@example.com',
         phone='6045550101', warehouse=address(), rate_card_id=fixed)), 201)
-    mailbox_view = check(client.put(INTAKE + '/mailbox', json=dict(host='imap.example.com', username='orders@acme.test', password=PASSWORD,
-        default_service_id=service_id), headers={'Idempotency-Key': str(uuid4())}))
+    settings = check(client.get(BASE + '/settings'))
+    check(client.put(BASE + '/settings', json={'version': settings['version'], 'data': settings['data'] | {'default_service_id': service_id}}, headers={'Idempotency-Key': str(uuid4())}))
+    mailbox_view = check(client.put(INTAKE + '/mailbox', json=dict(host='imap.example.com', username='orders@acme.test', password=PASSWORD),
+        headers={'Idempotency-Key': str(uuid4())}))
     worker.cycle()
     return dict(client=client, inbox=inbox, extracted=extracted, shipper=shipper, service=service_id, mailbox=mailbox_view)
 
@@ -158,6 +161,22 @@ def test_mailbox_settings_are_dispatcher_only_and_password_is_encrypted(agent):
     assert client.get(INTAKE + '/messages').status_code == 403
 
 
+def test_default_service_is_a_validated_company_setting(agent):
+    client, service = agent['client'], agent['service']
+    assert 'default_service_id' not in agent['mailbox']
+    settings = check(client.get(BASE + '/settings'))
+    assert settings['data']['default_service_id'] == service
+    catalog = check(client.get(BASE + '/catalog'))
+    accessorial = next(c for c in catalog if c['kind'] == 'ACCESSORIAL')
+    refused = client.put(BASE + '/settings', json={'version': settings['version'], 'data': settings['data'] | {'default_service_id': accessorial['id']}}, headers={'Idempotency-Key': str(uuid4())})
+    assert refused.status_code == 422
+    entry = next(c for c in catalog if c['id'] == service)
+    deleting = client.request('DELETE', BASE + f'/catalog/{service}', json={'version': entry['version']}, headers={'Idempotency-Key': str(uuid4())})
+    assert deleting.status_code == 409
+    login(client, 'customer', 'acme', 'alice@example.com', agent['shipper']['initial_password'])
+    assert check(client.get(BASE + '/booking-preferences'))['default_service_id'] == service
+
+
 def test_complete_verified_email_becomes_an_order_once(agent):
     client, inbox = agent['client'], agent['inbox']
     raw = raw_email(message_id='<order-1@example.com>')
@@ -212,6 +231,8 @@ def test_unknown_sender_waits_until_dispatcher_links_a_shipper(agent):
     worker.cycle()
     [item] = queue(client)
     assert item['status'] == 'UNKNOWN_SENDER' and item['shipper_id'] is None and item['summary']
+    assert item['draft']['shipper_id'] is None and item['draft']['stops'][0]['address'] is None and item['draft']['stops'][1]['address']['city'] == 'Vancouver'
+    assert item['missing'] == ['Shipper', "Stop 1: the Shipper's warehouse address"]
     assert 'Email from unknown sender' in {n['title'] for n in notifications(client)}
     linked = check(post(client, INTAKE + f'/messages/{item["id"]}/shipper', dict(version=item['version'], shipper_id=agent['shipper']['id'])), 202)
     assert linked['status'] == 'RECEIVED' and linked['sender_verified']
@@ -226,7 +247,8 @@ def test_not_an_order_and_discard(agent):
     agent['inbox'].add(raw_email(subject='Thanks!'))
     worker.cycle()
     [item] = queue(client)
-    assert item['status'] == 'NOT_AN_ORDER'
+    assert item['status'] == 'NOT_AN_ORDER' and item['draft'] is None and item['missing'] == []
+    assert not any('Email' in n['title'] for n in notifications(client))
     discarded = check(post(client, INTAKE + f'/messages/{item["id"]}/discard', dict(version=item['version'])))
     assert discarded['status'] == 'DISCARDED'
     assert post(client, INTAKE + f'/messages/{item["id"]}/discard', dict(version=discarded['version'])).status_code == 409

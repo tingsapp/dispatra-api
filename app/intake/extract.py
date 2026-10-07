@@ -17,7 +17,9 @@ Resolve relative dates such as "tomorrow at 9" against the received time, in the
 A pickup "from our warehouse", "from us" or with no pickup address uses the Shipper's warehouse: set use_shipper_warehouse true and address null.
 Choose service and vehicle_type only from the listed codes, and only when the email asks for one; otherwise null.
 Link each item to the index of its pickup stop and its delivery stop in your stops list.
-Set is_order_request false for replies, questions, newsletters, invoices or anything that does not ask for a delivery."""
+Set is_order_request true only when the email asks this company to carry out a new pickup or delivery, even if details are missing.
+Set it false for anything else: stories, newsletters, marketing, notifications, receipts, invoices, replies, questions or status enquiries.
+When it is false, return empty stops and items."""
 
 
 class ExtractedAddress(BaseModel):

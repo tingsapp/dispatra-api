@@ -112,11 +112,10 @@ def _claim(organization_id, intake_id):
         intake.attempts += 1
         shipper = _match(db, intake)
         if shipper and not intake.shipper_id: intake.shipper_id = shipper.id
-        connection = db.scalar(select(MailboxConnection).where(MailboxConnection.organization_id == organization_id))
         actor = SimpleNamespace(organization_id=organization_id)
         _, config = settings(db, actor)
         services = _choices(db, organization_id, 'SERVICE')
-        default = str(connection.default_service_id) if connection and connection.default_service_id else None
+        default = str(config.default_service_id) if config.default_service_id else None
         return {'email': {'subject': intake.subject, 'body': intake.body, 'received_at': intake.received_at.isoformat()},
             'verified': intake.sender_verified,
             'context': {'time_zone': config.time_zone, 'services': services, 'vehicle_types': _choices(db, organization_id, 'VEHICLE_TYPE'),
@@ -171,13 +170,13 @@ def process(organization_id: UUID, intake_id: UUID):
     def described(db, intake): intake.extraction, intake.summary, intake.error_code = facts, result.summary[:500], None
     if not result.is_order_request:
         return _finish(organization_id, intake_id, lambda db, intake: (described(db, intake), setattr(intake, 'status', 'NOT_AN_ORDER')))
+    draft, missing = booking.build(result, ctx, geocode.verify)
     if ctx['shipper'] is None:
         def unknown(db, intake):
             described(db, intake)
-            intake.status = 'UNKNOWN_SENDER'
+            intake.status, intake.draft, intake.missing = 'UNKNOWN_SENDER', draft, ['Shipper', *missing]
             signal(db, 'intake.unknown_sender', intake)
         return _finish(organization_id, intake_id, unknown)
-    draft, missing = booking.build(result, ctx, geocode.verify)
     if not claimed['verified']: missing = [UNVERIFIED, *missing]
     def settle(db, intake):
         described(db, intake)

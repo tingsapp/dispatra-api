@@ -63,12 +63,13 @@ def resolve(db, action, entity_id):
     from app.models import User
     from app.operations import models as m
     from app.intake.models import EmailIntake, MailboxConnection
+    from app.dispatch.models import DispatchDecision
     kind = action.split('.', 1)[0]
     entity = {'customer': 'shipper', 'pricing': 'settings'}.get(kind, kind)
     model = {'order': m.Order, 'route': m.Route, 'stop': m.RouteStop, 'evidence': m.Evidence, 'issue': m.Issue,
         'invoice': m.Invoice, 'email': m.EmailDelivery, 'duty': m.DutySession, 'driver': m.Driver, 'shipper': m.Shipper,
         'vehicle': m.Vehicle, 'quote': m.Quote, 'rate': m.RateCard, 'catalog': m.Catalog, 'notification': Notification,
-        'intake': EmailIntake, 'mailbox': MailboxConnection}.get(entity)
+        'intake': EmailIntake, 'mailbox': MailboxConnection, 'dispatch': DispatchDecision}.get(entity)
     row = db.get(model, entity_id) if model else None
     result = Audience(entity, getattr(row, 'version', None))
     if row is None:
@@ -89,6 +90,8 @@ def resolve(db, action, entity_id):
         if order: _order_scope(db, order, result)
         if entity == 'invoice': result.driver_id = None
     elif entity == 'duty': result.driver_id = row.driver_id
+    # Dispatch decisions name the Order for dispatchers only; the Shipper and driver hear about the assignment itself.
+    elif entity == 'dispatch': result.order_id = row.order_id
     elif entity == 'driver': result.driver_id = row.id
     elif entity == 'shipper': result.shipper_id = row.id
     elif entity == 'notification':
@@ -98,9 +101,9 @@ def resolve(db, action, entity_id):
 
 
 def _write(db, organization_id, items):
-    from . import rules
+    from . import email, rules
     correlation = uuid4()
-    recipients = rules.Recipients(db, organization_id)
+    recipients, mail = rules.Recipients(db, organization_id), email.Sender(db, organization_id)
     for (action, entity_id), actor in items:
         audience = resolve(db, action, entity_id)
         event = Event(id=uuid4(), organization_id=organization_id, type=action, actor_type=actor.kind, actor_id=actor.id,
@@ -119,6 +122,7 @@ def _write(db, organization_id, items):
                 actor_id=actor.id, entity='notification', entity_id=row.id, entity_version=1, order_id=row.order_id,
                 route_id=row.route_id, dispatchers=False, shipper_id=row.shipper_id, driver_id=row.driver_id,
                 user_id=row.recipient_user_id, correlation_id=correlation, causation_id=event.id))
+            mail.queue(row, note.user)
         db.flush()
 
 

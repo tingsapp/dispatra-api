@@ -32,7 +32,8 @@ def seed_pricing(db, actor, organization=None):
             gst_enabled=billing['companyTax']['enabled'], gst_percent=billing['companyTax']['ratePercent'],
             provincial_enabled=billing['companyTax']['provincialEnabled'], provincial_percent=billing['companyTax']['provincialRatePercent'],
             fuel_enabled=billing['fuelSurcharge']['enabled'], fuel_percent=billing['fuelSurcharge']['percent'],
-            maximum_active_orders=billing['dispatch']['maxActiveOrdersPerDriver'])
+            maximum_active_orders=billing['dispatch']['maxActiveOrdersPerDriver'],
+            default_service_id=stable_id(org_id, next(s['id'] for s in SEED['catalogue']['services'] if s.get('code') == 'SAME_DAY')))
         db.add(Settings(id=stable_id(org_id, 'settings'), organization_id=org_id, data=data.model_dump(mode='json')))
     created = 0
     groups = [('SERVICE', 'services'), ('VEHICLE_TYPE', 'vehicles'), ('ACCESSORIAL', 'accessorials')]
@@ -47,8 +48,10 @@ def seed_pricing(db, actor, organization=None):
                 taxable=source.get('taxable', True), fuel_eligible=kind == 'SERVICE' or source.get('fuelEligible', False),
                 exclusive_vehicle=source.get('exclusiveVehicle', False))
             if kind == 'VEHICLE_TYPE':
+                equipment = [item.upper().replace(' ', '_') for item in source.get('equipment', [])] or (['LIFTGATE'] if source.get('hasLiftgate') else [])
                 payload.update(payload_kg=source['payloadCapacityKg'], volume_m3=source.get('cargoVolumeCbm'),
-                    pallet_capacity=source['palletCapacity'], equipment=['LIFTGATE'] if source.get('hasLiftgate') else [])
+                    length_cm=source.get('cargoLengthCm'), width_cm=source.get('cargoWidthCm'), height_cm=source.get('cargoHeightCm'),
+                    pallet_capacity=source['palletCapacity'], equipment=equipment)
             if code == 'LIFTGATE': payload['required_equipment'] = ['LIFTGATE']
             if code == 'HELPER': payload['required_crew'] = 2
             db.add(Catalog(id=identity, organization_id=org_id, kind=kind, code=code,

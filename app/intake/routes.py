@@ -9,7 +9,7 @@ from app.security import rate_limit
 from app.services import audit
 from app.operations import orders
 from app.operations.common import command, operational_shipper, record
-from app.operations.models import Catalog, Order, Shipper
+from app.operations.models import Order, Shipper
 from app.operations.schemas import OrderView
 from . import mailbox, vault
 from .models import EmailIntake, MailboxConnection
@@ -20,7 +20,9 @@ router = APIRouter(prefix='/api/v1/companies/{slug}/email-intake', tags=['Order 
 Dispatcher = Annotated[User, Depends(auth.dispatcher)]
 MESSAGES = {'HOST_NOT_FOUND': 'Mailbox server was not found.', 'HOST_NOT_ALLOWED': 'Mailbox server address is not allowed.',
     'CONNECTION_FAILED': 'Could not connect to the mailbox server.', 'AUTHENTICATION_FAILED': 'Mailbox sign-in failed. Check the username and app password.',
-    'FOLDER_NOT_FOUND': 'Mailbox folder was not found.', 'FOLDER_STATUS_UNAVAILABLE': 'Mailbox folder could not be read.'}
+    'FOLDER_NOT_FOUND': 'Mailbox folder was not found.', 'FOLDER_STATUS_UNAVAILABLE': 'Mailbox folder could not be read.',
+    'SMTP_HOST_NOT_FOUND': 'Outgoing (SMTP) server was not found.', 'SMTP_HOST_NOT_ALLOWED': 'Outgoing (SMTP) server address is not allowed.',
+    'SMTP_CONNECTION_FAILED': 'Could not connect to the outgoing (SMTP) server.', 'SMTP_AUTHENTICATION_FAILED': 'Outgoing (SMTP) sign-in failed. Check the server and app password.'}
 OPEN = {'NEEDS_REVIEW', 'UNKNOWN_SENDER', 'FAILED', 'NOT_AN_ORDER'}
 
 
@@ -57,19 +59,21 @@ def save_mailbox(slug: str, data: MailboxInput, db: DB, key: OperationKey, user:
         row = connection(db, user, lock=True)
         if row and data.version != row.version: raise HTTPException(409, 'Mailbox settings changed. Reload before saving.')
         if row is None and data.password is None: raise HTTPException(422, 'Enter the mailbox app password.')
-        if data.default_service_id:
-            service = record(db, Catalog, user, data.default_service_id)
-            if service.kind != 'SERVICE' or not service.active: raise HTTPException(422, 'Choose an active service level.')
         password = data.password if data.password is not None else vault.unseal(row.secret)
         moved = row is None or (row.host, row.port, row.username, row.folder) != (data.host, data.port, data.username, data.folder)
-        if data.enabled and (moved or data.password is not None):
-            try: mailbox.check(data.host, data.port, data.username, password, data.folder)
-            except mailbox.MailboxError as error: raise HTTPException(422, MESSAGES.get(error.code, 'Mailbox could not be reached.')) from None
+        smtp_host = data.outgoing()
+        sending = row is None or (row.smtp_host, row.smtp_port, row.username) != (smtp_host, data.smtp_port, data.username)
+        try:
+            if data.enabled and (moved or data.password is not None): mailbox.check(data.host, data.port, data.username, password, data.folder)
+            # Sending does not depend on the reading switch: invoices, quotes and order updates always go out from here.
+            if sending or data.password is not None: mailbox.check_smtp(smtp_host, data.smtp_port, data.username, password)
+        except mailbox.MailboxError as error: raise HTTPException(422, MESSAGES.get(error.code, 'Mailbox could not be reached.')) from None
         if row is None:
             row = MailboxConnection(organization_id=user.organization_id, secret='', version=0)
             db.add(row)
         row.host, row.port, row.username, row.folder = data.host, data.port, data.username, data.folder
-        row.enabled, row.default_service_id, row.secret = data.enabled, data.default_service_id, vault.seal(password)
+        row.smtp_host, row.smtp_port = smtp_host, data.smtp_port
+        row.enabled, row.secret = data.enabled, vault.seal(password)
         # A different mailbox starts at its current end; earlier mail is never imported.
         if moved: row.uid_validity, row.last_uid = None, 0
         row.last_error, row.version = None, row.version + 1
@@ -85,7 +89,9 @@ def test_mailbox(slug: str, data: MailboxCheck, db: DB, user: Dispatcher):
     row = connection(db, user)
     if data.password is None and row is None: raise HTTPException(422, 'Enter the mailbox app password.')
     password = data.password if data.password is not None else vault.unseal(row.secret)
-    try: mailbox.check(data.host, data.port, data.username, password, data.folder)
+    try:
+        mailbox.check(data.host, data.port, data.username, password, data.folder)
+        mailbox.check_smtp(data.outgoing(), data.smtp_port, data.username, password)
     except mailbox.MailboxError as error: return {'ok': False, 'error': MESSAGES.get(error.code, 'Mailbox could not be reached.')}
     return {'ok': True}
 

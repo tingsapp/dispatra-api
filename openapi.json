@@ -7240,6 +7240,125 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/orders/{identity}/tracking/map": {
+      "get": {
+        "tags": [
+          "Manual orders and billing"
+        ],
+        "summary": "Order Tracking Map",
+        "description": "Static map image of the tracking view (same stops and driver visibility); query parameters only bust the browser cache.",
+        "operationId": "order_tracking_map_api_v1_companies__slug__orders__identity__tracking_map_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/orders/{identity}/road-path": {
       "get": {
         "tags": [
@@ -16195,6 +16314,409 @@
           }
         }
       }
+    },
+    "/api/v1/companies/{slug}/orders/{identity}/dispatch-suggestions": {
+      "post": {
+        "tags": [
+          "Dispatch agent"
+        ],
+        "summary": "Suggest",
+        "description": "Rank the drivers who can take this unassigned Order. A recent suggestion for the same Order version is reused unless `refresh`.",
+        "operationId": "suggest_api_v1_companies__slug__orders__identity__dispatch_suggestions_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/orders/{identity}/dispatch-decisions": {
+      "get": {
+        "tags": [
+          "Dispatch agent"
+        ],
+        "summary": "Decisions",
+        "operationId": "decisions_api_v1_companies__slug__orders__identity__dispatch_decisions_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DecisionView"
+                  },
+                  "title": "Response Decisions Api V1 Companies  Slug  Orders  Identity  Dispatch Decisions Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/dispatch-decisions/{identity}/approve": {
+      "post": {
+        "tags": [
+          "Dispatch agent"
+        ],
+        "summary": "Approve",
+        "operationId": "approve_api_v1_companies__slug__dispatch_decisions__identity__approve_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionApproval"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -17301,6 +17823,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Fuel Percent"
+          },
+          "default_service_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Service Id"
           }
         },
         "type": "object",
@@ -17318,6 +17852,160 @@
           "fuel_percent"
         ],
         "title": "BookingPreferences"
+      },
+      "Candidate": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Driver Id"
+          },
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "driver_number": {
+            "type": "string",
+            "title": "Driver Number"
+          },
+          "vehicle_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Vehicle Id"
+          },
+          "vehicle_name": {
+            "type": "string",
+            "title": "Vehicle Name"
+          },
+          "route_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Id"
+          },
+          "planned_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Planned At"
+          },
+          "first_arrival": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Arrival"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/CandidateMetrics"
+          },
+          "facts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Facts"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "driver_name",
+          "driver_number",
+          "vehicle_id",
+          "vehicle_name",
+          "route_id",
+          "planned_at",
+          "first_arrival",
+          "metrics",
+          "facts",
+          "score",
+          "reason"
+        ],
+        "title": "Candidate"
+      },
+      "CandidateMetrics": {
+        "properties": {
+          "extra_minutes": {
+            "type": "number",
+            "title": "Extra Minutes",
+            "description": "Estimated extra fleet driving: trip to pickup plus the Order, or the increase of a planned Route"
+          },
+          "deadhead_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadhead Km",
+            "description": "Straight-line distance from the driver to the first pickup"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "GPS",
+                  "HOME"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "route_orders": {
+            "type": "integer",
+            "title": "Route Orders",
+            "description": "Orders already on the planned Route this Order would join"
+          },
+          "slack_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Minutes",
+            "description": "Minutes between planned delivery and the earliest delivery deadline"
+          },
+          "preferred": {
+            "type": "boolean",
+            "title": "Preferred"
+          },
+          "exact_vehicle_type": {
+            "type": "boolean",
+            "title": "Exact Vehicle Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "extra_minutes",
+          "deadhead_km",
+          "position",
+          "route_orders",
+          "slack_minutes",
+          "preferred",
+          "exact_vehicle_type"
+        ],
+        "title": "CandidateMetrics"
       },
       "CatalogCreate": {
         "properties": {
@@ -18173,6 +18861,155 @@
           "revenue"
         ],
         "title": "DailyMetric"
+      },
+      "DecisionApproval": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "driver_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Driver Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "driver_id"
+        ],
+        "title": "DecisionApproval"
+      },
+      "DecisionView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "order_version": {
+            "type": "integer",
+            "title": "Order Version"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ],
+            "title": "Mode"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUGGESTED",
+              "ASSIGNED",
+              "NO_CANDIDATE"
+            ],
+            "title": "Status"
+          },
+          "ranked_by": {
+            "type": "string",
+            "enum": [
+              "AI",
+              "RULES"
+            ],
+            "title": "Ranked By"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "description": "Feasible drivers, best first"
+          },
+          "excluded": {
+            "items": {
+              "$ref": "#/components/schemas/Exclusion"
+            },
+            "type": "array",
+            "title": "Excluded",
+            "description": "Drivers that failed a hard check, with the reason"
+          },
+          "driver_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Id"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By",
+            "description": "Dispatcher who asked or approved; null when the agent assigned in AUTO mode"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code",
+            "description": "Why AI ranking was unavailable and rules were used"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "order_id",
+          "order_version",
+          "mode",
+          "status",
+          "ranked_by",
+          "summary",
+          "candidates",
+          "excluded",
+          "driver_id",
+          "decided_by",
+          "error_code",
+          "created_at"
+        ],
+        "title": "DecisionView",
+        "description": "One Dispatch agent evaluation. Travel is the built-in estimate; assignment re-checks with road travel."
       },
       "DeliveryProofView": {
         "properties": {
@@ -19372,6 +20209,18 @@
             ],
             "title": "Invoice Id"
           },
+          "notification_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Id"
+          },
           "recipient": {
             "type": "string",
             "format": "email",
@@ -19515,6 +20364,35 @@
           "content_base64"
         ],
         "title": "EvidenceInput"
+      },
+      "Exclusion": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Driver Id"
+          },
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "driver_number": {
+            "type": "string",
+            "title": "Driver Number"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "driver_name",
+          "driver_number",
+          "reason"
+        ],
+        "title": "Exclusion"
       },
       "Finalize": {
         "properties": {
@@ -19675,10 +20553,6 @@
             ],
             "title": "Error Code"
           },
-          "body": {
-            "type": "string",
-            "title": "Body"
-          },
           "draft": {
             "anyOf": [
               {
@@ -19689,7 +20563,12 @@
                 "type": "null"
               }
             ],
-            "title": "Draft"
+            "title": "Draft",
+            "description": "Booking body the Order agent built; incomplete values are null"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
           },
           "extraction": {
             "anyOf": [
@@ -19719,8 +20598,8 @@
           "missing",
           "order_id",
           "error_code",
-          "body",
           "draft",
+          "body",
           "extraction"
         ],
         "title": "IntakeDetail"
@@ -19892,6 +20771,19 @@
               }
             ],
             "title": "Error Code"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft",
+            "description": "Booking body the Order agent built; incomplete values are null"
           }
         },
         "type": "object",
@@ -19908,7 +20800,8 @@
           "summary",
           "missing",
           "order_id",
-          "error_code"
+          "error_code",
+          "draft"
         ],
         "title": "IntakeView"
       },
@@ -20388,6 +21281,27 @@
             "minLength": 1,
             "title": "Folder",
             "default": "INBOX"
+          },
+          "smtp_host": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 253,
+                "minLength": 3,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Host"
+          },
+          "smtp_port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Smtp Port",
+            "default": 465
           }
         },
         "additionalProperties": false,
@@ -20464,22 +21378,31 @@
             "title": "Folder",
             "default": "INBOX"
           },
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled",
-            "default": true
-          },
-          "default_service_id": {
+          "smtp_host": {
             "anyOf": [
               {
                 "type": "string",
-                "format": "uuid"
+                "maxLength": 253,
+                "minLength": 3,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Default Service Id"
+            "title": "Smtp Host"
+          },
+          "smtp_port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Smtp Port",
+            "default": 465
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
           },
           "version": {
             "anyOf": [
@@ -20521,21 +21444,17 @@
             "type": "string",
             "title": "Folder"
           },
+          "smtp_host": {
+            "type": "string",
+            "title": "Smtp Host"
+          },
+          "smtp_port": {
+            "type": "integer",
+            "title": "Smtp Port"
+          },
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
-          },
-          "default_service_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Service Id"
           },
           "last_polled_at": {
             "anyOf": [
@@ -20571,8 +21490,9 @@
           "port",
           "username",
           "folder",
+          "smtp_host",
+          "smtp_port",
           "enabled",
-          "default_service_id",
           "last_polled_at",
           "last_error",
           "version"
@@ -22288,9 +23208,24 @@
           },
           "dispatch_mode": {
             "type": "string",
-            "const": "MANUAL",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ],
             "title": "Dispatch Mode",
             "default": "MANUAL"
+          },
+          "default_service_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Service Id"
           }
         },
         "additionalProperties": false,
@@ -22449,9 +23384,24 @@
           },
           "dispatch_mode": {
             "type": "string",
-            "const": "MANUAL",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ],
             "title": "Dispatch Mode",
             "default": "MANUAL"
+          },
+          "default_service_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Service Id"
           }
         },
         "additionalProperties": false,
@@ -22575,6 +23525,11 @@
             "maxLength": 2000,
             "title": "Instructions",
             "default": ""
+          },
+          "email_updates": {
+            "type": "boolean",
+            "title": "Email Updates",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -22740,6 +23695,11 @@
           "instructions": {
             "type": "string",
             "title": "Instructions"
+          },
+          "email_updates": {
+            "type": "boolean",
+            "title": "Email Updates",
+            "default": true
           },
           "archived_at": {
             "anyOf": [

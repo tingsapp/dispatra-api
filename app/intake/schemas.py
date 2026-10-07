@@ -16,12 +16,17 @@ class MailboxCheck(Input):
     username: Annotated[str, Field(min_length=3, max_length=254)]
     password: Password | None = None
     folder: Annotated[str, Field(min_length=1, max_length=120)] = 'INBOX'
+    smtp_host: Host | None = None
+    smtp_port: int = Field(default=465, ge=1, le=65535)
+
+    def outgoing(self):
+        """The SMTP server; without one, the IMAP host with `imap.` swapped for `smtp.` (Gmail, Outlook, most hosts)."""
+        return self.smtp_host or (('smtp.' + self.host[5:]) if self.host.lower().startswith('imap.') else self.host)
 
 
 class MailboxInput(MailboxCheck):
     """`password` is required the first time; omit it later to keep the saved one."""
     enabled: bool = True
-    default_service_id: UUID | None = None
     version: int | None = Field(default=None, ge=1)
 
 
@@ -31,8 +36,9 @@ class MailboxView(BaseModel):
     port: int
     username: str
     folder: str
+    smtp_host: str
+    smtp_port: int
     enabled: bool
-    default_service_id: UUID | None
     last_polled_at: datetime | None
     last_error: str | None
     version: int
@@ -60,11 +66,11 @@ class IntakeView(BaseModel):
     order_id: UUID | None
     order_number: str | None = None
     error_code: str | None
+    draft: dict | None = Field(description='Booking body the Order agent built; incomplete values are null')
 
 
 class IntakeDetail(IntakeView):
     body: str
-    draft: dict | None
     extraction: dict | None
 
 

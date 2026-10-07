@@ -18,6 +18,10 @@ def save_settings(db, actor, data, key):
         company_lock(db, actor)
         row, _ = settings(db, actor)
         version(row, data.version)
+        if data.data.default_service_id:
+            service = db.get(Catalog, data.data.default_service_id)
+            if service is None or service.organization_id != actor.organization_id or service.kind != 'SERVICE' or not service.active:
+                raise HTTPException(422, 'Choose an active service level as the default.')
         row.data = data.data.model_dump(mode='json')
         db.get(Organization, actor.organization_id).name = data.data.company_name
         changed(db, actor, row, 'settings.updated')
@@ -70,6 +74,8 @@ def remove_catalog(db, actor, identity, data, key):
     def run():
         row = record(db, Catalog, actor, identity, True)
         version(row, data.version)
+        if str(row.id) == str(settings(db, actor)[1].default_service_id):
+            raise HTTPException(409, 'Set another service level as Default before deleting this one.')
         row.active = False
         changed(db, actor, row, 'catalog.deleted')
         return {'id': str(row.id), 'version': row.version}
@@ -120,7 +126,7 @@ def save_shipper(db, actor, data, key, identity=None):
         # Every shipper carries a Rate Card; without a choice it is the company Default at save time.
         default = None if payload.rate_card_id else default_rate(db, actor)
         row.rate_card_id = payload.rate_card_id or (default.id if default else None)
-        row.terms, row.instructions = payload.terms, payload.instructions
+        row.terms, row.instructions, row.email_updates = payload.terms, payload.instructions, payload.email_updates
         if user.login_id != payload.email:
             user.login_id = payload.email
             db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))

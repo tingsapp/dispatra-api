@@ -52,7 +52,10 @@ class SettingsData(Input):
     fuel_percent: Percent = Decimal('28.5')
     maximum_active_orders: int = Field(default=3, ge=1, le=100)
     quote_validity_days: int = Field(default=14, ge=1, le=365)
-    dispatch_mode: Literal['MANUAL'] = 'MANUAL'
+    # AUTO: the Dispatch agent assigns priced, unassigned Orders inside its horizon; MANUAL: dispatchers assign, the agent only recommends.
+    dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
+    # New Orders (and Order agent emails that name no service) start on this active SERVICE; a Shipper's own default wins.
+    default_service_id: UUID | None = None
 
     @field_validator('logo_url')
     @classmethod
@@ -196,6 +199,7 @@ class ShipperData(Input):
     terms: Literal['COD', 'NET7', 'NET15', 'NET30', 'NET45', 'NET60'] = 'NET30'
     discount: Discount = Field(default_factory=Discount)
     instructions: Text = ''
+    email_updates: bool = True
     @model_validator(mode='after')
     def business(self):
         if self.kind == 'BUSINESS' and not self.company_name: raise ValueError('Company name is required for Business')
@@ -519,6 +523,7 @@ class QuoteSend(Version):
 class EmailDeliveryView(RecordView):
     quote_id: UUID | None
     invoice_id: UUID | None
+    notification_id: UUID | None = None
     recipient: EmailStr
     status: Literal['PENDING', 'SENDING', 'SENT', 'FAILED', 'UNKNOWN']
     sent_at: datetime | None
@@ -543,6 +548,7 @@ class ShipperView(RecordView):
     terms: str
     discount: Discount
     instructions: str
+    email_updates: bool = True
     archived_at: datetime | None = None
     initial_password: str | None = None
 
@@ -881,3 +887,4 @@ class BookingPreferences(BaseModel):
     provincial_percent: Percent
     fuel_enabled: bool
     fuel_percent: Percent
+    default_service_id: UUID | None = None

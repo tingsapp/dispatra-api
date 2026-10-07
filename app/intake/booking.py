@@ -51,7 +51,9 @@ def pick(value, options):
 def address(stop, number, context, verify, missing):
     label = f'Stop {number}'
     if stop.use_shipper_warehouse and stop.kind == 'PICKUP':
-        return dict(context['shipper']['warehouse'])
+        if context['shipper']: return dict(context['shipper']['warehouse'])
+        missing.append(f"{label}: the Shipper's warehouse address")
+        return None
     found = stop.address
     street, city = (found.street or '').strip() if found else '', (found.city or '').strip() if found else ''
     code, zip_code = province(found.province if found else None), postal(found.postal_code if found else None)
@@ -68,7 +70,8 @@ def address(stop, number, context, verify, missing):
 
 
 def build(extraction, context, verify):
-    """Return (draft, missing). `draft` is a JSON Booking body; it is complete only when `missing` is empty."""
+    """Return (draft, missing). `draft` is a JSON Booking body; it is complete only when `missing` is empty.
+    Without a matched Shipper (`context['shipper']` is None) the draft has no Shipper and no warehouse pickup address."""
     zone, missing = ZoneInfo(context['time_zone']), []
     service = pick(extraction.service, context['services']) or context.get('default_service_id')
     if service is None and len(context['services']) == 1: service = context['services'][0]['id']
@@ -107,7 +110,7 @@ def build(extraction, context, verify):
     linked = {i['pickup_id'] for i in items} | {i['delivery_id'] for i in items}
     for number, stop in enumerate(stops, 1):
         if stop['id'] not in linked and items: missing.append(f'Stop {number}: no item is picked up or delivered there')
-    draft = {'shipper_id': context['shipper']['id'], 'service_id': service,
+    draft = {'shipper_id': context['shipper']['id'] if context['shipper'] else None, 'service_id': service,
         'vehicle_type_id': pick(extraction.vehicle_type, context['vehicle_types']), 'scheduled_at': scheduled,
         'stops': stops, 'items': items, 'external_reference': (extraction.reference or '')[:160]}
     if not missing:

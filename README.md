@@ -1,6 +1,6 @@
 # Dispatra API
 
-FastAPI/PostgreSQL backend for company accounts and the manual delivery workflow. Dispatchers and Shippers create Orders through shared validation and pricing services. Dispatchers assign drivers and vehicles; drivers execute ordered visits and submit evidence. Verified completion issues one Invoice and queues its email in the same transaction. A separate worker delivers queued email. The Order agent worker reads company order mailboxes and books complete emails; automatic dispatch is a later phase.
+FastAPI/PostgreSQL backend for company accounts and the manual delivery workflow. Dispatchers and Shippers create Orders through shared validation and pricing services. Dispatchers assign drivers and vehicles; drivers execute ordered visits and submit evidence. Verified completion issues one Invoice and queues its email in the same transaction. A separate worker delivers queued email. The Order agent worker reads company order mailboxes and books complete emails. The Dispatch agent recommends drivers for unassigned Orders and, in AUTO mode, assigns them.
 
 ## Local setup
 
@@ -64,7 +64,7 @@ Swagger is at `/docs`; the versioned API is `/api/v1`. Use the web public entry 
 
 ## Demo pricing in PostgreSQL
 
-New companies automatically receive the versioned [demo pricing seed](app/operations/seeds/demo_pricing_v1.json). It preserves the current client presets: six Rate Cards including archived history, four Service Levels, four Vehicle Types, twelve Accessorials, fuel surcharge, GST/HST settings, and the 0–99 lb / Zone 1 / $20 starter matrix. No real driver, Shipper, Order, or payment account is created by this pricing seed.
+New companies automatically receive the versioned [demo pricing seed](app/operations/seeds/demo_pricing_v1.json). It preserves the current client presets: six Rate Cards including archived history, four Service Levels, ten Vehicle Types (nine active with dimensions and equipment, plus the retired `veh_5_ton`), twelve Accessorials, fuel surcharge, GST/HST settings, and the 0–99 lb / Zone 1 / $20 starter matrix. No real driver, Shipper, Order, or payment account is created by this pricing seed.
 
 For an existing company:
 
@@ -143,6 +143,7 @@ A booking with missing rates/distance or a failed routing provider is retained a
 
 - `ROUTING_PROVIDER=demo`: local geodesic planning at 35 km/h, clearly labeled `DEMO_GEODESIC_35_KPH`. This makes no external requests and is not a road ETA. It never supplies authoritative distance-based prices.
 - `ROUTING_PROVIDER=google`: set a server-restricted `GOOGLE_ROUTES_API_KEY` with Routes API enabled. Assignment obtains a road-time matrix; standalone Order pricing obtains road distance. Only required fields are requested. Routing calls occur on explicit pricing/planning commands, not Monitor reads or map animation. Replayed successful mutation keys reuse committed results. Raw provider responses are not cached in PostgreSQL.
+- Tracking map: `GET /orders/{id}/tracking/map` returns a Google Static Maps PNG of the tracking view. Enable the Maps Static API on the Google Cloud project; the key is `GOOGLE_MAPS_STATIC_API_KEY` (falls back to `GOOGLE_ROUTES_API_KEY`). Set `GOOGLE_MAPS_URL_SIGNING_SECRET` (the project's URL signing secret) so every request is signed. Requires `ROUTING_PROVIDER=google`; otherwise the endpoint answers 409 and clients show no map. Road geometry is cached in memory per Order version and images for 60 seconds per exact map.
 - Unconfigured routing fails for assignment instead of silently inventing travel times. Google-backed planning is capped at 25 stops per Route; standalone pricing supports 27 stops. Road times exclude live traffic and do not certify commercial vehicle road restrictions.
 
 Reference: [Google route matrix](https://developers.google.com/maps/documentation/routes/compute_route_matrix), [route directions](https://developers.google.com/maps/documentation/routes/compute_route_directions), and [provider storage/display policies](https://developers.google.com/maps/documentation/routes/policies). Production UI must retain required attribution.
@@ -171,13 +172,27 @@ Configure the server-only `SMTP_*` values from `.env.example` in private `.env`.
 
 ## Order agent (email intake)
 
-A dispatcher connects one company IMAP mailbox under Profile → Mailbox (host, port 993, username, app password, folder, optional default service). The password is checked by signing in, then stored encrypted with the server-only `MAILBOX_ENCRYPTION_KEY` (a Fernet key; see `.env.example`) and never returned. Mailbox hosts that resolve to private, loopback or other non-public addresses are refused. Run the agent worker alongside the API:
+A dispatcher connects one company IMAP mailbox under Settings → Mailbox (host, port 993, username, app password, folder, optional default service). The password is checked by signing in, then stored encrypted with the server-only `MAILBOX_ENCRYPTION_KEY` (a Fernet key; see `.env.example`) and never returned. Mailbox hosts that resolve to private, loopback or other non-public addresses are refused. Run the agent worker alongside the API:
 
 ```sh
 .venv/bin/python -m app.intake.worker
 ```
 
 Every minute (`--interval`, minimum 15 s; `--once` runs one cycle) it reads new mail read-only (messages stay unread; the first connection starts at the mailbox's current end, so earlier mail is never imported) and stores each Message-ID once. OpenAI (`OPENAI_API_KEY`, model `ORDER_AGENT_MODEL`, default `gpt-5.5`, `store=false`) extracts structured booking facts only; deterministic code then maps units to kg/cm, verifies addresses through Google Geocoding (`GOOGLE_GEOCODING_API_KEY`, falling back to `GOOGLE_ROUTES_API_KEY`; requires `ROUTING_PROVIDER=google` and the Geocoding API enabled) and validates the shared `Booking` schema. An Order is created automatically only when every required fact is present, the sender is an active Shipper's email and the receiving provider's topmost `Authentication-Results` shows DMARC or aligned DKIM pass; the agent then books through `orders.create_order` as that Shipper's own account, recorded as `AGENT`, with source `EMAIL`. Otherwise the email waits for a dispatcher as `NEEDS_REVIEW` (with the exact missing facts), `UNKNOWN_SENDER`, `NOT_AN_ORDER` or `FAILED` (AI errors retry up to three times). Emails that are not Orders yet appear as Draft rows in the dispatcher's Orders list, where they can complete a draft in the normal order form, link an unknown sender to a Shipper, ask the agent to read an email again, or discard it. Logs contain error class names only.
+
+## Dispatch agent
+
+For an unassigned, priced Order the agent lists every active driver: drivers that fail a hard check (no attached vehicle, off duty, another active or started Route, service area, qualifications, equipment, capacity, windows, shift, maximum work time) are excluded with the check's own message; the rest are feasible candidates with metrics (estimated extra fleet driving, distance to pickup from fresh GPS or the home address, Orders already on the planned Route it would join, slack before the earliest deadline, Shipper-requested driver, booked vehicle type). Screening uses the built-in travel estimator, so it never calls a paid routing provider; the assignment command re-checks everything with road travel before saving. OpenAI (`OPENAI_API_KEY`, model `DISPATCH_AGENT_MODEL`, default `ORDER_AGENT_MODEL`, reasoning `DISPATCH_AGENT_REASONING`, `store=false`) only orders those candidates and writes a one-line reason; it sees metrics and Order counts, never addresses, contacts, prices or notes. It cannot add or drop a candidate, and any AI failure falls back to the rule score (`ranked_by: RULES` with an `error_code`). Every evaluation is stored in `dispatch_decisions`.
+
+- `POST /companies/{slug}/orders/{id}/dispatch-suggestions` (dispatcher; `?refresh=true` re-evaluates, otherwise a suggestion under two minutes old is reused) and `GET .../dispatch-decisions` (history).
+- `POST /companies/{slug}/dispatch-decisions/{id}/approve` (`version`, `driver_id`, Idempotency-Key) assigns a recommended driver through the shared `assign` command, joining that driver's planned Route when there is one.
+- Company settings `dispatch_mode` is `MANUAL` (default) or `AUTO`. In AUTO the worker assigns priced `NEW` Orders scheduled within `DISPATCH_AGENT_HORIZON_HOURS` (default 12) to the best candidate as a system dispatcher; the audit row has no user and the event actor type is `AGENT`. When the command refuses a candidate, the next one is tried (up to three). With no driver the decision is `NO_CANDIDATE`, Monitor shows a `NO_DRIVER` Needs Attention item with the most common reason, dispatchers are notified once per Order version, and the Order is evaluated again every five minutes. Dispatchers are notified of each automatic assignment.
+
+```sh
+.venv/bin/python -m app.dispatch.worker
+```
+
+`--interval` defaults to 30 s (minimum 10 s); `--once` runs one cycle. Late-delivery re-planning and reassignment of already assigned Orders are not part of this agent yet.
 
 ## Events, sync and notifications
 

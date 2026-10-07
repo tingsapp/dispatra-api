@@ -25,7 +25,7 @@ def remove_fixture_admin():
 def test_demo_logins_pricing_and_repeat_preserve_edits():
     remove_fixture_admin()
     initial = seed()
-    assert initial['pricing']['created'] == 26
+    assert initial['pricing']['created'] == 32
     assert all(account['initial_password'] == '123456' for account in initial['accounts'])
     for account in initial['accounts']:
         with TestClient(app, headers=HEADERS) as client:
@@ -65,7 +65,7 @@ def test_demo_logins_pricing_and_repeat_preserve_edits():
     assert replay['pricing']['created'] == 0
     assert all(a['initial_password'] is None for a in replay['accounts'])
     with Session(owner_engine) as db:
-        for model, count in [(Driver,1),(Shipper,1),(Vehicle,1),(RateCard,6),(Catalog,20),(DutySession,0)]:
+        for model, count in [(Driver,1),(Shipper,1),(Vehicle,1),(RateCard,6),(Catalog,26),(DutySession,0)]:
             assert db.scalar(select(func.count()).select_from(model)) == count
         assert db.scalar(select(func.count()).select_from(User).where(User.organization_id == DEMO_ID)) == 3
         assert db.scalar(select(Driver)).name == 'Edited Demo Driver'

@@ -68,7 +68,8 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
     return datetime.fromisoformat(end) if end else None
 
 
-def rebuild(db, actor, route, orders, driver, vehicle, planned_at):
+def plan_route(db, actor, orders, driver, vehicle, planned_at, road=True):
+    """Validate and sequence a candidate Route without writing. `road=False` uses the built-in estimator (no provider call)."""
     end = validate_candidate(db, actor, orders, driver, vehicle, planned_at)
     stops = []
     for order in orders:
@@ -80,8 +81,12 @@ def rebuild(db, actor, route, orders, driver, vehicle, planned_at):
             stops.append(stop)
     items = [i for order in orders for i in order.facts['items']]
     from .travel import matrix
-    travel_table = matrix(db,actor,stops)
-    plan = optimize(stops, items, vehicle.data, planned_at, end, driver.data['maximum_work_minutes'], travel_table)
+    travel_table = matrix(db,actor,stops) if road else None
+    return optimize(stops, items, vehicle.data, planned_at, end, driver.data['maximum_work_minutes'], travel_table)
+
+
+def rebuild(db, actor, route, orders, driver, vehicle, planned_at):
+    plan = plan_route(db, actor, orders, driver, vehicle, planned_at)
     existing = {str(s.stop_id): s for s in db.scalars(select(RouteStop).where(RouteStop.route_id == route.id, RouteStop.organization_id == actor.organization_id))}
     # Move positions temporarily to avoid unique collisions while preserving stable visit IDs.
     for stop in existing.values(): stop.position += 10000
@@ -99,6 +104,18 @@ def rebuild(db, actor, route, orders, driver, vehicle, planned_at):
     db.flush()
 
 
+def mergeable_route(db, actor, driver, vehicle, lock=False):
+    """The driver's planned, unlocked Route that may take another Order, or None; any other active custody is a 409."""
+    query = select(Route).where(Route.organization_id == actor.organization_id, Route.status.in_(['PLANNED', 'IN_PROGRESS']),
+        or_(Route.driver_id == driver.id, Route.vehicle_id == vehicle.id))
+    active = db.scalar(query.with_for_update() if lock else query)
+    if active is None: return None
+    if active.driver_id != driver.id or active.vehicle_id != vehicle.id:
+        raise HTTPException(409, 'The driver or vehicle already belongs to another active Route.')
+    if active.status == 'PLANNED' and not active.locked: return active
+    raise HTTPException(409, 'Driver already has a locked or in-progress Route; finish it before assigning another Order.')
+
+
 def assign(db, actor, identity, data, key):
     def run():
         company_lock(db, actor)
@@ -113,15 +130,8 @@ def assign(db, actor, identity, data, key):
             if route.status != 'PLANNED' or route.locked: raise HTTPException(409, 'Executing or locked Routes cannot change.')
             if route.driver_id != driver.id or route.vehicle_id != vehicle.id: raise HTTPException(409, 'Route custody does not match the selection.')
         else:
-            active = db.scalar(select(Route).where(Route.organization_id == actor.organization_id,
-                Route.status.in_(['PLANNED', 'IN_PROGRESS']),
-                or_(Route.driver_id == driver.id, Route.vehicle_id == vehicle.id)).with_for_update())
-            if active:
-                if active.driver_id != driver.id or active.vehicle_id != vehicle.id:
-                    raise HTTPException(409, 'The driver or vehicle already belongs to another active Route.')
-                if active.status == 'PLANNED' and not active.locked:
-                    raise HTTPException(409, 'Driver already has a planned Route; include its Route ID and version to add this Order.')
-                raise HTTPException(409, 'Driver already has a locked or in-progress Route; finish it before assigning another Order.')
+            if mergeable_route(db, actor, driver, vehicle, True):
+                raise HTTPException(409, 'Driver already has a planned Route; include its Route ID and version to add this Order.')
             route = Route(organization_id=actor.organization_id, driver_id=driver.id, vehicle_id=vehicle.id,
                 status='PLANNED', planned_at=data.planned_at, plan={})
             db.add(route); db.flush()

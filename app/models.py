@@ -53,7 +53,8 @@ class AuditEvent(Base):
     __tablename__ = 'audit_events'
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     organization_id: Mapped[UUID | None] = mapped_column(ForeignKey('organizations.id'), index=True)
-    actor_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
+    # NULL when the Dispatch agent acts in AUTO mode; the matching event carries actor type `AGENT`.
+    actor_id: Mapped[UUID | None] = mapped_column(ForeignKey('users.id'))
     action: Mapped[str] = mapped_column(String(80))
     entity_id: Mapped[UUID]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

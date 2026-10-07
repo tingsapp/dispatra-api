@@ -1,6 +1,10 @@
-"""Gmail-compatible TLS SMTP transport with explicit acceptance boundaries."""
+"""Gmail-compatible TLS SMTP transport with explicit acceptance boundaries.
+
+Mail goes out through the company's own mailbox account when one is connected, else the platform `SMTP_*` account.
+"""
+from dataclasses import dataclass
 from email.message import EmailMessage
-from email.utils import format_datetime
+from email.utils import format_datetime, formataddr
 import os
 import smtplib
 import ssl
@@ -19,6 +23,16 @@ class UnknownAcceptance(Exception):
     def __init__(self, code: str): self.code = code
 
 
+@dataclass(frozen=True)
+class Account:
+    host: str
+    port: int
+    username: str
+    password: str
+    sender_name: str = ''
+    company: bool = False  # company-entered hosts get the public-host check
+
+
 def configuration():
     host = os.environ.get('SMTP_HOST', '').strip()
     username = os.environ.get('SMTP_USERNAME', '').strip()
@@ -28,13 +42,41 @@ def configuration():
     except ValueError: raise PermanentFailure('SMTP_CONFIGURATION') from None
     if not host or not username or not password or not sender or sender.lower() != username.lower() or not 1 <= port <= 65535:
         raise PermanentFailure('SMTP_CONFIGURATION')
-    return host, port, username, password, sender
+    return Account(host, port, username, password)
 
 
-def send(delivery, attachment=None):
-    host, port, username, password, sender = configuration()
+def _open(account, timeout=20):
+    """Implicit TLS on 465; STARTTLS (required) on any other port."""
+    if account.company:
+        from app.intake.mailbox import MailboxError, _public
+        try: _public(account.host, account.port)
+        except MailboxError as error: raise PermanentFailure('SMTP_' + error.code) from None
+    context = ssl.create_default_context()
+    try:
+        if account.port == 465: return smtplib.SMTP_SSL(account.host, account.port, timeout=timeout, context=context)
+        smtp = smtplib.SMTP(account.host, account.port, timeout=timeout)
+        smtp.starttls(context=context)
+        return smtp
+    except (smtplib.SMTPException, OSError):
+        raise TemporaryFailure('SMTP_CONNECTION') from None
+
+
+def check(account):
+    """Log in only; raises PermanentFailure('SMTP_AUTHENTICATION') or TemporaryFailure('SMTP_CONNECTION')."""
+    smtp = _open(account)
+    try: smtp.login(account.username, account.password)
+    except smtplib.SMTPAuthenticationError: raise PermanentFailure('SMTP_AUTHENTICATION') from None
+    except (smtplib.SMTPException, OSError): raise TemporaryFailure('SMTP_CONNECTION') from None
+    finally:
+        try: smtp.close()
+        except OSError: pass
+
+
+def send(delivery, attachment=None, account=None):
+    account = account or configuration()
+    username, password, sender = account.username, account.password, account.username
     message = EmailMessage()
-    message['From'] = sender
+    message['From'] = formataddr((account.sender_name, sender)) if account.sender_name else sender
     message['To'] = delivery.recipient
     message['Subject'] = delivery.subject
     message['Message-ID'] = delivery.message_id
@@ -44,10 +86,7 @@ def send(delivery, attachment=None):
     if attachment is not None:
         filename, content = attachment
         message.add_attachment(content, maintype='application', subtype='pdf', filename=filename)
-    try:
-        smtp = smtplib.SMTP_SSL(host, port, timeout=20, context=ssl.create_default_context())
-    except (smtplib.SMTPException, OSError):
-        raise TemporaryFailure('SMTP_CONNECTION') from None
+    smtp = _open(account)
     try:
         try:
             smtp.login(username, password)

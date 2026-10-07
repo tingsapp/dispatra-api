@@ -164,6 +164,11 @@ def test_seed_is_repeatable_and_preserves_changes(setup):
     zone=next(r for r in rates if r['data']['method']=='ZONE')
     assert zone['data']['weight_bands'][0]['prices']['zone_1']=='20'
     assert Decimal(zone['data']['weight_bands'][0]['to_kg'])==Decimal('44.90564463')
+    vehicles={c['code']:c for c in check(client.get(BASE+'/catalog')) if c['kind']=='VEHICLE_TYPE'}
+    assert set(vehicles)=={'veh_1_ton','veh_2_ton','veh_3_ton','veh_5_ton','REFRIGERATED_VAN','REFRIGERATED_TRUCK','FLATBED_TRUCK','DRY_VAN_53FT','REFRIGERATED_TRAILER','FLATBED_TRAILER'}
+    assert vehicles['REFRIGERATED_VAN']['data']['equipment']==['REFRIGERATION'] and vehicles['FLATBED_TRAILER']['data']['equipment']==['OPEN_DECK']
+    assert vehicles['veh_3_ton']['data']['equipment']==['LIFTGATE'] and not vehicles['veh_5_ton']['active']
+    assert Decimal(vehicles['DRY_VAN_53FT']['data']['length_cm'])==Decimal('1600.2') and vehicles['DRY_VAN_53FT']['data']['pallet_capacity']==26
 
 
 def test_atomic_accounts_and_idempotency_do_not_store_passwords(setup):
@@ -281,7 +286,7 @@ def test_web_projections_quotes_and_stop_issue_scope(setup):
     with TestClient(app,headers=HEADERS) as portal:
         login(portal,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
         preferences=check(portal.get(BASE+'/booking-preferences'))
-        assert set(preferences)=={'currency','time_zone','weight_unit','dimension_unit','distance_unit','gst_enabled','gst_percent','provincial_enabled','provincial_percent','fuel_enabled','fuel_percent'}
+        assert set(preferences)=={'currency','time_zone','weight_unit','dimension_unit','distance_unit','gst_enabled','gst_percent','provincial_enabled','provincial_percent','fuel_enabled','fuel_percent','default_service_id'}
         assert preferences['weight_unit']=='lb'
         assert portal.get(BASE+'/quotes').status_code==403
     first=check(post(client,BASE+'/quotes',booking(None,w['service'],w['type_id'],w['fixed'])),201)
@@ -464,3 +469,39 @@ def test_order_tracking_live_location_privacy(setup):
                 seen.add(view['live'])
             route=complete_next(route)
         assert track(alice,mine)['stage']=='DELIVERED' and seen=={True,False}
+
+
+def test_tracking_map_image_follows_tracking_visibility(setup, monkeypatch):
+    from app.operations import tracking_map
+    w=setup;client=w['client'];mobile=w['mobile']
+    fetched=[]
+    class Image:
+        headers={'Content-Type':'image/png'}
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def read(self,limit): return b'\x89PNG\r\n\x1a\nmap'
+    def fake_open(url,timeout): fetched.append(url); return Image()
+    monkeypatch.setattr(tracking_map.urllib.request,'urlopen',fake_open)
+    monkeypatch.setattr(tracking_map,'order_road_path',lambda db,actor,booking: [[49.26,-123.11],[49.265,-123.11],[49.27,-123.11]])
+    tracking_map.paths.rows.clear();tracking_map.images.rows.clear()
+    order=new_order(w);waiting=new_order(w)
+    image=lambda c,o: c.get(BASE+f'/orders/{o["id"]}/tracking/map')
+    assert image(client,order).status_code==409 and not fetched
+    route=assign(w,order)
+    route=check(post(mobile,BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'])))
+    check(post(mobile,BASE+'/driver/location',dict(duty_id=w['duty']['id'],captured_at=datetime.now(timezone.utc).isoformat(),latitude=49.2601,longitude=-123.1101,accuracy_m=8,location_permission='GRANTED')),201)
+    monkeypatch.setenv('ROUTING_PROVIDER','google');monkeypatch.setenv('GOOGLE_ROUTES_API_KEY','server-key')
+    monkeypatch.setenv('GOOGLE_MAPS_URL_SIGNING_SECRET',base64.urlsafe_b64encode(b'secret').decode())
+    response=image(client,order)
+    assert response.status_code==200 and response.headers['content-type']=='image/png' and response.content.startswith(b'\x89PNG')
+    url=fetched[-1]
+    assert url.startswith('https://maps.googleapis.com/maps/api/staticmap?') and 'key=server-key' in url and '&signature=' in url
+    assert 'label:P|49.260000,-123.110000' in url and 'label:D|49.270000,-123.110000' in url and 'label:T|49.260100,-123.110100' in url and 'enc:' in url
+    assert image(client,order).status_code==200 and len(fetched)==1
+    with TestClient(app,headers=HEADERS) as alice, TestClient(app,headers=HEADERS) as bob:
+        other=check(post(client,BASE+'/shippers',{**w['shipper_body'],'name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
+        login(alice,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
+        login(bob,'customer','acme',other['email'],other['initial_password'])
+        assert image(alice,order).status_code==200
+        assert image(alice,waiting).status_code==200 and 'label:T' not in fetched[-1]
+        assert image(bob,order).status_code==404

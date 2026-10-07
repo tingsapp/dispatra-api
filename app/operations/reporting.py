@@ -7,6 +7,7 @@ from sqlalchemy import select, or_, func
 from app import auth
 from app.models import User, now
 from app.routes import DB
+from app.dispatch.service import no_driver
 from .models import Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop
 from .schemas import AnalyticsView, DriverActivityView, MonitorView
 from .common import record
@@ -142,6 +143,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
         DutySession.ended_at.is_(None))))
     observed_at = now()
     attention = {order.id: attention_flags(order, visits_by_stop, observed_at) for order in orders}
+    for order_id, description in no_driver(db, user.organization_id, orders).items(): attention[order_id].append(('NO_DRIVER', description))
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,
         'location':points[d.id].data if d.id in points else None,

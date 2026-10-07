@@ -85,6 +85,13 @@ def order_tracking(slug: str, identity: UUID, db: DB, user: User = Depends(booki
     return tracking(db, user, identity)
 
 
+@router.get('/orders/{identity}/tracking/map', response_class=Response, responses={200: {'content': {'image/png': {}}}})
+def order_tracking_map(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
+    """Static map image of the tracking view (same stops and driver visibility); query parameters only bust the browser cache."""
+    from .tracking_map import tracking_map
+    return Response(tracking_map(db, user, identity), media_type='image/png')
+
+
 @router.get('/orders/{identity}/road-path', response_model=RoadPathView)
 def order_road_path(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
     """Map geometry through the Order's own stops from one Google Routes request per call; clients cache it per Order version."""

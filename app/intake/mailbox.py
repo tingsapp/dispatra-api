@@ -190,3 +190,12 @@ def parse(raw: bytes) -> Parsed:
     address = address.strip().lower()[:254]
     return Parsed(message_id, address, name.strip()[:160], header('Subject')[:500], received, body,
         authenticated(str(results[0]) if results else '', address))
+
+
+def check_smtp(host, port, username, password):
+    """Sign in to the outgoing server; failures raise MailboxError with an `SMTP_` code."""
+    from app.operations import smtp_transport
+    try: smtp_transport.check(smtp_transport.Account(host, port, username, password, company=True))
+    except smtp_transport.PermanentFailure as error:
+        raise MailboxError('SMTP_AUTHENTICATION_FAILED' if error.code == 'SMTP_AUTHENTICATION' else error.code) from None
+    except smtp_transport.TemporaryFailure: raise MailboxError('SMTP_CONNECTION_FAILED') from None

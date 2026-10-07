@@ -92,6 +92,10 @@ def notes(db, action, entity_id, audience, actor, recipients):
         if invoice and order: return to(shipper(), 'INFO', 'Invoice issued', f'Invoice {invoice.number} for {number} is ready.')
     if action in {'email.failed', 'email.unknown'}:
         delivery = db.get(m.EmailDelivery, entity_id)
+        if delivery and delivery.notification_id:
+            # A possibly-duplicated order update is harmless; only a definite failure needs attention.
+            if action == 'email.unknown': return []
+            return to(dispatch(), 'WARNING', 'Order update email not sent', 'An order update email to a Shipper could not be delivered. Check Settings → Mailbox.')
         document = 'invoice' if delivery and delivery.invoice_id else 'quote'
         if action == 'email.failed':
             return to(dispatch(), 'WARNING', 'Email not sent', f'A {document} email could not be delivered. Review it and send again.')
@@ -104,9 +108,16 @@ def notes(db, action, entity_id, audience, actor, recipients):
     if action == 'intake.unknown_sender':
         return to(dispatch(), 'WARNING', 'Email from unknown sender', 'An order email from an address that is not a Shipper is waiting for review.')
     if action == 'intake.failed':
-        return to(dispatch(), 'WARNING', 'Order email not processed', 'An order email could not be read automatically. Review it in Email orders.')
+        return to(dispatch(), 'WARNING', 'Order email not processed', 'An email could not be read automatically. Review it in Settings → Mailbox.')
     if action == 'mailbox.failed':
         return to(dispatch(), 'CRITICAL', 'Order mailbox disconnected', 'Dispatra cannot read the order mailbox. Check the mailbox settings.')
+    if action == 'dispatch.auto_assigned' and order:
+        from app.dispatch.models import DispatchDecision
+        decision = db.get(DispatchDecision, entity_id)
+        chosen = db.get(m.Driver, decision.driver_id) if decision and decision.driver_id else None
+        return to(dispatch(), 'INFO', 'Order auto-assigned', f'{number} was assigned to {chosen.name if chosen else "a driver"} by auto dispatch.')
+    if action == 'dispatch.no_candidate' and order:
+        return to(dispatch(), 'WARNING', 'No driver available', f'Auto dispatch could not find a driver for {number}. Open it to see why.')
     if action in {'duty.started_by_dispatcher', 'duty.ended_by_dispatcher'}:
         on = action == 'duty.started_by_dispatcher'
         return to(driver(), 'INFO', 'On duty' if on else 'Off duty', f'Dispatch set you {"on" if on else "off"} duty.')
