@@ -14,7 +14,7 @@ def report(db, actor, identity, data, key):
             route = record(db, Route, actor, order.route_id) if order.route_id else None
             if not route or route.driver_id != actor.driver_id: raise HTTPException(404, 'Order not found.')
         elif actor.role == 'SHIPPER' and order.shipper_id != actor.shipper_id: raise HTTPException(404, 'Order not found.')
-        if order.status in {'INVOICED','CANCELLED'}: raise HTTPException(409, 'Order is closed.')
+        if order.status in {'COMPLETED','CANCELLED'}: raise HTTPException(409, 'Order is closed.')
         if data.stop_id:
             stop = record(db, OrderStop, actor, data.stop_id)
             if stop.order_id != identity: raise HTTPException(404, 'Stop not found.')

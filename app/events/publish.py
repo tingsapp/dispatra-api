@@ -67,7 +67,7 @@ def resolve(db, action, entity_id):
     kind = action.split('.', 1)[0]
     entity = {'customer': 'shipper', 'pricing': 'settings'}.get(kind, kind)
     model = {'order': m.Order, 'route': m.Route, 'stop': m.RouteStop, 'evidence': m.Evidence, 'issue': m.Issue,
-        'invoice': m.Invoice, 'email': m.EmailDelivery, 'duty': m.DutySession, 'driver': m.Driver, 'shipper': m.Shipper,
+        'email': m.EmailDelivery, 'duty': m.DutySession, 'driver': m.Driver, 'shipper': m.Shipper,
         'vehicle': m.Vehicle, 'quote': m.Quote, 'rate': m.RateCard, 'catalog': m.Catalog, 'notification': Notification,
         'intake': EmailIntake, 'mailbox': MailboxConnection, 'dispatch': DispatchDecision}.get(entity)
     row = db.get(model, entity_id) if model else None
@@ -85,10 +85,9 @@ def resolve(db, action, entity_id):
         if order: _order_scope(db, order, result)
         if entity == 'evidence': result.driver_id = row.driver_id
         else: result.route_id = row.route_id
-    elif entity in {'issue', 'invoice'}:
+    elif entity == 'issue':
         order = db.get(m.Order, row.order_id)
         if order: _order_scope(db, order, result)
-        if entity == 'invoice': result.driver_id = None
     elif entity == 'duty': result.driver_id = row.driver_id
     # Dispatch decisions name the Order for dispatchers only; the Shipper and driver hear about the assignment itself.
     elif entity == 'dispatch': result.order_id = row.order_id

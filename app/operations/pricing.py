@@ -1,4 +1,4 @@
-"""Decimal pricing. Every result carries the exact settings used for settlement."""
+"""Decimal pricing. Every result carries the exact settings used for the quoted price."""
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP, ROUND_CEILING
 from uuid import UUID
@@ -36,10 +36,21 @@ def price_context(db, actor, booking):
     if not card or not card.active: raise HTTPException(409, 'An active Rate Card is required.')
     service = catalog(db, actor, booking.service_id, 'SERVICE')
     vehicle = catalog(db, actor, booking.vehicle_type_id, 'VEHICLE_TYPE') if booking.vehicle_type_id else None
+    package_counts = {
+        'FRAGILE': sum(item.quantity for item in booking.items if item.fragile),
+        'DG': sum(item.quantity for item in booking.items if item.dangerous_goods),
+    }
     accessorials = []
     for selection in booking.accessorials:
         accessory = catalog(db,actor,selection.id,'ACCESSORIAL')
+        if accessory.code in package_counts: continue
         accessorials.append({**accessory.data,'code':accessory.code,'quantity':str(selection.quantity),'id':str(selection.id)})
+    for code, quantity in package_counts.items():
+        if quantity == 0: continue
+        accessory = db.scalar(select(Catalog).where(Catalog.organization_id == actor.organization_id,
+            Catalog.kind == 'ACCESSORIAL', Catalog.code == code, Catalog.active.is_(True)))
+        if not accessory: raise HTTPException(409, f'{code} package handling Accessorial is unavailable.')
+        accessorials.append({**accessory.data, 'code': code, 'quantity': str(quantity), 'id': str(accessory.id)})
     distance, minutes = booking.distance_km, booking.estimated_minutes
     # Road travel only when the card needs it: distance cards need km, hourly cards need service minutes.
     if (card.data['method'] == 'BASE_PLUS_DISTANCE' and distance is None) or (card.data['method'] == 'HOURLY' and minutes is None):
@@ -48,19 +59,21 @@ def price_context(db, actor, booking):
         if distance is None: distance = road_km
         # Hourly estimate = driving time plus each stop's planned service time.
         if minutes is None: minutes = min(10080, driving + sum(stop.service_minutes for stop in booking.stops))
-    return {'distance_km': str(distance) if distance is not None else None, 'estimated_minutes': minutes, 'card_id': str(card.id), 'card_version': card.version, 'card': card.data,
+    return {'distance_km': str(distance) if distance is not None else None, 'estimated_minutes': minutes, 'card_id': str(card.id), 'card_version': card.version,
+        'card': {key:value for key,value in card.data.items() if key != 'settle_actual'},
+        'package_handling_unit_pricing': True,
         'settings': config.model_dump(mode='json'), 'service': service.data,
         'vehicle': vehicle.data if vehicle else None, 'accessorials': accessorials,
         'discount': shipper.discount if shipper else Discount().model_dump(mode='json')}
 
 
-def freight_amount(booking, card, actual_minutes=None):
+def freight_amount(booking, card):
     if card.method == 'FIXED': return money(card.fixed_amount)
     if card.method == 'BASE_PLUS_DISTANCE':
         if booking.distance_km is None: raise HTTPException(409, 'Verified standalone Order distance is required for pricing review.')
         return money(card.base_fee + max(ZERO, booking.distance_km - card.included_km) * card.per_km)
     if card.method == 'HOURLY':
-        minutes = actual_minutes if actual_minutes is not None and card.settle_actual else booking.estimated_minutes
+        minutes = booking.estimated_minutes
         if minutes is None: raise HTTPException(409, 'Billable service minutes are required for hourly pricing.')
         rounded = (Decimal(minutes) / card.increment_minutes).to_integral_value(rounding=ROUND_CEILING) * card.increment_minutes
         return money(max(rounded, Decimal(card.minimum_minutes)) * card.hourly_rate / 60)
@@ -89,7 +102,7 @@ def freight_amount(booking, card, actual_minutes=None):
     raise HTTPException(409, 'Imported pricing requires explicit agreed total and tax.')
 
 
-def calculate(booking: Booking, context, actual_minutes=None, final=False):
+def calculate(booking: Booking, context):
     if booking.distance_km is None and context.get('distance_km') is not None:
         booking = booking.model_copy(update={'distance_km':Decimal(context['distance_km'])})
     if booking.estimated_minutes is None and context.get('estimated_minutes') is not None:
@@ -105,7 +118,7 @@ def calculate(booking: Booking, context, actual_minutes=None, final=False):
         tax = money(booking.imported_tax)
         lines = [line('FREIGHT', 'Agreed imported subtotal', subtotal), line('TAX', 'Supplied tax', tax, False)]
     else:
-        freight = freight_amount(booking, card, actual_minutes)
+        freight = freight_amount(booking, card)
         lines.append(line('FREIGHT', card.name, freight, fuel=True))
         service = CatalogData.model_validate(context['service'])
         if card.apply_service and service.amount: lines.append(line('SERVICE', service.name, service.amount, service.taxable, True))
@@ -114,8 +127,11 @@ def calculate(booking: Booking, context, actual_minutes=None, final=False):
             if vehicle.amount: lines.append(line('VEHICLE', vehicle.name, vehicle.amount, vehicle.taxable, vehicle.fuel_eligible))
         if card.apply_accessorials:
             for item in context['accessorials']:
-                # Current simplified catalogue is one flat charge per selected Accessorial per Order.
-                lines.append(line('ACCESSORIAL', item['name'], item['amount'], item['taxable'], False))
+                # Fragile and DG follow package quantities; other current Accessorials remain flat per order.
+                package_handling = context.get('package_handling_unit_pricing', False) and item.get('code') in {'FRAGILE', 'DG'}
+                charge = Decimal(str(item['amount'])) * Decimal(str(item['quantity'])) if package_handling else item['amount']
+                label = f"{item['name']} ({item['quantity']} package{'s' if Decimal(str(item['quantity'])) != 1 else ''})" if package_handling else item['name']
+                lines.append(line('ACCESSORIAL', label, charge, item['taxable'], False))
         if card.apply_fuel and config.fuel_enabled:
             fuel_base = sum((Decimal(l['amount']) for l in lines if l['fuel_eligible']), ZERO)
             if fuel_base: lines.append(line('FUEL', 'Fuel Surcharge', fuel_base * config.fuel_percent / 100))
@@ -150,8 +166,15 @@ def calculate(booking: Booking, context, actual_minutes=None, final=False):
         'rate_card_id': context['card_id'], 'rate_card_version': context['card_version'],
         'lines': lines, 'subtotal': str(money(subtotal)), 'tax': str(money(tax)), 'total': str(money(subtotal + tax)),
         'expires_at': (now() + timedelta(days=config.quote_validity_days)).isoformat(),
-        'stage': 'FINAL' if final else 'ESTIMATE', 'context': context, 'review_reason': None}
+        'stage': 'ESTIMATE', 'context': context, 'review_reason': None}
 
 
 def quote(db, actor, booking):
     return calculate(booking, price_context(db, actor, booking))
+
+
+def retain_price(db, order):
+    """Preserve the previous price snapshot on an explicit Order revision."""
+    from .models import PricingRevision
+    db.add(PricingRevision(organization_id=order.organization_id, order_id=order.id,
+        order_version=order.version, snapshot=order.pricing))

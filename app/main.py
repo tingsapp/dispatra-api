@@ -69,7 +69,6 @@ def ready() -> dict[str,str]:
         connection.execute(text('SELECT id FROM organizations LIMIT 0'))
         connection.execute(text('SELECT id, pricing FROM orders LIMIT 0'))
         connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
-        connection.execute(text('SELECT id, snapshot FROM invoices LIMIT 0'))
         connection.execute(text('SELECT id, status FROM email_deliveries LIMIT 0'))
         connection.execute(text('SELECT seq, tx FROM events LIMIT 0'))
     return {'status':'ready'}

@@ -164,8 +164,6 @@ def complete_stop(db, actor, identity, visit_id, data, key):
             if not unresolved:
                 order.status, order.completed_at = 'COMPLETED', data.captured_at
                 changed(db, actor, order, 'order.completed')
-                from .billing import auto_invoice
-                auto_invoice(db, actor, order)
         changed(db, actor, route, 'route.progress')
         return route_view(db, actor, route)
     return command(db, actor, key, 'stop:' + str(visit_id), data.model_dump(mode='json'), run)
@@ -176,7 +174,7 @@ def finish_route(db, actor, identity, data, key):
         route = own_route(db, actor, identity, True); route_revision(route, data)
         if route.status != 'IN_PROGRESS': raise HTTPException(409, 'Route is not executing.')
         remaining = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id,
-            Order.route_id == route.id, Order.status.not_in(['COMPLETED','INVOICED'])))
+            Order.route_id == route.id, Order.status.not_in(['COMPLETED'])))
         if remaining: raise HTTPException(409, 'All Orders must have verified completion and resolved issues.')
         route.status, route.completed_at = 'COMPLETED', now()
         changed(db, actor, route, 'route.completed')

@@ -136,6 +136,12 @@ class WeightBand(Input):
 
 
 class RateData(Input):
+    @model_validator(mode='before')
+    @classmethod
+    def legacy_settlement_flag(cls, data):
+        # Retired invoice settlement metadata may still exist in saved Rate Cards.
+        return {key:value for key,value in data.items() if key != 'settle_actual'} if isinstance(data, dict) else data
+
     name: Name
     method: Literal['BASE_PLUS_DISTANCE', 'FIXED', 'ZONE', 'HOURLY', 'IMPORTED']
     base_fee: Money = Decimal('20')
@@ -145,7 +151,6 @@ class RateData(Input):
     hourly_rate: Money = Decimal('85')
     minimum_minutes: int = Field(default=120, ge=0, le=10080)
     increment_minutes: int = Field(default=30, ge=1, le=1440)
-    settle_actual: bool = True
     minimum_subtotal: Money = Decimal('0')
     dimensional_divisor: Positive = Decimal('5000')
     zones: list[Zone] = Field(default_factory=list, max_length=100)
@@ -196,7 +201,6 @@ class ShipperData(Input):
     phone: Annotated[str, Field(max_length=50)] = ''
     warehouse: Address
     rate_card_id: UUID | None = None
-    terms: Literal['COD', 'NET7', 'NET15', 'NET30', 'NET45', 'NET60'] = 'NET30'
     discount: Discount = Field(default_factory=Discount)
     instructions: Text = ''
     email_updates: bool = True
@@ -244,7 +248,9 @@ class VehicleData(Input):
         if self.unavailable_from and self.unavailable_until and self.unavailable_until <= self.unavailable_from: raise ValueError('Unavailable interval is invalid')
         physical_volume = self.length_cm * self.width_cm * self.height_cm / Decimal(1000000)
         self.volume_m3 = min(self.volume_m3,physical_volume) if self.volume_m3 is not None else physical_volume
-        self.unit_number = self.unit_number or self.name
+        self.unit_number = (self.unit_number.strip() or self.name.strip()).upper()
+        if not self.unit_number or len(self.unit_number) > 50:
+            raise ValueError('Unit number must contain 1–50 characters')
         return self
 
 
@@ -429,10 +435,6 @@ class IssueResolve(Version):
     resolution: Annotated[str, Field(min_length=3, max_length=2000)]
 
 
-class Finalize(Version):
-    actual_minutes: int | None = Field(default=None, ge=1, le=10080)
-
-
 class RecordView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -499,15 +501,6 @@ class OrderView(RecordView):
     pricing: PriceView
 
 
-class InvoiceView(RecordView):
-    number: str
-    order_id: UUID
-    snapshot: dict
-    subtotal: Decimal
-    tax: Decimal
-    total: Decimal
-
-
 class DriverNotificationView(RecordView):
     title: str
     body: str
@@ -522,7 +515,6 @@ class QuoteSend(Version):
 
 class EmailDeliveryView(RecordView):
     quote_id: UUID | None
-    invoice_id: UUID | None
     notification_id: UUID | None = None
     recipient: EmailStr
     status: Literal['PENDING', 'SENDING', 'SENT', 'FAILED', 'UNKNOWN']
@@ -545,7 +537,6 @@ class ShipperView(RecordView):
     warehouse: Address
     rate_card_id: UUID | None
     rate_card_name: str | None = None
-    terms: str
     discount: Discount
     instructions: str
     email_updates: bool = True
@@ -748,15 +739,9 @@ class DailyMetric(BaseModel):
     date: str
     orders: int
     completed: int
-    revenue: Decimal
     on_time: int = 0
     late: int = 0
-    sla_known: int = 0
-
-
-class HourlyMetric(BaseModel):
-    hour: int
-    orders: int
+    not_measured: int = 0
 
 
 class AnalyticsRow(BaseModel):
@@ -764,33 +749,30 @@ class AnalyticsRow(BaseModel):
     number: str
     scheduled_at: datetime
     status: str
-    total: Decimal | None
+    source: str
+    shipper_id: UUID
+    driver_id: UUID | None
     shipper_name: str = ''
     driver_name: str = ''
     driver_number: str = ''
     vehicle_unit: str = ''
     service_name: str = ''
-    window_start: datetime | None = None
-    window_end: datetime | None = None
-    actual_arrival: datetime | None = None
-    sla_status: Literal['ON_TIME', 'AHEAD', 'LATE', 'UNKNOWN'] = 'UNKNOWN'
-    variance_minutes: float | None = None
-    accessorials: list[str] = Field(default_factory=list)
+    delivered_at: datetime | None = None
+    delivery_outcome: Literal['ON_TIME', 'LATE', 'NOT_MEASURED'] = 'NOT_MEASURED'
     pod_verified: bool = False
+    open_issues: int = 0
 
 
 class AnalyticsView(BaseModel):
-    hourly_completed: list[HourlyMetric]
-    accessorial_counts: dict[str, int]
     pod_verified_orders: int
     on_time_orders: int
     sla_known_orders: int
     on_time_percent: float | None
-    average_arrival_variance_minutes: float | None
     orders: int
     statuses: dict[str, int]
     completed_orders: int
-    completed_revenue_before_tax: Decimal
+    open_issues: int
+    source_counts: dict[str, int]
     daily: list[DailyMetric]
     rows: list[AnalyticsRow]
 

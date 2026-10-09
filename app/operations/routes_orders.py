@@ -7,13 +7,13 @@ from sqlalchemy import select
 from app import auth
 from app.models import User
 from app.routes import DB, OperationKey
-from . import orders, dispatch, billing, issues, queries, mail
+from . import orders, dispatch, quotes, issues, queries, mail
 from .common import record, settings
-from .models import Order, Route, Invoice, Quote, Issue, Shipper, Catalog, EmailDelivery
+from .models import Order, Route, Quote, Issue, Shipper, Catalog, EmailDelivery
 from .schemas import (Booking, OrderUpdate, OrderView, PriceView, QuoteView, Assignment,
-    AssignmentView, RouteView, RouteCommand, Finalize, InvoiceView, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView, TrackingView)
+    AssignmentView, RouteView, RouteCommand, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView, TrackingView)
 
-router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Manual orders and billing'])
+router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Orders, quotes and delivery'])
 
 
 def booking_actor(user: User = Depends(auth.company_user)):
@@ -42,7 +42,7 @@ def preview(slug: str, data: Booking, db: DB, user: User = Depends(booking_actor
 
 @router.post('/quotes', response_model=QuoteView, status_code=201)
 def quote(slug: str, data: Booking, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
-    return billing.create_quote(db,user,data,idempotency_key)
+    return quotes.create_quote(db,user,data,idempotency_key)
 
 
 @router.get('/quotes/{identity}', response_model=QuoteView)
@@ -63,7 +63,7 @@ def create(slug: str, data: Booking, db: DB, idempotency_key: OperationKey, user
 @router.get('/orders', response_model=list[OrderView])
 def list_orders(slug: str, db: DB, after: UUID | None = None, limit: int = Query(50,ge=1,le=200),
     date_from: datetime | None = None, date_to: datetime | None = None,
-    status: Literal['NEW','ASSIGNED','IN_PROGRESS','COMPLETED','INVOICED','CANCELLED'] | None = None,
+    status: Literal['NEW','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED'] | None = None,
     service_id: UUID | None = None,
     pricing_status: Literal['PRICED','NEEDS_ATTENTION'] | None = None,
     search: str | None = Query(default=None, max_length=120),
@@ -132,45 +132,9 @@ def release(slug: str, identity: UUID, data: RouteCommand, db: DB, idempotency_k
     return dispatch.release(db,user,identity,data,idempotency_key)
 
 
-@router.post('/orders/{identity}/invoice', response_model=InvoiceView, status_code=201)
-def invoice(slug: str, identity: UUID, data: Finalize, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
-    return billing.create_invoice(db,user,identity,data,idempotency_key)
-
-
-@router.post('/invoices/{identity}/send', response_model=EmailDeliveryView, status_code=202)
-def send_invoice(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
-    return mail.send_invoice(db, user, identity, data, idempotency_key)
-
-
 @router.get('/email-deliveries/{identity}', response_model=EmailDeliveryView)
 def email_delivery(slug: str, identity: UUID, db: DB, user: User = Depends(auth.dispatcher)):
     return record(db, EmailDelivery, user, identity)
-
-
-@router.get('/invoices', response_model=list[InvoiceView])
-def invoices(slug: str, db: DB, after: UUID | None = None, limit: int = Query(50,ge=1,le=100), user: User = Depends(booking_actor)):
-    query = select(Invoice).join(Order,Order.id == Invoice.order_id).where(Invoice.organization_id == user.organization_id).order_by(Invoice.id).limit(limit)
-    if user.role == 'SHIPPER': query = query.where(Order.shipper_id == user.shipper_id, Order.billing_shipper_id == user.shipper_id)
-    if after: query = query.where(Invoice.id > after)
-    return [billing.invoice_view(row,user) for row in db.scalars(query)]
-
-
-def visible_invoice(db,user,identity):
-    row = record(db,Invoice,user,identity)
-    order = orders.visible_order(db,user,row.order_id)
-    if user.role == 'SHIPPER' and order.billing_shipper_id != user.shipper_id: raise HTTPException(404,'Invoice not found.')
-    return row
-
-
-@router.get('/invoices/{identity}', response_model=InvoiceView)
-def get_invoice(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
-    return billing.invoice_view(visible_invoice(db,user,identity),user)
-
-
-@router.get('/invoices/{identity}/document', response_class=Response, responses={200: {'content': {'application/pdf': {}}}})
-def document(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
-    row = visible_invoice(db,user,identity)
-    return Response(billing.invoice_document(row),media_type='application/pdf',headers={'Content-Disposition': f'inline; filename="{row.number}.pdf"'})
 
 
 @router.post('/orders/{identity}/issues', response_model=IssueView, status_code=201)

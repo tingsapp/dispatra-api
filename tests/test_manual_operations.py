@@ -78,7 +78,7 @@ def finish(w, route):
     return check(post(mobile,BASE+f'/driver/routes/{route["id"]}/finish',dict(version=route['version'],generation=route['generation'])))
 
 
-def test_manual_delivery_invoice_and_immutable_pricing(setup):
+def test_manual_delivery_completion_and_immutable_pricing(setup):
     w=setup;client=w['client']
     order=new_order(w)
     assert order['pricing']['total']=='128.18'
@@ -87,24 +87,20 @@ def test_manual_delivery_invoice_and_immutable_pricing(setup):
     check(client.put(BASE+'/settings',json={'version':settings['version'],'data':settings['data']},headers={'Idempotency-Key':str(uuid4())}))
     assert finish(w,route)['status']=='COMPLETED'
     done=check(client.get(BASE+f'/orders/{order["id"]}'))
-    assert done['status']=='INVOICED'
-    invoice=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}),201)
-    assert invoice['total']=='128.18' and invoice['snapshot']['pricing']['stage']=='FINAL'
-    assert len(check(client.get(BASE+'/invoices')))==1
-    again=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}),201)
-    assert invoice['id']==again['id']
+    assert done['status']=='COMPLETED'
+    assert done['pricing']==order['pricing']
+    assert client.get(BASE+'/invoices').status_code==404
+    assert post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version']}).status_code==404
     activity=check(client.get(BASE+f'/drivers/{w["driver"]["id"]}/activity'))
     assert activity['completed_orders']==1 and 'estimated_payout' not in activity
-    document = client.get(BASE+f'/invoices/{invoice["id"]}/document'); assert document.headers['content-type'] == 'application/pdf' and document.content.startswith(b'%PDF-') and invoice['number'].encode() in document.content
     report=check(client.get(BASE+'/analytics'))
     assert report['completed_orders']==1
     assert report['rows'][0]['shipper_name'] and report['rows'][0]['driver_name']
     assert report['rows'][0]['pod_verified'] is True
     assert report['rows'][0]['service_name'] and report['rows'][0]['vehicle_unit']
     with owner_engine.connect() as db:
-        assert db.scalar(text('select count(*) from invoices'))==1
-        assert db.scalar(text('select count(*) from email_deliveries'))==1
-        assert db.scalar(text('select count(*) from pricing_revisions'))==1
+        assert db.scalar(text('select count(*) from email_deliveries'))==0
+        assert db.scalar(text('select count(*) from pricing_revisions'))==0
 
 
 def test_shipper_booking_and_role_isolation(setup):
@@ -125,7 +121,7 @@ def test_shipper_booking_and_role_isolation(setup):
         assert post(portal,BASE+'/orders',{**payload,'distance_km':1}).status_code==403
         assert len(check(portal.get(BASE+'/orders')))==1
     assert w['mobile'].get(BASE+'/orders').status_code==403
-    assert w['mobile'].get(BASE+'/invoices').status_code==403
+    assert w['mobile'].get(BASE+'/invoices').status_code==404
 
 
 def test_shipper_preferred_driver_and_rate_card(setup):
@@ -232,7 +228,7 @@ def test_pod_precedence_and_offline_retry(setup):
     updated=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/stops/{last["id"]}/arrive',dict(version=updated['version'],generation=updated['generation'],captured_at=datetime.now(timezone.utc).isoformat())))
     payload['version']=updated['version'];payload['captured_at']=datetime.now(timezone.utc).isoformat()
     assert post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/stops/{last["id"]}/complete',payload).status_code==409
-    assert post(w['client'],BASE+f'/orders/{order["id"]}/invoice',{'version':3}).status_code==409
+    assert post(w['client'],BASE+f'/orders/{order["id"]}/invoice',{'version':3}).status_code==404
 
 
 def test_duty_boundary_and_quote_review(setup):
@@ -349,7 +345,7 @@ def test_dispatcher_completes_assigned_order_without_driver_pod(setup):
     check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']-1}),409)
     key=str(uuid4())
     done=check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']},key))
-    assert done['status']=='INVOICED' and done['completed_at']
+    assert done['status']=='COMPLETED' and done['completed_at']
     assert check(post(client,BASE+f'/orders/{first["id"]}/complete',{'version':first['version']},key))['id']==done['id']
     route=next(r for r in check(client.get(BASE+'/routes')) if r['id']==route['id'])
     assert route['status']=='PLANNED'
@@ -360,11 +356,10 @@ def test_dispatcher_completes_assigned_order_without_driver_pod(setup):
     assert check(post(w['mobile'],BASE+f'/orders/{first["id"]}/complete',{'version':done['version']}),403)
     proof=check(client.get(BASE+f'/orders/{first["id"]}/delivery-proof'))
     assert len(proof)==1 and proof[0]['completed_by_dispatcher'] is True and proof[0]['evidence']==[]
-    invoice=check(post(client,BASE+f'/orders/{first["id"]}/invoice',{'version':done['version']}),201)
-    assert invoice['snapshot']['pricing']['stage']=='FINAL'
+    assert done['pricing']==first['pricing']
 
 
-def test_hourly_dispatcher_completion_waits_for_actual_minutes(setup):
+def test_hourly_dispatcher_completion_keeps_quoted_price_without_invoice_review(setup):
     w=setup;client=w['client']
     hourly=next(r['id'] for r in w['rates'] if r['data']['method']=='HOURLY')
     order=new_order(w,rate_card_id=hourly,estimated_minutes=60)
@@ -372,15 +367,10 @@ def test_hourly_dispatcher_completion_waits_for_actual_minutes(setup):
     assign(w,order)
     assigned=check(client.get(BASE+f'/orders/{order["id"]}'))
     done=check(post(client,BASE+f'/orders/{order["id"]}/complete',{'version':assigned['version']}))
-    assert done['status']=='COMPLETED'
-    assert check(client.get(BASE+'/invoices'))==[]
-    assert any(item['kind']=='INVOICE' and item['order_id']==order['id'] for item in check(client.get(BASE+'/monitor'))['needs_attention'])
-    invoice=check(post(client,BASE+f'/orders/{order["id"]}/invoice',{'version':done['version'],'actual_minutes':75}),201)
-    assert invoice['snapshot']['pricing']['stage']=='FINAL'
-    assert check(client.get(BASE+f'/orders/{order["id"]}'))['status']=='INVOICED'
-    assert not any(item['kind']=='INVOICE' and item['order_id']==order['id'] for item in check(client.get(BASE+'/monitor'))['needs_attention'])
+    assert done['status']=='COMPLETED' and done['pricing']==order['pricing']
+    assert not any(item['order_id']==order['id'] for item in check(client.get(BASE+'/monitor'))['needs_attention'])
     with owner_engine.connect() as db:
-        assert db.scalar(text('select count(*) from email_deliveries where invoice_id = :id'),{'id':invoice['id']})==1
+        assert db.scalar(text('select count(*) from email_deliveries'))==0
 
 
 def test_driver_orders_profile_and_viewable_proof(setup):
@@ -401,7 +391,7 @@ def test_driver_orders_profile_and_viewable_proof(setup):
     assert 'warehouse' not in listed[0]['shipper']
     assert not {'pricing','booking','facts','subtotal','internal_notes'} & set(listed[0]) and 'subtotal' not in str(listed)
     finish(w,route)
-    assert check(mobile.get(BASE+'/driver/orders'))[0]['status']=='INVOICED'
+    assert check(mobile.get(BASE+'/driver/orders'))[0]['status']=='COMPLETED'
     assert unassigned['id'] not in {row['id'] for row in check(mobile.get(BASE+'/driver/orders'))}
     proof=check(client.get(BASE+f'/orders/{order["id"]}/delivery-proof'))
     assert proof[0]['completed_by_dispatcher'] is False and [e['kind'] for e in proof[0]['evidence']]==['SIGNATURE']

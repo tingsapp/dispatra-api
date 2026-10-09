@@ -1,4 +1,4 @@
-"""Reversible directory retirement while preserving Order and invoice history."""
+"""Reversible directory retirement while preserving Order history."""
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 from app.models import LoginSession, User, now
@@ -35,7 +35,7 @@ def archive_shipper(db, actor, identity, data, key):
             raise HTTPException(409, 'Shipper is already archived.')
         open_order = db.scalar(select(Order.id).where(
             Order.organization_id == actor.organization_id, ((Order.shipper_id == identity) | (Order.billing_shipper_id == identity)),
-            Order.status.notin_(['INVOICED', 'CANCELLED'])))
+            Order.status.notin_(['COMPLETED', 'CANCELLED'])))
         if open_order:
             raise HTTPException(409, 'Finish or cancel the Shipper’s open Orders first.')
         account = db.scalar(select(User).where(User.organization_id == actor.organization_id,

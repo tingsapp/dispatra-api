@@ -1,11 +1,11 @@
-"""Separate transactional-outbox worker for quote/invoice emails and Shipper order-update emails.
+"""Separate transactional-outbox worker for quote emails and Shipper order-update emails.
 
 Each company's mail goes out through its own connected mailbox (same account as the Order agent reads),
 else through the platform `SMTP_*` account.
 
 Run `python -m app.operations.email_worker` alongside the API. One claim is
 committed before network I/O. A crash after entering SENDING becomes UNKNOWN
-and requires a dispatcher decision, so an accepted invoice is not auto-sent twice.
+and requires a dispatcher decision, so an accepted email is not auto-sent twice.
 """
 import argparse
 import os
@@ -17,7 +17,7 @@ from app.database import context, engine
 from app.models import Organization, OutboxEvent, User, now
 from app.services import audit
 from . import outbox, smtp_transport
-from .models import EmailDelivery, Invoice
+from .models import EmailDelivery
 
 EVENT_TYPE = 'email.requested'
 
@@ -75,15 +75,6 @@ def process_event(organization_id: UUID, event_id: UUID, worker_id: str):
             _transition(db, event, 'UNKNOWN', 'WORKER_INTERRUPTED')
             outbox.acknowledge(db, organization_id, event_id, worker_id)
             return
-        attachment = None
-        if row.invoice_id:
-            from .billing import invoice_document
-            invoice = db.scalar(select(Invoice).where(Invoice.organization_id == organization_id, Invoice.id == row.invoice_id))
-            if invoice is None:
-                _transition(db, event, 'FAILED', 'INVOICE_MISSING')
-                outbox.acknowledge(db, organization_id, event_id, worker_id)
-                return
-            attachment = (f'{invoice.number}.pdf', invoice_document(invoice))
         account = company_account(db, organization_id)
         _transition(db, event, 'SENDING')
         # Snapshot the exact message before releasing the transaction.
@@ -91,7 +82,7 @@ def process_event(organization_id: UUID, event_id: UUID, worker_id: str):
         db.expunge(message)
 
     try:
-        smtp_transport.send(message, attachment, account)
+        smtp_transport.send(message, account=account)
     except smtp_transport.TemporaryFailure as failure:
         with Session(engine) as db, db.begin():
             context(db, organization_id)

@@ -37,7 +37,6 @@
         "hourlyClockStop": "Completion of final delivery",
         "hourlyIncludesHandling": true,
         "hourlyIncludesWaiting": true,
-        "hourlySettleActual": true,
         "hourlyRate": 85,
         "minimumBillableMinutes": 120,
         "billingIncrementMinutes": 30,
@@ -102,7 +101,6 @@
         "hourlyClockStop": "Completion of final delivery",
         "hourlyIncludesHandling": true,
         "hourlyIncludesWaiting": true,
-        "hourlySettleActual": true,
         "hourlyRate": 85,
         "minimumBillableMinutes": 120,
         "billingIncrementMinutes": 30,
@@ -167,7 +165,6 @@
         "hourlyClockStop": "Completion of final delivery",
         "hourlyIncludesHandling": true,
         "hourlyIncludesWaiting": true,
-        "hourlySettleActual": true,
         "hourlyRate": 85,
         "minimumBillableMinutes": 120,
         "billingIncrementMinutes": 30,
@@ -247,7 +244,6 @@
         "hourlyClockStop": "Completion of final delivery",
         "hourlyIncludesHandling": true,
         "hourlyIncludesWaiting": true,
-        "hourlySettleActual": true,
         "hourlyRate": 85,
         "minimumBillableMinutes": 120,
         "billingIncrementMinutes": 30,
@@ -312,7 +308,6 @@
         "hourlyClockStop": "Completion of final delivery",
         "hourlyIncludesHandling": true,
         "hourlyIncludesWaiting": true,
-        "hourlySettleActual": true,
         "hourlyRate": 85,
         "minimumBillableMinutes": 120,
         "billingIncrementMinutes": 30,
@@ -377,7 +372,6 @@
         "hourlyClockStop": "Completion of final delivery",
         "hourlyIncludesHandling": true,
         "hourlyIncludesWaiting": true,
-        "hourlySettleActual": true,
         "hourlyRate": 85,
         "minimumBillableMinutes": 120,
         "billingIncrementMinutes": 30,
@@ -803,7 +797,7 @@
         "id": "acc_after_hours",
         "code": "AFTER_HOURS",
         "name": "After-Hours Service",
-        "description": "Pickup or delivery outside 08:00–18:00.",
+        "description": "Pickup or delivery outside 08:00\u201318:00.",
         "rate": 30,
         "calculationType": "FLAT",
         "unitLabel": "per order",
@@ -856,11 +850,29 @@
         "taxable": true,
         "id": "acc_fragile",
         "code": "FRAGILE",
-        "name": "Fragile Blanket Wrap",
-        "description": "Padded furniture blankets, protective corner guards, and tie-down strap security.",
+        "name": "Fragile",
+        "description": "Extra handling for fragile packages.",
         "rate": 15,
-        "calculationType": "FLAT",
-        "unitLabel": "per order",
+        "calculationType": "PER_UNIT",
+        "unitLabel": "per package",
+        "appliesAt": "ORDER",
+        "autoRule": "NONE",
+        "active": true,
+        "fuelEligible": false,
+        "freeAllowance": null,
+        "incrementMinutes": null,
+        "minimumCharge": null,
+        "maximumCharge": null
+      },
+      {
+        "taxable": true,
+        "id": "acc_dg",
+        "code": "DG",
+        "name": "DG",
+        "description": "Dangerous goods handling for each flagged package.",
+        "rate": 25,
+        "calculationType": "PER_UNIT",
+        "unitLabel": "per package",
         "appliesAt": "ORDER",
         "autoRule": "NONE",
         "active": true,
@@ -933,15 +945,6 @@
       "defaultIncludedStops": 2,
       "defaultExtraStopRate": 0
     },
-    "invoicing": {
-      "currency": "CAD",
-      "defaultTaxProfileId": "taxp_bc_standard",
-      "taxRegistrationNumber": "",
-      "pricesIncludeTax": false,
-      "defaultPaymentTerms": "NET30",
-      "quoteValidityDays": 14,
-      "latePaymentFeePercent": 1.5
-    },
     "taxProfiles": [
       {
         "id": "taxp_bc_standard",
@@ -969,7 +972,7 @@
               "accessorials"
             ],
             "active": false,
-            "note": "BC provincial tax. Freight transportation is generally exempt — enable only if you sell taxable goods or equipment rental."
+            "note": "BC provincial tax. Freight transportation is generally exempt \u2014 enable only if you sell taxable goods or equipment rental."
           }
         ]
       },
@@ -1032,6 +1035,13 @@
     },
     "dispatch": {
       "maxActiveOrdersPerDriver": 3
+    },
+    "quoteSettings": {
+      "currency": "CAD",
+      "defaultTaxProfileId": "taxp_bc_standard",
+      "taxRegistrationNumber": "",
+      "pricesIncludeTax": false,
+      "quoteValidityDays": 14
     }
   }
 }

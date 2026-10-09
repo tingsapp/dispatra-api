@@ -28,7 +28,7 @@ def test_native_session_delivery_and_browser_boundary(setup):
         profile = check(native.get(BASE + '/driver/profile'))
         assert profile['id'] == w['driver']['id']
         assert native.get('/api/v1/companies/other/driver/profile').status_code == 404
-        assert native.get(BASE + '/invoices').status_code == 403
+        assert native.get(BASE + '/invoices').status_code == 404
         assert native.post('/api/v1/auth/logout', headers={'Origin':'https://untrusted.example'}).status_code == 403
         native.cookies.set('dispatra_session', issued['token'])
         assert native.get(BASE + '/driver/profile').status_code == 401
@@ -36,7 +36,7 @@ def test_native_session_delivery_and_browser_boundary(setup):
         route = assign(w, new_order(w))
         assert len(check(native.get(BASE + '/driver/notifications'))) == 1
         assert finish({**w, 'mobile': native}, route)['status'] == 'COMPLETED'
-        assert len(check(w['client'].get(BASE + '/invoices'))) == 1
+        assert w['client'].get(BASE + '/invoices').status_code == 404
         assert native.post('/api/v1/auth/logout').status_code == 204
         assert native.get('/api/v1/auth/me').status_code == 401
 

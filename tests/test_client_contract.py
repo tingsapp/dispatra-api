@@ -83,13 +83,15 @@ def test_archive_shipper_revokes_login_and_keeps_profile(setup):
         assert response.status_code == 401
 
 
-def test_historical_shipper_payment_terms_remain_editable(setup):
+def test_shippers_have_no_payment_terms(setup):
     w = setup
-    for term in ('NET7', 'NET60'):
-        body = {**w['shipper_body'], 'email': f'{term.lower()}@example.com', 'terms': term}
-        saved = check(post(w['client'], BASE + '/shippers', body), 201)
-        assert saved['terms'] == term
-        assert check(w['client'].get(BASE + f'/shippers/{saved["id"]}'))['terms'] == term
+    assert 'terms' not in w['shipper']
+    assert 'terms' not in check(w['client'].get(BASE + f'/shippers/{w["shipper"]["id"]}'))
+    body = {**w['shipper_body'], 'email': 'terms@example.com', 'terms': 'NET30'}
+    assert post(w['client'], BASE + '/shippers', body).status_code == 422
+    body.pop('terms')
+    saved = check(post(w['client'], BASE + '/shippers', body), 201)
+    assert 'terms' not in saved
 
 
 def test_monitor_derives_attention_without_changing_order_status(setup):
@@ -110,7 +112,7 @@ def test_public_entity_numbers_are_company_scoped_and_server_owned(setup, monkey
     w = setup
     assert re.fullmatch(r'DAD-[1-9][0-9]{3}', w['driver']['number'])
     assert re.fullmatch(r'DAS-[1-9][0-9]{3}', w['shipper']['number'])
-    assert re.fullmatch(r'DAV-[1-9][0-9]{3}', w['vehicle']['number'])
+    assert w['vehicle']['number'] == 'DAV-TEST VAN'
     order = new_order(w)
     assert re.fullmatch(r'DAO-[1-9][0-9]{3}', order['number'])
     data = {**w['driver_body'], 'name': 'Second Driver', 'email': 'second-driver@example.com', 'vehicle_id': None}

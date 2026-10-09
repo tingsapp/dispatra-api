@@ -19,7 +19,7 @@ class MailboxConnection(TenantRecord, Base):
     secret: Mapped[str] = mapped_column(Text)
     folder: Mapped[str] = mapped_column(String(120), default='INBOX')
     enabled: Mapped[bool] = mapped_column(default=True)
-    # Outgoing mail (invoices, quotes, Shipper order updates) uses the same account over SMTP.
+    # Outgoing mail (quotes and Shipper order updates) uses the same account over SMTP.
     smtp_host: Mapped[str] = mapped_column(String(253))
     smtp_port: Mapped[int] = mapped_column(default=465)
     uid_validity: Mapped[int | None] = mapped_column(BigInteger)

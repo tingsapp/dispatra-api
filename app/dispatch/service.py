@@ -17,7 +17,7 @@ from app.events import publish
 from app.models import now
 from app.services import audit
 from app.operations import dispatch
-from app.operations.common import command, record, settings
+from app.operations.common import command, company_lock, record, settings
 from app.operations.models import Order, Route, Settings
 from app.operations.schemas import Assignment
 from . import rank
@@ -176,6 +176,10 @@ def dispatch_order(organization_id, order_id):
     ordered, ranked_by, summary, error = ranked(order_brief, candidates)
     with Session(engine) as db, db.begin():
         context(db, organization_id)
+        # Ranking runs outside the transaction. Serialize with settings writes so
+        # switching to MANUAL takes effect before an automatic assignment saves.
+        company_lock(db, agent)
+        if settings(db, agent)[1].dispatch_mode != 'AUTO': return None
         order = db.scalar(select(Order).where(Order.organization_id == organization_id, Order.id == order_id))
         if order is None or order.status != 'NEW' or order.version != version: return None
         refused = []

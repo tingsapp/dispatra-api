@@ -87,16 +87,13 @@ def notes(db, action, entity_id, audience, actor, recipients):
         issue = db.get(m.Issue, entity_id)
         label = ISSUE_LABELS.get(issue.kind, 'Issue reported') if issue else 'Issue reported'
         return to(dispatch(), 'CRITICAL', 'Issue reported', f'{number}: {label}.' if number else f'{label}.')
-    if action == 'invoice.created':
-        invoice = db.get(m.Invoice, entity_id)
-        if invoice and order: return to(shipper(), 'INFO', 'Invoice issued', f'Invoice {invoice.number} for {number} is ready.')
     if action in {'email.failed', 'email.unknown'}:
         delivery = db.get(m.EmailDelivery, entity_id)
         if delivery and delivery.notification_id:
             # A possibly-duplicated order update is harmless; only a definite failure needs attention.
             if action == 'email.unknown': return []
             return to(dispatch(), 'WARNING', 'Order update email not sent', 'An order update email to a Shipper could not be delivered. Check Settings → Mailbox.')
-        document = 'invoice' if delivery and delivery.invoice_id else 'quote'
+        document = 'quote'
         if action == 'email.failed':
             return to(dispatch(), 'WARNING', 'Email not sent', f'A {document} email could not be delivered. Review it and send again.')
         return to(dispatch(), 'CRITICAL', 'Email status unknown', f'A {document} email may have been delivered. Confirm with the recipient before sending again.')

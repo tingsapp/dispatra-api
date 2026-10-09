@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
-from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Numeric, String, Text
+from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Numeric, String, Text, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr
 from app.models import Base, now
@@ -61,10 +61,9 @@ class Shipper(TenantRecord, Base):
     company_name: Mapped[str] = mapped_column(String(160), default='')
     warehouse: Mapped[dict | None] = mapped_column(JSONB)
     rate_card_id: Mapped[UUID | None]
-    terms: Mapped[str] = mapped_column(String(20), default='NET30')
     discount: Mapped[dict] = mapped_column(JSONB, default=lambda: {'kind': 'NONE', 'value': '0'})
     instructions: Mapped[str] = mapped_column(Text, default='')
-    # Order-update emails from the company mailbox; invoices and quotes are sent on request regardless.
+    # Order-update emails from the company mailbox; quotes are sent on request regardless.
     email_updates: Mapped[bool] = mapped_column(default=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -72,14 +71,18 @@ class Shipper(TenantRecord, Base):
 class Vehicle(TenantRecord, Base):
     __tablename__ = 'vehicles'
     __table_args__ = (UniqueConstraint('organization_id', 'id'), UniqueConstraint('organization_id', 'number', name='vehicles_company_number'), UniqueConstraint('organization_id', 'plate', 'province'),
+        CheckConstraint("length(btrim(coalesce(data->>'unit_number', ''))) BETWEEN 1 AND 50", name='vehicles_unit_required'),
         ForeignKeyConstraint(['organization_id', 'type_id'], ['catalog_entries.organization_id', 'catalog_entries.id']))
-    number: Mapped[str] = mapped_column(String(50))
+    number: Mapped[str] = mapped_column(String(54))
     type_id: Mapped[UUID]
     plate: Mapped[str] = mapped_column(String(30))
     province: Mapped[str] = mapped_column(String(30))
     active: Mapped[bool] = mapped_column(default=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     data: Mapped[dict] = mapped_column(JSONB)
+
+
+Index('vehicles_company_unit', Vehicle.organization_id, func.upper(func.btrim(Vehicle.data['unit_number'].astext)), unique=True)
 
 
 class Driver(TenantRecord, Base):
@@ -125,7 +128,7 @@ class Order(TenantRecord, Base):
         ForeignKeyConstraint(['organization_id', 'billing_shipper_id'], ['shippers.organization_id', 'shippers.id']),
         ForeignKeyConstraint(['organization_id', 'service_id'], ['catalog_entries.organization_id', 'catalog_entries.id']),
         ForeignKeyConstraint(['organization_id', 'route_id'], ['routes.organization_id', 'routes.id']),
-        CheckConstraint("status IN ('NEW','ASSIGNED','IN_PROGRESS','COMPLETED','INVOICED','CANCELLED')"))
+        CheckConstraint("status IN ('NEW','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED')"))
     number: Mapped[str] = mapped_column(String(50))
     shipper_id: Mapped[UUID]
     billing_shipper_id: Mapped[UUID]
@@ -193,18 +196,6 @@ class Evidence(TenantRecord, Base):
     content: Mapped[str] = mapped_column(Text)
 
 
-class Invoice(TenantRecord, Base):
-    __tablename__ = 'invoices'
-    __table_args__ = (UniqueConstraint('organization_id', 'id'), UniqueConstraint('order_id'), UniqueConstraint('organization_id', 'number'),
-        ForeignKeyConstraint(['organization_id', 'order_id'], ['orders.organization_id', 'orders.id']))
-    order_id: Mapped[UUID]
-    number: Mapped[str] = mapped_column(String(50))
-    snapshot: Mapped[dict] = mapped_column(JSONB)
-    subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    tax: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-
-
 class DutySession(TenantRecord, Base):
     __tablename__ = 'duty_sessions'
     __table_args__ = (UniqueConstraint('organization_id', 'id'),
@@ -256,12 +247,10 @@ class EmailDelivery(TenantRecord, Base):
     __tablename__ = 'email_deliveries'
     __table_args__ = (UniqueConstraint('organization_id', 'id'),
         ForeignKeyConstraint(['organization_id', 'quote_id'], ['quotes.organization_id', 'quotes.id']),
-        ForeignKeyConstraint(['organization_id', 'invoice_id'], ['invoices.organization_id', 'invoices.id']),
         ForeignKeyConstraint(['organization_id', 'notification_id'], ['notifications.organization_id', 'notifications.id']),
-        CheckConstraint('num_nonnulls(quote_id, invoice_id, notification_id) = 1', name='email_delivery_source'),
+        CheckConstraint('num_nonnulls(quote_id, notification_id) = 1', name='email_delivery_source'),
         CheckConstraint("status IN ('PENDING','SENDING','SENT','FAILED','UNKNOWN')", name='email_delivery_status'))
     quote_id: Mapped[UUID | None]
-    invoice_id: Mapped[UUID | None]
     # An order-update email to a Shipper, copied from their inbox notification.
     notification_id: Mapped[UUID | None]
     requested_by: Mapped[UUID] = mapped_column(ForeignKey('users.id'))

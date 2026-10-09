@@ -1,7 +1,7 @@
 """Derived operational attention; lifecycle and stored history remain unchanged."""
 from datetime import datetime
 
-CLOSED = {'COMPLETED', 'INVOICED', 'CANCELLED'}
+CLOSED = {'COMPLETED', 'CANCELLED'}
 
 
 def flags(order, visits: dict[str, object], observed_at: datetime) -> list[tuple[str, str]]:

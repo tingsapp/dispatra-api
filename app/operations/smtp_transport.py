@@ -72,7 +72,7 @@ def check(account):
         except OSError: pass
 
 
-def send(delivery, attachment=None, account=None):
+def send(delivery, account=None):
     account = account or configuration()
     username, password, sender = account.username, account.password, account.username
     message = EmailMessage()
@@ -83,9 +83,6 @@ def send(delivery, attachment=None, account=None):
     message['Date'] = format_datetime(now())
     message.set_content(delivery.body_text)
     message.add_alternative(delivery.body_html, subtype='html')
-    if attachment is not None:
-        filename, content = attachment
-        message.add_attachment(content, maintype='application', subtype='pdf', filename=filename)
     smtp = _open(account)
     try:
         try:

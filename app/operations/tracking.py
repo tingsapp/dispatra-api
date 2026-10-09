@@ -18,7 +18,7 @@ ISSUE_LABELS = {'FAILED_PICKUP': 'Pickup could not be completed', 'FAILED_DELIVE
 
 def _stage(order, route, mine, next_visit):
     if order.status == 'CANCELLED': return 'CANCELLED'
-    if order.status in {'COMPLETED', 'INVOICED'}: return 'DELIVERED'
+    if order.status in {'COMPLETED'}: return 'DELIVERED'
     if route is None: return 'BOOKED'
     if route.status == 'PLANNED': return 'ASSIGNED'
     pickups_done = all(v.status == 'COMPLETED' for v, kind in mine if kind == 'PICKUP')
@@ -59,7 +59,7 @@ def order_tracking(db, actor, identity):
     stop_rows = []
     for stop in order.facts['stops']:
         visit = by_stop.get(stop['id'])
-        open_visit = visit is not None and visit.status != 'COMPLETED' and order.status not in {'CANCELLED', 'COMPLETED', 'INVOICED'}
+        open_visit = visit is not None and visit.status != 'COMPLETED' and order.status not in {'CANCELLED', 'COMPLETED'}
         stop_rows.append({'id': stop['id'], 'kind': stop['kind'], 'address': stop['address'], 'window_start': stop.get('window_start'), 'window_end': stop.get('window_end'),
             'planned_at': visit.planned_at if visit else None, 'eta': eta(visit) if open_visit else None,
             'arrived_at': visit.arrived_at if visit else None, 'completed_at': visit.completed_at if visit else None,

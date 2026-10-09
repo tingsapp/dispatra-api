@@ -65,7 +65,7 @@ def save_mailbox(slug: str, data: MailboxInput, db: DB, key: OperationKey, user:
         sending = row is None or (row.smtp_host, row.smtp_port, row.username) != (smtp_host, data.smtp_port, data.username)
         try:
             if data.enabled and (moved or data.password is not None): mailbox.check(data.host, data.port, data.username, password, data.folder)
-            # Sending does not depend on the reading switch: invoices, quotes and order updates always go out from here.
+            # Sending does not depend on the reading switch: quotes and order updates always go out from here.
             if sending or data.password is not None: mailbox.check_smtp(smtp_host, data.smtp_port, data.username, password)
         except mailbox.MailboxError as error: raise HTTPException(422, MESSAGES.get(error.code, 'Mailbox could not be reached.')) from None
         if row is None:

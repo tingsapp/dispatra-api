@@ -36,6 +36,42 @@ def test_all_pricing_methods_tax_minimum_discount_and_frozen_context():
     assert [line['label'] for line in price['lines'] if line['group']=='TAX']==['GST/HST','Provincial tax']
 
 
+def test_package_handling_accessorials_follow_item_quantities(monkeypatch):
+    from types import SimpleNamespace
+    from app.operations import pricing
+    org_id, service_id, card_id = uuid4(), uuid4(), uuid4()
+    raw = booking(uuid4(), service_id, None, card_id)
+    raw['items'][0].update(quantity=3, fragile=True, dangerous_goods=True)
+    data = Booking.model_validate(raw)
+    accessories = {
+        code: SimpleNamespace(id=uuid4(), code=code, data=CatalogData(name=code, amount=amount).model_dump(mode='json'))
+        for code, amount in [('FRAGILE', 15), ('DG', 25)]
+    }
+    card = SimpleNamespace(id=card_id, version=1, active=True, data=RateData(name='Fixed', method='FIXED', fixed_amount=100).model_dump(mode='json'))
+    class Database:
+        def scalar(self, statement):
+            code = next((value for value in statement.compile().params.values() if value in accessories), None)
+            return accessories.get(code)
+    monkeypatch.setattr(pricing, 'settings', lambda *_: (None, SettingsData(fuel_enabled=False, gst_enabled=False)))
+    monkeypatch.setattr(pricing, 'operational_shipper', lambda *_: None)
+    monkeypatch.setattr(pricing, 'record', lambda *_: card)
+    monkeypatch.setattr(pricing, 'catalog', lambda _db, _actor, _id, kind: next(
+        (item for item in accessories.values() if item.id == _id), None) if kind == 'ACCESSORIAL'
+        else SimpleNamespace(data=CatalogData(name='Standard').model_dump(mode='json')))
+    context = pricing.price_context(Database(), SimpleNamespace(organization_id=org_id), data)
+    assert {item['code']: item['quantity'] for item in context['accessorials']} == {'FRAGILE': '3', 'DG': '3'}
+    selected = Booking.model_validate({**raw, 'accessorials': [
+        {'id': str(accessories['FRAGILE'].id), 'quantity': 99}]})
+    selected_context = pricing.price_context(Database(), SimpleNamespace(organization_id=org_id), selected)
+    assert {item['code']: item['quantity'] for item in selected_context['accessorials']} == {'FRAGILE': '3', 'DG': '3'}
+    price = calculate(data, context)
+    assert price['subtotal'] == '220.00'
+    accessory_lines = [(line['label'], line['amount']) for line in price['lines'] if line['group'] == 'ACCESSORIAL']
+    assert accessory_lines == [('FRAGILE (3 packages)', '45.00'), ('DG (3 packages)', '75.00')], accessory_lines
+    legacy = calculate(data, {key: value for key, value in context.items() if key != 'package_handling_unit_pricing'})
+    assert [line['amount'] for line in legacy['lines'] if line['group'] == 'ACCESSORIAL'] == ['15.00', '25.00']
+
+
 def test_route_intermediate_load_precedence_and_unknown_coordinates():
     first=booking(uuid4(),uuid4(),uuid4());second=booking(uuid4(),uuid4(),uuid4())
     for facts in [first,second]: facts['items'][0]['weight_kg']='80'

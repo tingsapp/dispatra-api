@@ -68,7 +68,7 @@ def booking_snapshot(db, actor, booking):
         profile = customer = operational_shipper(db, actor, identity)
         if customer.status != 'ACTIVE': raise HTTPException(409, 'Shipper account must be active to book.')
         return {'id': str(identity), 'name': customer.name, 'company_name': profile.company_name,
-            'email': customer.email, 'phone': customer.phone, 'warehouse': profile.warehouse, 'terms': profile.terms}
+            'email': customer.email, 'phone': customer.phone, 'warehouse': profile.warehouse}
     return {'shipper': details(booking.shipper_id), 'payer': details(booking.billing_shipper_id or booking.shipper_id)}
 
 
@@ -115,7 +115,7 @@ def update_order(db, actor, identity, data, key):
         row = visible_order(db, actor, identity, True); version(row, data.version)
         if row.status != 'NEW': raise HTTPException(409, 'Only unassigned Orders can be edited. Record an issue for active work.')
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
-        from .billing import retain_price
+        from .pricing import retain_price
         retain_price(db, row)
         row.facts, row.booking = booking.model_dump(mode='json'), booking_snapshot(db, actor, booking)
         row.pricing = price_or_review(db, actor, booking)
@@ -163,7 +163,5 @@ def complete_order(db, actor, identity, data, key):
             route.status, route.completed_at = 'COMPLETED', completed_at
             changed(db, actor, route, 'route.completed')
         else: changed(db, actor, route, 'route.progress')
-        from .billing import auto_invoice
-        auto_invoice(db, actor, row)
         return order_view(row, actor)
     return command(db, actor, key, 'order-complete:' + str(identity), data.model_dump(), run)

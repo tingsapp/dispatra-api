@@ -1,5 +1,6 @@
 """Restricted-role PostgreSQL checks for explicit email delivery and worker replay."""
 import os
+import pytest
 from uuid import uuid4
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
@@ -28,40 +29,23 @@ def test_quote_email_is_queued_once_and_sent_from_snapshot(setup, monkeypatch):
         assert post(shipper, path, payload).status_code == 403
         assert shipper.get(BASE + f'/email-deliveries/{queued["id"]}').status_code == 403
     delivered = []
-    monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda message, attachment=None, account=None: delivered.append((message, attachment)))
+    monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda message, account=None: delivered.append(message))
     assert email_worker.poll_once('smtp-test') == 1
     assert len(delivered) == 1
-    assert delivered[0][0].recipient == 'buyer@example.net'
-    assert delivered[0][1] is None
-    assert 'Pickup:' in delivered[0][0].body_text and 'Total:' in delivered[0][0].body_text
+    assert delivered[0].recipient == 'buyer@example.net'
+    assert 'Pickup:' in delivered[0].body_text and 'Total:' in delivered[0].body_text
     assert check(client.get(BASE + f'/email-deliveries/{queued["id"]}'))['status'] == 'SENT'
     assert email_worker.poll_once('smtp-test') == 0
 
 
-def test_invoice_email_uses_frozen_billing_recipient(setup, monkeypatch):
+def test_completion_does_not_queue_financial_email(setup, monkeypatch):
     w = setup
-    client = w['client']
     order = new_order(w)
     route = assign(w, order)
-    finish(w, route)
-    completed = check(client.get(BASE + f'/orders/{order["id"]}'))
-    invoice = check(post(client, BASE + f'/orders/{order["id"]}/invoice',
-                         {'version': completed['version']}), 201)
-    with owner_engine.connect() as db:
-        queued_id = db.scalar(text('select id from email_deliveries where invoice_id = :id'), {'id': invoice['id']})
-    assert queued_id is not None
-    queued = check(client.get(BASE + f'/email-deliveries/{queued_id}'))
-    assert queued['recipient'] == w['shipper']['email']
-    assert queued['status'] == 'PENDING'
-    assert check(post(client, BASE + f'/invoices/{invoice["id"]}/send', {'version': invoice['version']}), 202)['id'] == str(queued_id)
-    delivered = []
-    monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda message, attachment=None, account=None: delivered.append((message, attachment)))
-    assert email_worker.poll_once('smtp-test') == 1
-    assert delivered[0][0].recipient == invoice['snapshot']['booking']['payer']['email']
-    assert invoice['number'] in delivered[0][0].body_text
-    assert delivered[0][1][0] == f"{invoice['number']}.pdf"
-    assert delivered[0][1][1].startswith(b'%PDF-')
-    assert check(client.get(BASE + f'/email-deliveries/{queued_id}'))['status'] == 'SENT'
+    assert finish(w, route)['status'] == 'COMPLETED'
+    done = check(w['client'].get(BASE + f'/orders/{order["id"]}'))
+    assert done['status'] == 'COMPLETED' and done['pricing'] == order['pricing']
+    monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda *args, **kwargs: pytest.fail('Completion queued an unexpected email'))
     assert email_worker.poll_once('smtp-test') == 0
 
 
@@ -71,7 +55,7 @@ def test_unknown_smtp_acceptance_is_not_retried(setup, monkeypatch):
         booking(None, w['service'], w['type_id'], rate=w['fixed'])), 201)
     queued = check(post(w['client'], BASE + f'/quotes/{quote["id"]}/send',
         {'version': quote['version'], 'recipient': 'buyer@example.net'}), 202)
-    def ambiguous(_, attachment=None, account=None):
+    def ambiguous(_, account=None):
         raise email_worker.smtp_transport.UnknownAcceptance('SMTP_ACCEPTANCE_UNKNOWN')
     monkeypatch.setattr(email_worker.smtp_transport, 'send', ambiguous)
     assert email_worker.poll_once('smtp-test') == 1
@@ -106,10 +90,10 @@ def test_company_mailbox_sends_order_updates_to_shippers(setup, monkeypatch):
     order = new_order(w)
     assign(w, order)
     sent = []
-    monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda message, attachment=None, account=None: sent.append((message, attachment, account)))
+    monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda message, account=None: sent.append((message, account)))
     assert email_worker.poll_once('smtp-test') == 1
-    message, attachment, account = sent[0]
-    assert message.recipient == 'alice@example.com' and message.subject.endswith('— Driver assigned') and attachment is None
+    message, account = sent[0]
+    assert message.recipient == 'alice@example.com' and message.subject.endswith('— Driver assigned')
     assert order['number'] in message.body_text and 'Alice Shipper' in message.body_text
     assert (account.host, account.port, account.username, account.password, account.company) == ('smtp.example.com', 465, 'orders@acme.test', 'app-password', True)
     assert account.sender_name
@@ -130,7 +114,7 @@ def test_failed_order_update_email_warns_dispatchers(setup, monkeypatch):
     w = setup
     connect_mailbox(w['client'], monkeypatch, smtp_host='mail.example.com', smtp_port=587)
     assign(w, new_order(w))
-    def refused(message, attachment=None, account=None):
+    def refused(message, account=None):
         assert (account.host, account.port) == ('mail.example.com', 587)
         raise email_worker.smtp_transport.PermanentFailure('SMTP_AUTHENTICATION')
     monkeypatch.setattr(email_worker.smtp_transport, 'send', refused)

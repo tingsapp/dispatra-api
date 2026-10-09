@@ -1,5 +1,6 @@
 """Stable company-scoped public references; UUIDs remain relational keys."""
 import secrets
+import re
 import unicodedata
 from sqlalchemy import select
 from app.models import Organization
@@ -13,6 +14,12 @@ def company_initial(name, slug):
             if 'A' <= character <= 'Z':
                 return character
     return 'X'
+
+
+def vehicle_number(unit_number, company_name, company_slug, previous=None):
+    """Unit-based public reference; retain the issued company prefix on edits."""
+    prefix = previous[:4] if previous and re.match(r'^D[A-Z]V-', previous) else f'D{company_initial(company_name, company_slug)}V-'
+    return prefix + unit_number.strip().upper()
 
 
 def unused_number(prefix, used):

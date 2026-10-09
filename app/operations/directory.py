@@ -3,12 +3,12 @@ import secrets
 from uuid import uuid4
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from app.models import User, LoginSession, Organization, now
 from app.security import hash_password
 from app.services import audit
 from .models import Catalog, RateCard, Shipper, Driver, Vehicle, Route, Settings, DutySession
-from .identifiers import issue_number
+from .identifiers import issue_number, vehicle_number
 from .schemas import SettingsView, CatalogView, RateView
 from .common import record, version, company_lock, command, changed, dump, settings, operational_shipper
 
@@ -126,7 +126,7 @@ def save_shipper(db, actor, data, key, identity=None):
         # Every shipper carries a Rate Card; without a choice it is the company Default at save time.
         default = None if payload.rate_card_id else default_rate(db, actor)
         row.rate_card_id = payload.rate_card_id or (default.id if default else None)
-        row.terms, row.instructions, row.email_updates = payload.terms, payload.instructions, payload.email_updates
+        row.instructions, row.email_updates = payload.instructions, payload.email_updates
         if user.login_id != payload.email:
             user.login_id = payload.email
             db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
@@ -154,7 +154,14 @@ def save_vehicle(db, actor, data, key, identity=None):
             if row.archived_at: raise HTTPException(409, 'Archived Vehicle cannot be edited.')
             if in_use(db, actor, 'vehicle_id', identity): raise HTTPException(409, 'Vehicle has an active Route; finish or cancel it before editing.')
         else:
-            row = Vehicle(organization_id=actor.organization_id, number=issue_number(db, actor, Vehicle, 'V')); db.add(row)
+            row = Vehicle(organization_id=actor.organization_id)
+        duplicate = select(Vehicle.id).where(Vehicle.organization_id == actor.organization_id,
+            func.upper(func.btrim(Vehicle.data['unit_number'].astext)) == payload.unit_number)
+        if identity: duplicate = duplicate.where(Vehicle.id != identity)
+        if db.scalar(duplicate) is not None: raise HTTPException(409, 'Unit number already exists in this company, including archived vehicles.')
+        company = db.get(Organization, actor.organization_id)
+        row.number = vehicle_number(payload.unit_number, company.name, company.slug, row.number if identity else None)
+        if not identity: db.add(row)
         row.type_id, row.plate, row.province = payload.type_id, payload.plate.upper(), payload.province.upper()
         row.active, row.data = payload.active, payload.model_dump(mode='json')
         if identity: changed(db, actor, row, 'vehicle.updated')

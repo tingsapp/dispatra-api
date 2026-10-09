@@ -1,4 +1,4 @@
-"""Invoice and quote email queueing; SMTP runs after the transaction commits."""
+"""Quote email queueing; SMTP runs after the transaction commits."""
 from datetime import datetime
 from html import escape
 from uuid import uuid4
@@ -6,8 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from app.models import now
 from app.services import audit
-from .common import command, record, settings, version, company_lock
-from .models import EmailDelivery, Invoice, Quote
+from .common import command, record, settings, version
+from .models import EmailDelivery, Quote
 from .schemas import EmailDeliveryView
 
 
@@ -33,8 +33,8 @@ def _message(company, title, recipient_name, pricing, details):
     return body_text, body_html
 
 
-def _queue(db, actor, *, recipient, subject, body_text, body_html, quote_id=None, invoice_id=None):
-    source = (EmailDelivery.quote_id == quote_id) if quote_id else (EmailDelivery.invoice_id == invoice_id)
+def _queue(db, actor, *, recipient, subject, body_text, body_html, quote_id):
+    source = EmailDelivery.quote_id == quote_id
     duplicate = db.scalar(select(EmailDelivery.id).where(
         EmailDelivery.organization_id == actor.organization_id, source,
         EmailDelivery.recipient == recipient,
@@ -43,7 +43,7 @@ def _queue(db, actor, *, recipient, subject, body_text, body_html, quote_id=None
         raise HTTPException(409, 'An email for this recipient is already pending.')
     identity = uuid4()
     row = EmailDelivery(id=identity, organization_id=actor.organization_id,
-        quote_id=quote_id, invoice_id=invoice_id, requested_by=actor.id,
+        quote_id=quote_id, requested_by=actor.id,
         recipient=recipient, subject=subject, body_text=body_text, body_html=body_html,
         message_id=f'<dispatra-{identity.hex}@dispatra.com>')
     db.add(row)
@@ -72,34 +72,3 @@ def send_quote(db, actor, identity, data, key):
             subject=f'{company.company_name} — {title}', body_text=body_text,
             body_html=body_html, quote_id=row.id)
     return command(db, actor, key, 'quote-send:' + str(identity), data.model_dump(mode='json'), run)
-
-
-def queue_invoice(db, actor, row):
-    snap = row.snapshot
-    recipient = snap['booking']['payer']['email'].strip().lower()
-    if not recipient:
-        raise HTTPException(409, 'Invoice billing email is missing.')
-    title = f'Invoice {row.number}'
-    details = [f"Order: {snap['order_number']}", f"Issued: {snap['issued_at']}",
-               f"Due: {snap['due_date']}"]
-    body_text, body_html = _message(snap['issuer']['company_name'], title,
-        snap['booking']['payer']['company_name'] or snap['booking']['payer']['name'],
-        snap['pricing'], details)
-    return _queue(db, actor, recipient=recipient,
-        subject=f"{snap['issuer']['company_name']} — {title}",
-        body_text=body_text, body_html=body_html, invoice_id=row.id)
-
-
-def send_invoice(db, actor, identity, data, key):
-    def run():
-        company_lock(db, actor)
-        row = record(db, Invoice, actor, identity)
-        version(row, data.version)
-        pending = db.scalar(select(EmailDelivery).where(
-            EmailDelivery.organization_id == actor.organization_id,
-            EmailDelivery.invoice_id == row.id,
-            EmailDelivery.status.in_(['PENDING', 'SENDING'])).order_by(EmailDelivery.created_at.desc()).limit(1))
-        if pending:
-            return EmailDeliveryView.model_validate(pending).model_dump(mode='json')
-        return queue_invoice(db, actor, row)
-    return command(db, actor, key, 'invoice-send:' + str(identity), data.model_dump(mode='json'), run)

@@ -5570,7 +5570,7 @@
     "/api/v1/companies/{slug}/booking-options": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Options",
         "operationId": "options_api_v1_companies__slug__booking_options_get",
@@ -5686,7 +5686,7 @@
     "/api/v1/companies/{slug}/booking-drivers": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Booking Drivers",
         "description": "Drivers a booking may request. Names only: no contact, location, duty or payout details.",
@@ -5803,7 +5803,7 @@
     "/api/v1/companies/{slug}/pricing/preview": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Preview",
         "operationId": "preview_api_v1_companies__slug__pricing_preview_post",
@@ -5925,7 +5925,7 @@
     "/api/v1/companies/{slug}/quotes": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Quote",
         "operationId": "quote_api_v1_companies__slug__quotes_post",
@@ -6057,7 +6057,7 @@
       },
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "List Quotes",
         "operationId": "list_quotes_api_v1_companies__slug__quotes_get",
@@ -6202,7 +6202,7 @@
     "/api/v1/companies/{slug}/quotes/{identity}": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Get Quote",
         "operationId": "get_quote_api_v1_companies__slug__quotes__identity__get",
@@ -6324,7 +6324,7 @@
     "/api/v1/companies/{slug}/quotes/{identity}/send": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Send Quote",
         "operationId": "send_quote_api_v1_companies__slug__quotes__identity__send_post",
@@ -6468,7 +6468,7 @@
     "/api/v1/companies/{slug}/orders": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Create",
         "operationId": "create_api_v1_companies__slug__orders_post",
@@ -6600,7 +6600,7 @@
       },
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "List Orders",
         "operationId": "list_orders_api_v1_companies__slug__orders_get",
@@ -6689,7 +6689,6 @@
                     "ASSIGNED",
                     "IN_PROGRESS",
                     "COMPLETED",
-                    "INVOICED",
                     "CANCELLED"
                   ],
                   "type": "string"
@@ -6857,7 +6856,7 @@
     "/api/v1/companies/{slug}/orders/{identity}": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Get Order",
         "operationId": "get_order_api_v1_companies__slug__orders__identity__get",
@@ -6977,7 +6976,7 @@
       },
       "put": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Edit Order",
         "operationId": "edit_order_api_v1_companies__slug__orders__identity__put",
@@ -7121,7 +7120,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/tracking": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Order Tracking",
         "operationId": "order_tracking_api_v1_companies__slug__orders__identity__tracking_get",
@@ -7243,7 +7242,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/tracking/map": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Order Tracking Map",
         "description": "Static map image of the tracking view (same stops and driver visibility); query parameters only bust the browser cache.",
@@ -7362,7 +7361,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/road-path": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Order Road Path",
         "description": "Map geometry through the Order's own stops from one Google Routes request per call; clients cache it per Order version.",
@@ -7485,7 +7484,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/cancel": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Cancel",
         "operationId": "cancel_api_v1_companies__slug__orders__identity__cancel_post",
@@ -7629,7 +7628,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/complete": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Complete",
         "operationId": "complete_api_v1_companies__slug__orders__identity__complete_post",
@@ -7773,7 +7772,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/assign": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Assign",
         "operationId": "assign_api_v1_companies__slug__orders__identity__assign_post",
@@ -7917,7 +7916,7 @@
     "/api/v1/companies/{slug}/routes": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Routes",
         "operationId": "routes_api_v1_companies__slug__routes_get",
@@ -8062,7 +8061,7 @@
     "/api/v1/companies/{slug}/routes/{identity}/release": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Release",
         "operationId": "release_api_v1_companies__slug__routes__identity__release_post",
@@ -8203,298 +8202,10 @@
         }
       }
     },
-    "/api/v1/companies/{slug}/orders/{identity}/invoice": {
-      "post": {
-        "tags": [
-          "Manual orders and billing"
-        ],
-        "summary": "Invoice",
-        "operationId": "invoice_api_v1_companies__slug__orders__identity__invoice_post",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          },
-          {
-            "name": "identity",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Identity"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 16,
-              "maxLength": 80,
-              "pattern": "^[a-zA-Z0-9-]+$",
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Finalize"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvoiceView"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        }
-      }
-    },
-    "/api/v1/companies/{slug}/invoices/{identity}/send": {
-      "post": {
-        "tags": [
-          "Manual orders and billing"
-        ],
-        "summary": "Send Invoice",
-        "operationId": "send_invoice_api_v1_companies__slug__invoices__identity__send_post",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          },
-          {
-            "name": "identity",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Identity"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 16,
-              "maxLength": 80,
-              "pattern": "^[a-zA-Z0-9-]+$",
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Version"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EmailDeliveryView"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        }
-      }
-    },
     "/api/v1/companies/{slug}/email-deliveries/{identity}": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Email Delivery",
         "operationId": "email_delivery_api_v1_companies__slug__email_deliveries__identity__get",
@@ -8613,395 +8324,10 @@
         }
       }
     },
-    "/api/v1/companies/{slug}/invoices": {
-      "get": {
-        "tags": [
-          "Manual orders and billing"
-        ],
-        "summary": "Invoices",
-        "operationId": "invoices_api_v1_companies__slug__invoices_get",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "After"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/InvoiceView"
-                  },
-                  "title": "Response Invoices Api V1 Companies  Slug  Invoices Get"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        }
-      }
-    },
-    "/api/v1/companies/{slug}/invoices/{identity}": {
-      "get": {
-        "tags": [
-          "Manual orders and billing"
-        ],
-        "summary": "Get Invoice",
-        "operationId": "get_invoice_api_v1_companies__slug__invoices__identity__get",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          },
-          {
-            "name": "identity",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Identity"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvoiceView"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        }
-      }
-    },
-    "/api/v1/companies/{slug}/invoices/{identity}/document": {
-      "get": {
-        "tags": [
-          "Manual orders and billing"
-        ],
-        "summary": "Document",
-        "operationId": "document_api_v1_companies__slug__invoices__identity__document_get",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Slug"
-            }
-          },
-          {
-            "name": "identity",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Identity"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/pdf": {}
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        }
-      }
-    },
     "/api/v1/companies/{slug}/orders/{identity}/issues": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Report Issue",
         "operationId": "report_issue_api_v1_companies__slug__orders__identity__issues_post",
@@ -9145,7 +8471,7 @@
     "/api/v1/companies/{slug}/issues": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "List Issues",
         "operationId": "list_issues_api_v1_companies__slug__issues_get",
@@ -9290,7 +8616,7 @@
     "/api/v1/companies/{slug}/issues/{identity}/resolve": {
       "post": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Resolve Issue",
         "operationId": "resolve_issue_api_v1_companies__slug__issues__identity__resolve_post",
@@ -9434,7 +8760,7 @@
     "/api/v1/companies/{slug}/orders/{identity}/delivery-proof": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Delivery Proof",
         "operationId": "delivery_proof_api_v1_companies__slug__orders__identity__delivery_proof_get",
@@ -9560,7 +8886,7 @@
     "/api/v1/companies/{slug}/booking-preferences": {
       "get": {
         "tags": [
-          "Manual orders and billing"
+          "Orders, quotes and delivery"
         ],
         "summary": "Booking Preferences",
         "operationId": "booking_preferences_api_v1_companies__slug__booking_preferences_get",
@@ -16993,17 +16319,26 @@
             "type": "string",
             "title": "Status"
           },
-          "total": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "shipper_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Shipper Id"
+          },
+          "driver_id": {
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Total"
+            "title": "Driver Id"
           },
           "shipper_name": {
             "type": "string",
@@ -17030,7 +16365,7 @@
             "title": "Service Name",
             "default": ""
           },
-          "window_start": {
+          "delivered_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -17040,65 +16375,27 @@
                 "type": "null"
               }
             ],
-            "title": "Window Start"
+            "title": "Delivered At"
           },
-          "window_end": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Window End"
-          },
-          "actual_arrival": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Arrival"
-          },
-          "sla_status": {
+          "delivery_outcome": {
             "type": "string",
             "enum": [
               "ON_TIME",
-              "AHEAD",
               "LATE",
-              "UNKNOWN"
+              "NOT_MEASURED"
             ],
-            "title": "Sla Status",
-            "default": "UNKNOWN"
-          },
-          "variance_minutes": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Variance Minutes"
-          },
-          "accessorials": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Accessorials"
+            "title": "Delivery Outcome",
+            "default": "NOT_MEASURED"
           },
           "pod_verified": {
             "type": "boolean",
             "title": "Pod Verified",
             "default": false
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues",
+            "default": 0
           }
         },
         "type": "object",
@@ -17107,26 +16404,14 @@
           "number",
           "scheduled_at",
           "status",
-          "total"
+          "source",
+          "shipper_id",
+          "driver_id"
         ],
         "title": "AnalyticsRow"
       },
       "AnalyticsView": {
         "properties": {
-          "hourly_completed": {
-            "items": {
-              "$ref": "#/components/schemas/HourlyMetric"
-            },
-            "type": "array",
-            "title": "Hourly Completed"
-          },
-          "accessorial_counts": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "Accessorial Counts"
-          },
           "pod_verified_orders": {
             "type": "integer",
             "title": "Pod Verified Orders"
@@ -17150,17 +16435,6 @@
             ],
             "title": "On Time Percent"
           },
-          "average_arrival_variance_minutes": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Average Arrival Variance Minutes"
-          },
           "orders": {
             "type": "integer",
             "title": "Orders"
@@ -17176,10 +16450,16 @@
             "type": "integer",
             "title": "Completed Orders"
           },
-          "completed_revenue_before_tax": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Completed Revenue Before Tax"
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "source_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Source Counts"
           },
           "daily": {
             "items": {
@@ -17198,17 +16478,15 @@
         },
         "type": "object",
         "required": [
-          "hourly_completed",
-          "accessorial_counts",
           "pod_verified_orders",
           "on_time_orders",
           "sla_known_orders",
           "on_time_percent",
-          "average_arrival_variance_minutes",
           "orders",
           "statuses",
           "completed_orders",
-          "completed_revenue_before_tax",
+          "open_issues",
+          "source_counts",
           "daily",
           "rows"
         ],
@@ -18832,11 +18110,6 @@
             "type": "integer",
             "title": "Completed"
           },
-          "revenue": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Revenue"
-          },
           "on_time": {
             "type": "integer",
             "title": "On Time",
@@ -18847,9 +18120,9 @@
             "title": "Late",
             "default": 0
           },
-          "sla_known": {
+          "not_measured": {
             "type": "integer",
-            "title": "Sla Known",
+            "title": "Not Measured",
             "default": 0
           }
         },
@@ -18857,8 +18130,7 @@
         "required": [
           "date",
           "orders",
-          "completed",
-          "revenue"
+          "completed"
         ],
         "title": "DailyMetric"
       },
@@ -20197,18 +19469,6 @@
             ],
             "title": "Quote Id"
           },
-          "invoice_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Invoice Id"
-          },
           "notification_id": {
             "anyOf": [
               {
@@ -20267,7 +19527,6 @@
           "version",
           "created_at",
           "quote_id",
-          "invoice_id",
           "recipient",
           "status",
           "sent_at",
@@ -20393,52 +19652,6 @@
           "reason"
         ],
         "title": "Exclusion"
-      },
-      "Finalize": {
-        "properties": {
-          "version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Version"
-          },
-          "actual_minutes": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 10080.0,
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Minutes"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "version"
-        ],
-        "title": "Finalize"
-      },
-      "HourlyMetric": {
-        "properties": {
-          "hour": {
-            "type": "integer",
-            "title": "Hour"
-          },
-          "orders": {
-            "type": "integer",
-            "title": "Orders"
-          }
-        },
-        "type": "object",
-        "required": [
-          "hour",
-          "orders"
-        ],
-        "title": "HourlyMetric"
       },
       "IntakeDetail": {
         "properties": {
@@ -20804,66 +20017,6 @@
           "draft"
         ],
         "title": "IntakeView"
-      },
-      "InvoiceView": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "number": {
-            "type": "string",
-            "title": "Number"
-          },
-          "order_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Order Id"
-          },
-          "snapshot": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Snapshot"
-          },
-          "subtotal": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Subtotal"
-          },
-          "tax": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Tax"
-          },
-          "total": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "version",
-          "created_at",
-          "number",
-          "order_id",
-          "snapshot",
-          "subtotal",
-          "tax",
-          "total"
-        ],
-        "title": "InvoiceView"
       },
       "IssueInput": {
         "properties": {
@@ -22464,11 +21617,6 @@
             "title": "Increment Minutes",
             "default": 30
           },
-          "settle_actual": {
-            "type": "boolean",
-            "title": "Settle Actual",
-            "default": true
-          },
           "minimum_subtotal": {
             "anyOf": [
               {
@@ -22606,11 +21754,6 @@
             "minimum": 1.0,
             "title": "Increment Minutes",
             "default": 30
-          },
-          "settle_actual": {
-            "type": "boolean",
-            "title": "Settle Actual",
-            "default": true
           },
           "minimum_subtotal": {
             "type": "string",
@@ -23504,19 +22647,6 @@
             ],
             "title": "Rate Card Id"
           },
-          "terms": {
-            "type": "string",
-            "enum": [
-              "COD",
-              "NET7",
-              "NET15",
-              "NET30",
-              "NET45",
-              "NET60"
-            ],
-            "title": "Terms",
-            "default": "NET30"
-          },
           "discount": {
             "$ref": "#/components/schemas/Discount-Input"
           },
@@ -23685,10 +22815,6 @@
             ],
             "title": "Rate Card Name"
           },
-          "terms": {
-            "type": "string",
-            "title": "Terms"
-          },
           "discount": {
             "$ref": "#/components/schemas/Discount-Output"
           },
@@ -23739,7 +22865,6 @@
           "phone",
           "warehouse",
           "rate_card_id",
-          "terms",
           "discount",
           "instructions"
         ],

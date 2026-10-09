@@ -8,7 +8,7 @@ from sqlalchemy import text
 from app.main import app
 from app.dispatch import rank, service, worker
 from conftest import login, company, post, HEADERS, owner_engine
-from test_manual_operations import BASE, check, address, new_order, setup  # noqa: F401  (setup is a fixture)
+from test_manual_operations import BASE, check, address, booking, new_order, setup  # noqa: F401  (setup is a fixture)
 
 
 def mode(client, value):
@@ -109,6 +109,22 @@ def test_manual_mode_worker_never_assigns(fleet):
     assert check(w['client'].get(BASE + f'/orders/{order["id"]}'))['status'] == 'NEW'
 
 
+def test_switching_to_manual_during_ranking_prevents_assignment(fleet, monkeypatch):
+    w = fleet; client = w['client']
+    mode(client, 'AUTO')
+    order = new_order(w)
+
+    def changed_mode(brief, candidates):
+        mode(client, 'MANUAL')
+        return candidates, 'Ready before the dispatcher changed mode.'
+
+    monkeypatch.setattr(rank, 'rank', changed_mode)
+    [organization_id] = service.auto_companies()
+    assert service.dispatch_order(organization_id, order['id']) is None
+    assert check(client.get(BASE + f'/orders/{order["id"]}'))['status'] == 'NEW'
+    assert check(client.get(BASE + f'/orders/{order["id"]}/dispatch-decisions')) == []
+
+
 def test_auto_mode_assigns_as_agent_and_notifies(fleet):
     w = fleet; client = w['client']
     assert mode(client, 'AUTO')['data']['dispatch_mode'] == 'AUTO'
@@ -124,6 +140,28 @@ def test_auto_mode_assigns_as_agent_and_notifies(fleet):
         assert c.execute(text("SELECT count(*) FROM audit_events WHERE action = 'order.assigned' AND actor_id IS NULL")).scalar() == 1
         assert c.execute(text("SELECT actor_type FROM events WHERE type = 'order.assigned'")).scalar() == 'AGENT'
     assert worker.cycle() == {}
+
+
+def test_auto_mode_waits_for_dg_qualified_driver(fleet):
+    w = fleet; client = w['client']
+    mode(client, 'AUTO')
+    payload = booking(w['shipper']['id'], w['service'], w['type_id'])
+    payload['items'][0]['dangerous_goods'] = True
+    order = check(post(client, BASE + '/orders', payload), 201)
+    assert worker.cycle()['NO_CANDIDATE'] == 1
+    assert check(client.get(BASE + f'/orders/{order["id"]}'))['status'] == 'NEW'
+    decision = check(client.get(BASE + f'/orders/{order["id"]}/dispatch-decisions'))[0]
+    reasons = {item['driver_id']: item['reason'] for item in decision['excluded']}
+    assert 'verified DG qualification' in reasons[w['driver']['id']]
+
+    current = check(client.get(BASE + f'/drivers/{w["driver"]["id"]}'))
+    qualified = check(client.put(BASE + f'/drivers/{w["driver"]["id"]}', json={
+        'version': current['version'], 'data': w['driver_body'] | {'qualifications': ['DG']},
+    }, headers={'Idempotency-Key': str(uuid4())}))
+    assert qualified['data']['qualifications'] == ['DG']
+    age()
+    assert worker.cycle()['ASSIGNED'] == 1
+    assert check(client.get(BASE + f'/orders/{order["id"]}'))['status'] == 'ASSIGNED'
 
 
 def test_auto_mode_without_a_driver_flags_once_then_assigns(fleet):
