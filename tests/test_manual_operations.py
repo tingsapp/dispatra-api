@@ -407,6 +407,9 @@ def test_driver_orders_profile_and_viewable_proof(setup):
 
 def test_order_tracking_live_location_privacy(setup):
     w=setup;client=w['client'];mobile=w['mobile']
+    avatar = 'https://example.com/dana.png'
+    check(client.put(BASE+f'/drivers/{w["driver"]["id"]}', json=dict(version=w['driver']['version'],
+        data={**w['driver_body'], 'avatar_url': avatar}), headers={'Idempotency-Key': str(uuid4())}))
     other=check(post(client,BASE+'/shippers',{**w['shipper_body'],'name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
     stamp=lambda: datetime.now(timezone.utc).isoformat()
     locate=lambda: check(post(mobile,BASE+'/driver/location',dict(duty_id=w['duty']['id'],captured_at=stamp(),latitude=49.2601,longitude=-123.1101,accuracy_m=8,location_permission='GRANTED')),201)
@@ -433,6 +436,10 @@ def test_order_tracking_live_location_privacy(setup):
         route=assign(w,order)
         assigned=track(alice,order)
         assert assigned['stage']=='ASSIGNED' and assigned['driver']['first_name']=='Dana' and assigned['driver']['vehicle_type'] and assigned['dedicated'] is True
+        assert assigned['driver']['name'] == 'Dana Driver' and assigned['driver']['phone'] == w['driver_body']['phone']
+        assert assigned['driver']['avatar_url'] == avatar
+        assert set(assigned['driver']) == {'first_name', 'name', 'phone', 'avatar_url', 'vehicle_type'}
+        assert track(client, order)['driver'] == assigned['driver']
         assert assigned['location'] is None and [e['kind'] for e in assigned['events']]==['BOOKED','ASSIGNED']
         assert bob.get(BASE+f'/orders/{order["id"]}/tracking').status_code==404
         route=start(route); locate()

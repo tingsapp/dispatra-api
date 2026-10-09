@@ -39,10 +39,12 @@ def order_tracking(db, actor, identity):
             shared = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id, Order.route_id == route.id,
                 Order.shipper_id != order.shipper_id, Order.status != 'CANCELLED').limit(1)) is not None
             row = db.scalar(select(Driver).where(Driver.organization_id == actor.organization_id, Driver.id == route.driver_id))
-            driver = (row.name.split() or [''])[0] if row else None
+            driver = {'first_name': (row.name.split() or [''])[0], 'name': row.name,
+                'avatar_url': row.data.get('avatar_url', ''), 'phone': row.phone} if row else None
             vehicle = db.scalar(select(Vehicle).where(Vehicle.organization_id == actor.organization_id, Vehicle.id == route.vehicle_id))
             kind = vehicle and db.scalar(select(Catalog).where(Catalog.organization_id == actor.organization_id, Catalog.id == vehicle.type_id))
             vehicle_type = kind.data.get('name') if kind else None
+            if driver: driver['vehicle_type'] = vehicle_type
             on_duty = db.scalar(select(DutySession.id).where(DutySession.organization_id == actor.organization_id,
                 DutySession.driver_id == route.driver_id, DutySession.ended_at.is_(None)))
             if route.status == 'IN_PROGRESS' and on_duty:
@@ -72,7 +74,7 @@ def order_tracking(db, actor, identity):
     fresh = location is not None and current - location.captured_at <= STALE_AFTER
     events = [{'kind': 'BOOKED', 'label': 'Order booked', 'at': order.created_at}]
     if route:
-        events.append({'kind': 'ASSIGNED', 'label': f'Driver {driver} assigned' if driver else 'Driver assigned', 'at': route.created_at})
+        events.append({'kind': 'ASSIGNED', 'label': f'Driver {driver["first_name"]} assigned' if driver else 'Driver assigned', 'at': route.created_at})
         if route.started_at: events.append({'kind': 'STARTED', 'label': 'Driver started the route', 'at': route.started_at})
     for visit, kind in mine:
         address = stops[str(visit.stop_id)]['address']['text']
@@ -85,7 +87,7 @@ def order_tracking(db, actor, identity):
     if order.status == 'CANCELLED': events.append({'kind': 'CANCELLED', 'label': 'Order cancelled', 'at': order.updated_at})
     events.sort(key=lambda event: event['at'])
     return {'order_id': order.id, 'status': order.status, 'stage': _stage(order, route, mine, next_visit), 'dedicated': route is not None and not shared,
-        'driver': {'first_name': driver, 'vehicle_type': vehicle_type} if route and driver else None,
+        'driver': driver,
         'stops': stop_rows, 'stops_before_next': stops_before, 'eta': target['eta'] if target else None,
         'delay_minutes': int(lateness.total_seconds() // 60), 'late': late, 'live': live,
         'location': {'latitude': location.data['latitude'], 'longitude': location.data['longitude'], 'accuracy_m': location.data.get('accuracy_m'), 'captured_at': location.captured_at} if live and fresh else None,

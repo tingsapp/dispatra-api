@@ -815,6 +815,9 @@ class TrackingEvent(BaseModel):
 class TrackingDriver(BaseModel):
     first_name: str
     vehicle_type: str | None
+    name: str = ''
+    avatar_url: str = ''
+    phone: str = ''
 
 
 class TrackingLocation(BaseModel):
