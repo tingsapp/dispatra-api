@@ -4,6 +4,8 @@ Updated: 2026-10-08. [Specification](spec.md) defines the product contract; [REA
 
 ## Implemented
 
+- 2026-10-09: Updated the built-in demo service description/promise to 17:00 to match the clients’ 24-hour display policy. Seed JSON parsing and diff checks passed. No seeding, saved-record changes, schema changes or API behavior changes; no production deployment.
+
 - Release candidate verification: all 113 API tests passed on a new disposable PostgreSQL instance through the restricted runtime role, including the email/Auto-dispatch/driver-completion workflow, invoice retirement archives and analytics. The instance was stopped and removed after the run. The complete web suite passed 351 tests; web TypeScript, production build and generated driver TypeScript passed. Production `/health` and `/ready` responded successfully during anonymous inspection. Production backup, pending migrations and coordinated deployment remain pending explicit approval for private production credential retrieval; these checks do not claim an updated live installation or live worker execution.
 
 - 2026-10-08: Analytics rows now expose the ordering shipper ID and nullable assigned route driver ID for distinct identity counts in the web activity chart. No migration or saved-record changes. All three Analytics PostgreSQL regressions passed, including assigned/unassigned identity projection, date and tenant scope; both generated clients, both TypeScript checks, web production build and disposable desktop/mobile chart acceptance passed. Local API restarted and readiness verified.
