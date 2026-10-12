@@ -21,6 +21,8 @@ class SyncView(BaseModel):
     cursor: str
     changes: list[SyncChange]
     unread: int
+    # Unread Order chat messages from the other party (dispatchers: Shipper and driver chats they take part in).
+    unread_messages: int
     reset: bool
     next_poll_ms: int
 

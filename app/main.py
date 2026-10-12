@@ -1,4 +1,5 @@
 import os
+import re
 from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -14,6 +15,7 @@ app = FastAPI(title='Dispatra API', version='0.2.0', responses={
 })
 origins = {origin.strip() for origin in os.environ.get('WEB_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()}
 origins.add('https://dispatra.vercel.app')
+TMS_WEBHOOK = re.compile(r'^/api/v1/companies/[a-z0-9-]{1,63}/integrations/tms/events$')
 
 def error(request, status, message, fields=None):
     return JSONResponse(status_code=status, content={'error': {
@@ -24,7 +26,11 @@ def error(request, status, message, fields=None):
 @app.middleware('http')
 async def boundary(request: Request, call_next):
     request.state.request_id = str(uuid4())
-    native_request = (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
+    # A TMS webhook authenticates with an HMAC signature of the body, never a session, so browser checks do not apply.
+    tms_webhook = request.method == 'POST' and TMS_WEBHOOK.match(request.url.path) is not None
+    # API keys are sent explicitly by servers and never attached by browsers, so they carry no CSRF risk.
+    api_key = not request.cookies.get('dispatra_session') and request.headers.get('authorization', '').startswith('Bearer dsp_')
+    native_request = tms_webhook or api_key or (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
         and request.headers.get('x-requested-with') == 'Dispatra'
         and (request.url.path == '/api/v1/auth/driver/login'
              or request.headers.get('authorization', '').startswith('Bearer dm_')))
@@ -85,7 +91,16 @@ from .platform.routes import router as platform_router
 app.include_router(platform_router)
 from .events.routes import router as events_router
 app.include_router(events_router)
+from .events.websocket import router as websocket_router
+app.include_router(websocket_router)
 from .intake.routes import router as intake_router
 app.include_router(intake_router)
 from .dispatch.routes import router as dispatch_router
 app.include_router(dispatch_router)
+from .chat.routes import router as chat_router
+app.include_router(chat_router)
+from .push.routes import router as push_router
+app.include_router(push_router)
+from .integrations.routes import api_keys as api_key_router, receiver as tms_receiver, router as integrations_router, webhooks as webhook_router
+for integration_router in [integrations_router, tms_receiver, webhook_router, api_key_router]:
+    app.include_router(integration_router)

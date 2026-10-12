@@ -125,7 +125,7 @@ def update_order(db, actor, identity, data, key):
         db.execute(delete(OrderItem).where(OrderItem.order_id == row.id, OrderItem.organization_id == actor.organization_id))
         db.execute(delete(OrderStop).where(OrderStop.order_id == row.id, OrderStop.organization_id == actor.organization_id))
         save_children(db, actor, row, booking)
-        changed(db, actor, row, 'order.revised')
+        changed(db, actor, row, 'order.updated')
         return order_view(row, actor)
     return command(db, actor, key, 'order-edit:' + str(identity), data.model_dump(mode='json'), run)
 
@@ -154,9 +154,9 @@ def complete_order(db, actor, identity, data, key):
         for visit in visits:
             visit.status, visit.completed_at = 'COMPLETED', completed_at
             visit.movements = {**(visit.movements or {}), 'completed_by': 'DISPATCHER'}
-            changed(db, actor, visit, 'stop.completed_by_dispatcher')
+            changed(db, actor, visit, 'stop.completed')
         row.status, row.completed_at = 'COMPLETED', completed_at
-        changed(db, actor, row, 'order.completed_by_dispatcher')
+        changed(db, actor, row, 'order.completed')
         remaining = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id, Order.route_id == route.id,
             Order.status.in_(['NEW', 'ASSIGNED', 'IN_PROGRESS'])))
         if not remaining and route.status in {'PLANNED', 'IN_PROGRESS'}:

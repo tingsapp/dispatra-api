@@ -9,3 +9,7 @@ __pycache__/
 .pytest_cache/
 .local/
 .vercel/
+
+*-firebase-adminsdk-*.json
+
+firebase-service-account*.json

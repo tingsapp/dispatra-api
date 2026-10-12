@@ -17,7 +17,8 @@ def audit(db, actor, action, entity_id, organization_id, actor_type='USER'):
     publish.record(db, actor, action, entity_id, organization_id, actor_type)
 
 def once(db, actor, key, operation, payload, run):
-    scoped = f'{actor.id}:{operation}:{key}'
+    # Actors without a user (integrations, API keys) are scoped by company so keys never meet across tenants.
+    scoped = f"{actor.id or 'org:' + str(actor.organization_id)}:{operation}:{key}"
     serialized = json.dumps(payload, sort_keys=True)
     db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))'), {'key': scoped})
     previous = db.get(Operation, scoped)

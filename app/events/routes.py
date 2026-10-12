@@ -9,6 +9,7 @@ from app.routes import DB, OperationKey
 from app.services import audit
 from app.operations.common import command, changed, version
 from app.operations.schemas import Version
+from app.chat.service import total_unread
 from . import feed
 from .models import Notification
 from .schemas import NotificationView, ReadAllView, SyncView
@@ -56,8 +57,8 @@ def mark_read(db, user, identity, data, key, view):
 @router.get('/sync', response_model=SyncView)
 def sync(slug: str, db: DB, cursor: str | None = Query(None, max_length=42), user: User = Depends(auth.company_user)):
     rows, position, reset = feed.for_user(db, user, cursor, BATCH)
-    return {'cursor': position, 'changes': [dict(row) for row in rows], 'unread': unread(db, user), 'reset': reset,
-        'next_poll_ms': 0 if len(rows) == BATCH else poll_interval()}
+    return {'cursor': position, 'changes': [dict(row) for row in rows], 'unread': unread(db, user), 'unread_messages': total_unread(db, user),
+        'reset': reset, 'next_poll_ms': 0 if len(rows) == BATCH else poll_interval()}
 
 
 @router.get('/notifications', response_model=list[NotificationView])

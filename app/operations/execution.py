@@ -63,6 +63,14 @@ def telemetry(db, actor, data, key):
             captured_at=data.captured_at, data=data.model_dump(mode='json'))
         db.add(row); driver.last_seen_at, driver.location_permission = now(), data.location_permission
         db.flush()
+        # Identifiers only: authorized tracking/Monitor reads still enforce GPS privacy.
+        from app.events.publish import record as record_event
+        record_event(db, actor, 'driver.location_updated', driver.id, actor.organization_id)
+        routes = select(Route.id).where(Route.organization_id == actor.organization_id,
+            Route.driver_id == driver.id, Route.status == 'IN_PROGRESS')
+        for order_id in db.scalars(select(Order.id).where(Order.organization_id == actor.organization_id,
+            Order.route_id.in_(routes), Order.status == 'IN_PROGRESS')):
+            record_event(db, actor, 'order.tracking_updated', order_id, actor.organization_id)
         return {'id': str(row.id), 'captured_at': row.captured_at.isoformat()}
     return command(db, actor, key, 'telemetry', data.model_dump(mode='json'), run)
 

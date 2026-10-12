@@ -1,5 +1,8 @@
+import hashlib
 import os
+import re
 import secrets
+from types import SimpleNamespace
 from datetime import timedelta
 from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy import select, delete
@@ -59,16 +62,35 @@ def login(db, data, request, response, mobile=False):
     audit(db, user, 'session.started', user.id, user.organization_id)
     return issued if mobile else account_view(db, user)
 
+# Paths an API key may call: the documented Orders, Shippers, Drivers, Vehicles and read-only catalogue endpoints.
+API_KEY_PATHS = re.compile(r'^/api/v1/companies/[a-z0-9-]{1,63}/(orders(/[0-9a-f-]{36}(/(cancel|tracking|delivery-proof))?)?'
+    r'|(shippers|drivers|vehicles)(/[0-9a-f-]{36}(/archive)?)?|catalog)$')
+
 def request_token(request):
     authorization = request.headers.get('authorization')
     if authorization:
-        if request.cookies.get(COOKIE) or not authorization.startswith('Bearer dm_'):
+        if request.cookies.get(COOKIE) or not authorization.startswith(('Bearer dm_', 'Bearer dsp_')):
             raise HTTPException(401, 'Please sign in.')
         return authorization[7:]
     return request.cookies.get(COOKIE, '')
 
+def api_key_principal(request, db, token):
+    """A company API key acts with dispatcher permissions on the documented paths only; it is audited as `SYSTEM`."""
+    from .integrations.models import ApiKey
+    if not API_KEY_PATHS.match(request.url.path) or (request.url.path.endswith('/catalog') and request.method != 'GET'):
+        raise HTTPException(403, 'API keys cannot use this endpoint.')
+    context(db, platform=True)
+    key = db.scalar(select(ApiKey).where(ApiKey.key_hash == hashlib.sha256(token.encode()).hexdigest(), ApiKey.revoked_at.is_(None)))
+    org = db.get(Organization, key.organization_id) if key else None
+    if not key or not org or not org.active: raise HTTPException(401, 'Invalid API key.')
+    context(db, org.id)
+    if key.last_used_at is None or now() - key.last_used_at > timedelta(minutes=5): key.last_used_at = now()
+    return SimpleNamespace(id=None, role='DISPATCHER', organization_id=org.id, shipper_id=None, driver_id=None, active=True,
+        actor_type='SYSTEM', login_id='api-key', display_name='API key')
+
 def authenticated(request: Request, db: Session = Depends(session)):
     token = request_token(request)
+    if token.startswith('dsp_'): return api_key_principal(request, db, token)
     login_session = db.get(LoginSession, digest(token)) if token else None
     if not login_session or login_session.expires_at <= now(): raise HTTPException(401, 'Please sign in.')
     context(db, login_session.organization_id)

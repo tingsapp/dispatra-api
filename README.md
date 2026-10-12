@@ -107,6 +107,16 @@ scripts/local-db start
 
 Use `scripts/local-db status` or `scripts/local-db stop` to manage it. This script controls the local installation prepared in this workspace; a fresh clone can use the PostgreSQL/Compose setup above, then run `app.demo`. Keep `.local/` and `.env` out of Git and retain the database directory for persistent data. Never point test commands at `dispatra_demo`.
 
+### Connected TMS and Dispatra API
+
+A dispatcher connects one TMS under Integrations → Connected TMS (API address, key or token, endpoints, field maps, webhook or polling). Credentials and secrets are encrypted with the same server-only `MAILBOX_ENCRYPTION_KEY`; TMS and webhook hosts must resolve to public addresses (`TMS_ALLOW_PRIVATE_HOSTS=true` only for local testing). TMS webhooks post to `/api/v1/companies/{slug}/integrations/tms/events`, signed with HMAC-SHA256 of the body in `X-Signature`. Run the integration worker alongside the API for fleet sync, order polling, order processing, status delivery to the TMS and the company webhook:
+
+```sh
+.venv/bin/python -m app.integrations.worker
+```
+
+The Dispatra API accepts `Authorization: Bearer dsp_…` keys created under Integrations → Dispatra API, limited to the documented order, shipper, driver, vehicle and catalogue endpoints. See [spec.md](spec.md) §14.
+
 ## Manual workflow
 
 All paths below are beneath `/api/v1/companies/{slug}`. Mutations require an allowed `Origin`, `X-Requested-With: Dispatra`, and an `Idempotency-Key` of 16–80 alphanumeric/hyphen characters. Edits/transitions require the returned `version`; driver Route commands also require `generation`. Keep the same key and identical payload when retrying a command. Stop and item IDs are client-generated UUIDs that must remain stable across retries.
@@ -193,9 +203,19 @@ For an unassigned, priced Order the agent lists every active driver: drivers tha
 
 `--interval` defaults to 30 s (minimum 10 s); `--once` runs one cycle. After AI ranking, the worker rechecks the dispatch mode under the company lock before saving, so switching to MANUAL stops an in-flight automatic assignment. Late-delivery re-planning and reassignment of already assigned Orders are not part of this agent yet.
 
+## Driver push notifications
+
+Native driver phones register their Firebase Cloud Messaging token with `PUT /api/v1/companies/{slug}/driver/push-device` after sign-in; the registration is deleted with its login session. Driver inbox notifications (assignment, route release, dispatcher duty changes) and chat messages from dispatch or a Shipper queue a push in the same transaction. Push text names the Order number or sender only. Set `FIREBASE_SERVICE_ACCOUNT_FILE` to the Firebase service-account JSON (Firebase console → Project settings → Service accounts; keep it out of the repository, readable only by the API user) and run the delivery worker:
+
+```sh
+.venv/bin/python -m app.push.worker
+```
+
+`--once` drains queued pushes and exits (cron-friendly). Failed deliveries retry with back-off when no phone received the push; tokens FCM reports as unregistered are removed.
+
 ## Events, sync and notifications
 
-Audited company mutations append rows to `events` and create recipient `notifications` in the same transaction (`app/events`). Every web and native client polls `GET /api/v1/companies/{slug}/sync?cursor=` and waits the returned `next_poll_ms`; set `SYNC_POLL_MS` (default 15000, bounded 1000–300000) to tune it per deployment without client changes. A worker or later agent reads the log with `app.events.feed.consume`/`advance` under its own consumer name. Events are not yet pruned, and remote push and email for notifications are later slices.
+Audited company mutations append rows to `events` and create recipient `notifications` in the same transaction (`app/events`). The web client and updated native driver client prefer `WS /api/v1/companies/{slug}/ws?cursor=` (HTTPS uses WSS), streaming the same authorized sync snapshots and notification/chat counts. Browser authentication uses the existing secure session cookie and allowed Origin; native drivers use the bearer header. Streams revalidate access, send heartbeats every 15 seconds, and replay missed events from the last processed cursor. GPS uploads publish tracking invalidations, never coordinates. `WEBSOCKET_SYNC_SECONDS` defaults to 1 (bounded 0.25–5); short restricted-role reads of the durable shared event log work across API processes without holding a database connection across network waits. HTTP `GET /api/v1/companies/{slug}/sync?cursor=` remains the disconnected/older-client fallback and waits the returned `next_poll_ms`; `SYNC_POLL_MS` defaults to 15000 (bounded 1000–300000). The proxy must forward WebSocket upgrades; the current Caddy reverse proxy does so through the existing `/api/*` route. A worker or later agent reads the log with `app.events.feed.consume`/`advance` under its own consumer name. Events are not yet pruned. Firebase delivery uses the separate push worker; notification email uses the existing email outbox worker.
 
 ## Verification and contracts
 
@@ -219,3 +239,7 @@ The original dispatcher UI and role portals now call these operational endpoints
 The [driver app](../driver/README.md) uses `POST /api/v1/auth/driver/login` with `{organization, login_id, password}` and sends the returned opaque token as `Authorization: Bearer dm_…`, plus `X-Requested-With: Dispatra`. It does not send a browser session cookie or spoof an Origin. Browser CSRF rules are unchanged. `POST /api/v1/auth/driver/password` returns a replacement native session; logout and administrative revocation invalidate these same sessions.
 
 Migration `0019_driver_notifications` stores private assignment/release inbox records. `GET /api/v1/companies/{slug}/driver/notifications` lists the driver’s newest messages; `POST /driver/notifications/{id}/read` requires version and idempotency key. The inbox is polled by the app; Firebase remote push is not configured.
+
+## Google VM release (2026-10-12)
+
+The deployed API and web client support WSS on the existing HTTPS port through Caddy. HTML responses at `/` and workspace routes use `Cache-Control: no-cache`; hashed `/assets/*` remain immutable. Refresh an already-open browser to load the new client. The Firebase service-account file is `/etc/dispatra/firebase-service-account.json`, owner `dispatra-app`, mode `0600`; `/etc/dispatra/api.env` points `FIREBASE_SERVICE_ACCOUNT_FILE` to it, and `dispatra-push.service` starts the delivery worker after reboot. A phone must sign in to the live server and allow notifications to register its FCM token.

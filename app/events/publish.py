@@ -64,12 +64,13 @@ def resolve(db, action, entity_id):
     from app.operations import models as m
     from app.intake.models import EmailIntake, MailboxConnection
     from app.dispatch.models import DispatchDecision
+    from app.chat.models import Conversation, Message
     kind = action.split('.', 1)[0]
     entity = {'customer': 'shipper', 'pricing': 'settings'}.get(kind, kind)
     model = {'order': m.Order, 'route': m.Route, 'stop': m.RouteStop, 'evidence': m.Evidence, 'issue': m.Issue,
         'email': m.EmailDelivery, 'duty': m.DutySession, 'driver': m.Driver, 'shipper': m.Shipper,
         'vehicle': m.Vehicle, 'quote': m.Quote, 'rate': m.RateCard, 'catalog': m.Catalog, 'notification': Notification,
-        'intake': EmailIntake, 'mailbox': MailboxConnection, 'dispatch': DispatchDecision}.get(entity)
+        'intake': EmailIntake, 'mailbox': MailboxConnection, 'dispatch': DispatchDecision, 'message': Message}.get(entity)
     row = db.get(model, entity_id) if model else None
     result = Audience(entity, getattr(row, 'version', None))
     if row is None:
@@ -93,6 +94,10 @@ def resolve(db, action, entity_id):
     elif entity == 'dispatch': result.order_id = row.order_id
     elif entity == 'driver': result.driver_id = row.id
     elif entity == 'shipper': result.shipper_id = row.id
+    # Chat messages reach only the conversation's participants; dispatchers oversee every Order chat.
+    elif entity == 'message':
+        conversation = db.get(Conversation, row.conversation_id)
+        if conversation: result.order_id, result.shipper_id, result.driver_id = conversation.order_id, conversation.shipper_id, conversation.driver_id
     elif entity == 'notification':
         result.dispatchers, result.user_id, result.shipper_id, result.driver_id = False, row.recipient_user_id, row.shipper_id, row.driver_id
         result.order_id, result.route_id = row.order_id, row.route_id
@@ -101,6 +106,7 @@ def resolve(db, action, entity_id):
 
 def _write(db, organization_id, items):
     from . import email, rules
+    from app.push import service as push
     correlation = uuid4()
     recipients, mail = rules.Recipients(db, organization_id), email.Sender(db, organization_id)
     for (action, entity_id), actor in items:
@@ -110,6 +116,7 @@ def _write(db, organization_id, items):
             route_id=audience.route_id, dispatchers=audience.dispatchers, shipper_id=audience.shipper_id,
             driver_id=audience.driver_id, user_id=audience.user_id, correlation_id=correlation)
         db.add(event)
+        if action == 'message.created': push.for_chat_message(db, organization_id, entity_id)
         for note in rules.notes(db, action, entity_id, audience, actor, recipients):
             if actor.kind == 'USER' and note.user.id == actor.id: continue
             row = Notification(id=uuid4(), organization_id=organization_id, recipient_user_id=note.user.id,
@@ -122,6 +129,7 @@ def _write(db, organization_id, items):
                 route_id=row.route_id, dispatchers=False, shipper_id=row.shipper_id, driver_id=row.driver_id,
                 user_id=row.recipient_user_id, correlation_id=correlation, causation_id=event.id))
             mail.queue(row, note.user)
+            push.for_notification(db, row, note.user)
         db.flush()
 
 
