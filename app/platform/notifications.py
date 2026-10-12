@@ -11,6 +11,8 @@ from .schemas import PlatformNotificationView
 
 
 OWNER_NOTICES = {
+    'technical.approval_required': ('CRITICAL', 'Technical repair needs approval', 'The Technical agent proposed a repair. Review it in Monitor before it runs.'),
+    'technical.problem_detected': ('CRITICAL', 'Technical problem reported', 'The Technical agent found a problem requiring investigation. Review it in Monitor.'),
     'settings.updated': ('INFO', 'Company settings updated', 'The dispatcher updated company settings.'),
     'password.changed': ('INFO', 'Dispatcher password changed', 'The dispatcher changed their account password.'),
     'issue.reported': ('CRITICAL', 'Operational issue reported', 'An operational issue was reported. Ask the company dispatcher to investigate.'),
@@ -52,7 +54,8 @@ def inbox(user):
 def view(db, row):
     return PlatformNotificationView.model_validate({**{field: getattr(row, field) for field in
         ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')},
-        'company_name': db.scalar(select(Organization.name).where(Organization.id == row.organization_id))}).model_dump(mode='json')
+        'company_name': db.scalar(select(Organization.name).where(Organization.id == row.organization_id)),
+        'target': 'monitor' if row.kind.startswith('technical.') else 'company'}).model_dump(mode='json')
 
 
 def page(db, user, limit, before=None):
@@ -65,7 +68,8 @@ def page(db, user, limit, before=None):
     rows = db.execute(query.add_columns(Organization.name).join(Organization, Organization.id == Notification.organization_id)
         .order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit))
     items = [PlatformNotificationView.model_validate({**{field: getattr(row, field) for field in
-        ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')}, 'company_name': name}) for row, name in rows]
+        ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')}, 'company_name': name,
+        'target': 'monitor' if row.kind.startswith('technical.') else 'company'}) for row, name in rows]
     unread = db.scalar(select(func.count()).select_from(inbox(user).where(Notification.read_at.is_(None)).subquery()))
     return {'items': items, 'unread': unread}
 

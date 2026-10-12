@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from .routes import router
@@ -41,7 +42,15 @@ async def boundary(request: Request, call_next):
     elif not request.headers.get('content-length', '0').isdigit() or int(request.headers.get('content-length', '0')) > (3_000_000 if request.url.path.endswith('/evidence') else 262144):
         response = error(request, 413, 'Request is too large.')
     else:
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            from .agents.diagnostics import api_failure
+            await run_in_threadpool(api_failure, getattr(request.state, 'organization_id', None))
+            raise
+    if response.status_code >= 500:
+        from .agents.diagnostics import api_failure
+        await run_in_threadpool(api_failure, getattr(request.state, 'organization_id', None))
     response.headers.update({'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
                              'X-Request-ID':request.state.request_id})
     return response
@@ -77,6 +86,8 @@ def ready() -> dict[str,str]:
         connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
         connection.execute(text('SELECT id, status FROM email_deliveries LIMIT 0'))
         connection.execute(text('SELECT seq, tx FROM events LIMIT 0'))
+        connection.execute(text('SELECT id, status FROM agent_runs LIMIT 0'))
+        connection.execute(text('SELECT id, status FROM technical_issues LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
@@ -91,6 +102,9 @@ from .platform.routes import router as platform_router
 app.include_router(platform_router)
 from .platform.notification_routes import router as platform_notifications_router
 app.include_router(platform_notifications_router)
+from .agents.routes import router as agent_monitor_router, client_router as diagnostic_router
+app.include_router(agent_monitor_router)
+app.include_router(diagnostic_router)
 from .events.routes import router as events_router
 app.include_router(events_router)
 from .events.websocket import router as websocket_router

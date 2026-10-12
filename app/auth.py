@@ -54,6 +54,7 @@ def login(db, data, request, response, mobile=False):
         from .operations.models import Shipper
         shipper = db.get(Shipper, user.shipper_id)
         if not shipper or shipper.status == 'INACTIVE': raise HTTPException(401, 'Login ID or password is incorrect.')
+    request.state.organization_id = user.organization_id
     context(db, user.organization_id, user.role == 'ADMIN', user.shipper_id, user.driver_id)
     old = request.cookies.get(COOKIE)
     if old: db.execute(delete(LoginSession).where(LoginSession.token_hash == digest(old)))
@@ -83,6 +84,7 @@ def api_key_principal(request, db, token):
     key = db.scalar(select(ApiKey).where(ApiKey.key_hash == hashlib.sha256(token.encode()).hexdigest(), ApiKey.revoked_at.is_(None)))
     org = db.get(Organization, key.organization_id) if key else None
     if not key or not org or not org.active: raise HTTPException(401, 'Invalid API key.')
+    request.state.organization_id = org.id
     context(db, org.id)
     if key.last_used_at is None or now() - key.last_used_at > timedelta(minutes=5): key.last_used_at = now()
     return SimpleNamespace(id=None, role='DISPATCHER', organization_id=org.id, shipper_id=None, driver_id=None, active=True,
@@ -108,6 +110,7 @@ def authenticated(request: Request, db: Session = Depends(session)):
         from .operations.models import Shipper
         shipper = db.get(Shipper, user.shipper_id)
         if not shipper or shipper.status == 'INACTIVE': raise HTTPException(401, 'Please sign in.')
+    request.state.organization_id = user.organization_id
     context(db, user.organization_id, user.role == 'ADMIN', user.shipper_id, user.driver_id)
     return user
 

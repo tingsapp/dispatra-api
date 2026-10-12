@@ -114,6 +114,7 @@ class PlatformNotificationView(BaseModel):
     read_at: datetime | None
     organization_id: UUID
     company_name: str
+    target: Literal['company', 'monitor'] = 'company'
 
 
 class PlatformInbox(BaseModel):

@@ -16,7 +16,7 @@ from .models import Event, Notification
 
 PENDING = 'dispatra_events'
 # Account, credential and platform administration actions are audited but never fanned out.
-PRIVATE = ('session.', 'password.', 'dispatcher.', 'platform_owner.', 'demo.', 'company.',
+PRIVATE = ('session.', 'password.', 'dispatcher.', 'platform_owner.', 'technical.', 'demo.', 'company.',
     'organization.created', 'organization.activated', 'organization.suspended')
 ACTOR_TYPES = {'USER', 'SYSTEM', 'AGENT'}
 

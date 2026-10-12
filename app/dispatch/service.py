@@ -24,6 +24,7 @@ from . import rank
 from .candidates import blocker, evaluate
 from .models import DispatchDecision
 from .schemas import DecisionView
+from app.agents.telemetry import monitor_run, step
 
 SYSTEM = SimpleNamespace(id=None, role=None)
 HORIZON = timedelta(hours=float(os.environ.get('DISPATCH_AGENT_HORIZON_HOURS') or '12'))
@@ -51,13 +52,15 @@ def brief(order):
         'service': ((order.pricing.get('context') or {}).get('service') or {}).get('name')}
 
 
-def ranked(order_brief, candidates):
+def ranked(order_brief, candidates, organization_id=None):
     """Return (ordered candidates, ranked_by, summary, error_code)."""
     if not candidates: return [], 'RULES', '', None
+    step('Ranking feasible driver candidates.', organization_id)
     try:
         ordered, summary = rank.rank(order_brief, candidates)
         return ordered, 'AI', summary, None
     except rank.Unavailable as error:
+        step('AI ranking unavailable; validated rule ranking used.', organization_id, 'WARNING')
         return [{**c, 'reason': c['facts'][0]} for c in candidates], 'RULES', RULES_SUMMARY, error.code
 
 
@@ -85,11 +88,15 @@ def suggest(db, user, order_id, refresh=False):
     previous = latest(db, user.organization_id, order.id)
     if not refresh and previous and previous.order_version == order.version and previous.status == 'SUGGESTED' and now() - previous.created_at < REUSE:
         return view(previous)
-    candidates, excluded = evaluate(db, user, order)
-    ordered, ranked_by, summary, error = ranked(brief(order), candidates)
-    row = save(db, user.organization_id, order.id, order.version, 'MANUAL', 'SUGGESTED' if ordered else 'NO_CANDIDATE',
-        ordered, excluded, ranked_by, summary, error, decided_by=user.id)
-    return view(row)
+    with monitor_run('DISPATCH') as progress:
+        progress.step('Checking driver eligibility and route feasibility.', 15, user.organization_id)
+        candidates, excluded = evaluate(db, user, order)
+        progress.step('Ranking eligible driver candidates.', 55, user.organization_id)
+        ordered, ranked_by, summary, error = ranked(brief(order), candidates, user.organization_id)
+        row = save(db, user.organization_id, order.id, order.version, 'MANUAL', 'SUGGESTED' if ordered else 'NO_CANDIDATE',
+            ordered, excluded, ranked_by, summary, error, decided_by=user.id)
+        progress.step('Driver recommendation computed.', 95, user.organization_id)
+        return view(row)
 
 
 def history(db, user, order_id, limit=20):
@@ -173,7 +180,7 @@ def dispatch_order(organization_id, order_id):
         repeat = previous is not None and previous.order_version == order.version and previous.status == 'NO_CANDIDATE'
         version, candidates, excluded = order.version, *evaluate(db, agent, order)
         order_brief = brief(order)
-    ordered, ranked_by, summary, error = ranked(order_brief, candidates)
+    ordered, ranked_by, summary, error = ranked(order_brief, candidates, organization_id)
     with Session(engine) as db, db.begin():
         context(db, organization_id)
         # Ranking runs outside the transaction. Serialize with settings writes so
@@ -206,5 +213,7 @@ def dispatch_order(organization_id, order_id):
 
 def dispatch_pending(organization_id, limit=20):
     results = Counter()
-    for order_id in due(organization_id, limit): results[dispatch_order(organization_id, order_id)] += 1
+    for order_id in due(organization_id, limit):
+        step('Evaluating the next due order through normal dispatch checks.', organization_id)
+        results[dispatch_order(organization_id, order_id)] += 1
     return results

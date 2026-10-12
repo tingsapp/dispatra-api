@@ -18,10 +18,16 @@ from app.operations.models import Catalog, Shipper
 from app.operations.schemas import Booking
 from . import booking, extract, geocode, mailbox, vault
 from .models import EmailIntake, MailboxConnection
+from app.agents.telemetry import step
 
 MAX_ATTEMPTS = 3
 SYSTEM = SimpleNamespace(id=None, role=None)
 UNVERIFIED = 'Sender verification: confirm this email really came from the Shipper'
+
+
+def reopen(row):
+    """Shared retry transition used by dispatcher commands and approved technical repairs."""
+    row.status, row.attempts, row.error_code = 'RECEIVED', 0, None
 
 
 class AgentActor:
@@ -157,12 +163,15 @@ def _create(db, intake, draft):
 
 
 def process(organization_id: UUID, intake_id: UUID):
+    step('Claiming the next queued email.', organization_id)
     claimed = _claim(organization_id, intake_id)
     if claimed is None: return
     ctx = claimed['context']
     prompt_shipper = {'name': ctx['shipper']['name'], 'warehouse_city': (ctx['shipper']['warehouse'] or {}).get('city')} if ctx['shipper'] else None
+    step('Extracting booking facts with the Order agent.', organization_id)
     try: result = extract.extract(claimed['email'], {**ctx, 'shipper': prompt_shipper})
     except extract.Unavailable as error:
+        step('Order agent extraction unavailable; retry policy applied.', organization_id, 'WARNING')
         def failed(db, intake):
             intake.error_code = error.code
             if not error.retry or intake.attempts >= MAX_ATTEMPTS:
@@ -173,6 +182,7 @@ def process(organization_id: UUID, intake_id: UUID):
     def described(db, intake): intake.extraction, intake.summary, intake.error_code = facts, result.summary[:500], None
     if not result.is_order_request:
         return _finish(organization_id, intake_id, lambda db, intake: (described(db, intake), setattr(intake, 'status', 'NOT_AN_ORDER')))
+    step('Validating booking facts and addresses.', organization_id)
     draft, missing = booking.build(result, ctx, geocode.verify)
     if ctx['shipper'] is None:
         def unknown(db, intake):
@@ -186,6 +196,7 @@ def process(organization_id: UUID, intake_id: UUID):
         if missing: _review(db, intake, draft, missing)
         else: _create(db, intake, draft)
     _finish(organization_id, intake_id, settle)
+    step('Booking validation finished; result saved.', organization_id)
 
 
 def process_pending(organization_id: UUID, limit=25):

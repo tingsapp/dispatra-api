@@ -11,7 +11,7 @@ from app.operations import orders
 from app.operations.common import command, operational_shipper, record
 from app.operations.models import Order, Shipper
 from app.operations.schemas import OrderView
-from . import mailbox, vault
+from . import mailbox, vault, service
 from .models import EmailIntake, MailboxConnection
 from .schemas import (IntakeDetail, IntakeOrder, IntakeShipper, IntakeVersion, IntakeView, MailboxCheck, MailboxCheckResult,
     MailboxInput, MailboxView, Status)
@@ -126,7 +126,7 @@ def discard(slug: str, identity: UUID, data: IntakeVersion, db: DB, key: Operati
 
 
 def reopen(row):
-    row.status, row.attempts, row.error_code = 'RECEIVED', 0, None
+    service.reopen(row)
 
 
 @router.post('/messages/{identity}/retry', response_model=IntakeView, status_code=202)

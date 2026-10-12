@@ -5,6 +5,7 @@ from app.models import Base
 from app.operations import models as operational_models
 from app.intake import models as intake_models
 from app.integrations import models as integration_models
+from app.agents import models as agent_models
 engine = create_engine(os.environ['MIGRATION_DATABASE_URL'])
 with engine.connect() as connection:
     context.configure(connection=connection, target_metadata=Base.metadata)
