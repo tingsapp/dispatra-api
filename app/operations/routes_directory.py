@@ -9,7 +9,7 @@ from .common import record, settings, operational_shipper
 from .models import Catalog, RateCard, Shipper, Driver, Vehicle
 from .schemas import (SettingsView, SettingsUpdate, CatalogCreate, CatalogUpdate, CatalogView,
     RateCreate, RateUpdate, RateView, ShipperData, ShipperUpdate, ShipperView, DriverData,
-    DriverUpdate, DriverView, VehicleData, VehicleUpdate, VehicleView, Version)
+    DriverUpdate, DriverView, VehicleData, VehicleUpdate, VehicleView, Version, DirectoryPasswordChange, DirectoryPasswordChanged)
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Manual setup'])
 
@@ -158,6 +158,16 @@ def vehicle(slug: str, identity: UUID, db: DB, user: User = Depends(auth.dispatc
 @router.post('/drivers/{identity}/reset-password', response_model=dict)
 def reset_driver(slug: str, identity: UUID, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
     return directory.reset_driver_password(db,user,identity,idempotency_key)
+
+
+@router.post('/shippers/{identity}/password', response_model=DirectoryPasswordChanged)
+def change_shipper_password(slug: str, identity: UUID, data: DirectoryPasswordChange, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    return directory.change_directory_password(db, user, identity, data, idempotency_key, 'shipper')
+
+
+@router.post('/drivers/{identity}/password', response_model=DirectoryPasswordChanged)
+def change_driver_password(slug: str, identity: UUID, data: DirectoryPasswordChange, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    return directory.change_directory_password(db, user, identity, data, idempotency_key, 'driver')
 
 
 @router.get('/shipper/profile', response_model=ShipperView)

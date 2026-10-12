@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, EmailStr, AwareDatetime, field_validator, model_validator
-from app.schemas import Input, Name
+from app.schemas import Input, Name, Password
 
 Money = Annotated[Decimal, Field(ge=0, le=10000000, max_digits=16, decimal_places=4)]
 Positive = Annotated[Decimal, Field(gt=0, le=10000000, allow_inf_nan=False)]
@@ -84,6 +84,15 @@ class SettingsData(Input):
 
 class Version(Input):
     version: int = Field(ge=1)
+
+
+class DirectoryPasswordChange(Version):
+    new_password: Password
+
+
+class DirectoryPasswordChanged(BaseModel):
+    id: UUID
+    version: int
 
 
 class SettingsUpdate(Version):

@@ -255,6 +255,31 @@ def reset_driver_password(db, actor, identity, key):
     return {**result,'initial_password':password}
 
 
+def change_directory_password(db, actor, identity, data, key, kind):
+    """Dispatcher-supplied credentials; replay results contain only public record revisions."""
+    if actor.role != 'DISPATCHER' or actor.id is None:
+        raise HTTPException(403, 'Dispatcher account access required.')
+    def run():
+        company_lock(db, actor)
+        row = operational_shipper(db, actor, identity, True) if kind == 'shipper' else record(db, Driver, actor, identity, True)
+        version(row, data.version)
+        if row.archived_at: raise HTTPException(409, 'Archived account cannot be changed.')
+        link = User.shipper_id if kind == 'shipper' else User.driver_id
+        account = db.scalar(select(User).where(User.organization_id == actor.organization_id,
+            link == row.id, User.role == kind.upper()).with_for_update())
+        if account is None: raise HTTPException(404, 'Account not found.')
+        account.password_hash = hash_password(data.new_password)
+        account.version += 1
+        account.updated_at = now()
+        db.execute(delete(LoginSession).where(LoginSession.user_id == account.id))
+        if kind == 'driver':
+            from .execution import close_duty_on_logout
+            close_duty_on_logout(db, account, actor)
+        changed(db, actor, row, f'{kind}.password_reset')
+        return {'id': str(row.id), 'version': row.version}
+    return command(db, actor, key, f'{kind}-password:{identity}', data.model_dump(mode='json'), run)
+
+
 def update_shipper_profile(db, actor, data, key):
     def run():
         row = customer = operational_shipper(db,actor,actor.shipper_id,True); version(row,data.version)
