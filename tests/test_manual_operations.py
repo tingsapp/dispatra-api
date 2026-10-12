@@ -156,7 +156,7 @@ def test_seed_is_repeatable_and_preserves_changes(setup):
     assert check(post(client,BASE+'/pricing/seed',{}))['created']==0
     rates=check(client.get(BASE+'/rate-cards'))
     assert next(r for r in rates if r['id']==updated['id'])['data']['base_fee']=='123'
-    assert len(rates)==6
+    assert len(rates)==7
     zone=next(r for r in rates if r['data']['method']=='ZONE')
     assert zone['data']['weight_bands'][0]['prices']['zone_1']=='20'
     assert Decimal(zone['data']['weight_bands'][0]['to_kg'])==Decimal('44.90564463')

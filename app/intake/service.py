@@ -66,7 +66,10 @@ def poll_mailbox(organization_id: UUID):
             context(db, organization_id)
             row = db.scalar(select(MailboxConnection).where(MailboxConnection.organization_id == organization_id).with_for_update())
             if row:
-                if row.last_error is None: publish.record(db, SYSTEM, 'mailbox.failed', row.id, organization_id, 'AGENT')
+                if row.last_error is None:
+                    # Each failure episode needs a new version for recipient notification deduplication.
+                    row.version += 1
+                    publish.record(db, SYSTEM, 'mailbox.failed', row.id, organization_id, 'AGENT')
                 row.last_error, row.last_polled_at = error.code, now()
         return 0
     stored = 0

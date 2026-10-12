@@ -89,6 +89,8 @@ for operational_router in [directory_router, orders_router, driver_router, repor
 
 from .platform.routes import router as platform_router
 app.include_router(platform_router)
+from .platform.notification_routes import router as platform_notifications_router
+app.include_router(platform_notifications_router)
 from .events.routes import router as events_router
 app.include_router(events_router)
 from .events.websocket import router as websocket_router

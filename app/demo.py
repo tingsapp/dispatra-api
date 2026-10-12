@@ -56,6 +56,9 @@ def seed_demo(db):
     dispatcher = db.get(User, DISPATCHER_ID)
     password = None
     if dispatcher is None:
+        from app.platform.service import ensure_dispatcher_capacity, serialize_lock
+        serialize_lock(db, org.id)
+        ensure_dispatcher_capacity(db, org.id)
         password = DEMO_INITIAL_PASSWORD
         dispatcher = User(id=DISPATCHER_ID, organization_id=org.id, scope=str(org.id),
             login_id='dispatcher@example.com', role='DISPATCHER', password_hash=hash_password(password))

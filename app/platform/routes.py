@@ -5,9 +5,9 @@ from app import auth
 from app.models import User
 from app.routes import DB, OperationKey
 from app.schemas import OrganizationCreate, OrganizationView
-from . import service, queries
+from . import service, queries, overview
 from .schemas import (CompanySummary, CompanyDetail, CompanyUpdate, VersionCommand, DispatcherView, DispatcherCredentialView,
-    DispatcherCreate, DispatcherUpdate, SessionRevocation, AuditEntry)
+    DispatcherCreate, DispatcherUpdate, SessionRevocation, AuditEntry, CompanyOverviewUpdate, CompanyOverviewView)
 
 # Every endpoint requires a ADMIN session; company roles receive 403.
 router = APIRouter(prefix='/api/v1/platform/organizations', tags=['Platform administration'])
@@ -35,6 +35,12 @@ def update_company(organization_id: UUID, data: CompanyUpdate, db: DB, idempoten
     return service.update_company(db, user, organization_id, data, idempotency_key)
 
 
+@router.patch('/{organization_id}/overview', response_model=CompanyOverviewView,
+              description='Save company identity, dispatcher details and workspace access atomically. Both record versions are checked.')
+def update_company_overview(organization_id: UUID, data: CompanyOverviewUpdate, db: DB, idempotency_key: OperationKey, user: Owner):
+    return overview.update_overview(db, user, organization_id, data, idempotency_key)
+
+
 @router.post('/{organization_id}/suspend', response_model=CompanyDetail)
 def suspend_company(organization_id: UUID, data: VersionCommand, db: DB, idempotency_key: OperationKey, user: Owner):
     return service.set_company_status(db, user, organization_id, False, data, idempotency_key)
@@ -55,7 +61,9 @@ def list_dispatchers(organization_id: UUID, db: DB, user: Owner):
     return queries.dispatchers(db, service.company(db, organization_id).id)
 
 
-@router.post('/{organization_id}/dispatchers', response_model=DispatcherCredentialView, status_code=201)
+@router.post('/{organization_id}/dispatchers', response_model=DispatcherCredentialView, status_code=201,
+             description='Create the first dispatcher only when the company has no dispatcher accounts. Additional accounts return 409.',
+             responses={409: {'description': 'Company already has a dispatcher account or the login ID is unavailable.'}})
 def create_dispatcher(organization_id: UUID, data: DispatcherCreate, db: DB, idempotency_key: OperationKey, user: Owner):
     return service.create_dispatcher(db, user, organization_id, data, idempotency_key)
 

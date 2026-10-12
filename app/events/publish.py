@@ -1,6 +1,7 @@
 """Turn audited mutations into company events and notifications inside the same transaction.
 
-`record` (called by `services.audit`) only queues the action. The `before_commit` hook resolves
+`record` (called by `services.audit` or workers) writes any private owner notice and queues the
+company action. The `before_commit` hook resolves
 each entity's final state, its audience and notification rules, then inserts the rows before the
 transaction commits; a rollback discards the queue. Resolution runs under the company tenant
 scope so a Shipper or driver action can address dispatchers; read endpoints re-apply the
@@ -40,6 +41,9 @@ class Audience:
 
 
 def record(db, actor, action, entity_id, organization_id, actor_type='USER'):
+    # Owner notices also cover worker signals and private account actions excluded from company feeds.
+    from app.platform.notifications import notify_owner
+    notify_owner(db, actor, action, organization_id, entity_id, actor_type)
     if organization_id is None or action.startswith(PRIVATE) or action.endswith('.password_reset'): return
     if actor_type not in ACTOR_TYPES: raise ValueError('Unknown actor type.')
     queue = db.info.setdefault(PENDING, {})

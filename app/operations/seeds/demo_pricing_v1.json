@@ -402,6 +402,27 @@
         },
         "notes": "",
         "updatedAt": "2026-09-25T17:44:22.798Z"
+      },
+      {
+        "id": "rc_imported",
+        "name": "Imported price",
+        "code": "IMPORTED",
+        "status": "ACTIVE",
+        "scope": "ORDER",
+        "pricingMethod": "IMPORTED",
+        "baseFee": 0,
+        "includedKm": 0,
+        "kmRate": 0,
+        "fixedAmount": 0,
+        "hourlyRate": 0,
+        "minimumBillableMinutes": 0,
+        "billingIncrementMinutes": 30,
+        "minimumOrderSubtotal": 0,
+        "dimensionalDivisor": 5000,
+        "applyFuelSurcharge": false,
+        "applyServiceMultiplier": false,
+        "applyVehicleSurcharge": false,
+        "applyAccessorials": false
       }
     ],
     "zones": [

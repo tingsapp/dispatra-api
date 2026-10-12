@@ -1,6 +1,7 @@
 """Platform-owner read projections, always filtered by explicit organization IDs."""
 from sqlalchemy import select, func, or_, tuple_, case
 from app.models import Organization, User, LoginSession, AuditEvent, now
+from app.operations.models import Shipper, Driver, Order, Settings
 from .schemas import CompanySummary, CompanyDetail, DispatcherView, AuditEntry
 
 AUDITED = ('organization.%', 'dispatcher.%')
@@ -17,7 +18,9 @@ def _escape(text):
 
 
 def companies(db, search=None, status=None, after=None, limit=50):
-    query = select(Organization, _role_count('DISPATCHER').label('dispatchers'), _role_count('DISPATCHER', True).label('active_dispatchers'))
+    query = (select(Organization, _role_count('DISPATCHER').label('dispatchers'), _role_count('DISPATCHER', True).label('active_dispatchers'),
+                    func.coalesce(Settings.data['logo_url'].astext, '').label('logo_url'))
+             .outerjoin(Settings, Settings.organization_id == Organization.id))
     if search:
         pattern = f'%{_escape(search.strip().lower())}%'
         query = query.where(or_(func.lower(Organization.name).like(pattern, escape='\\'), Organization.slug.like(pattern, escape='\\')))
@@ -26,8 +29,8 @@ def companies(db, search=None, status=None, after=None, limit=50):
         anchor = db.execute(select(func.lower(Organization.name), Organization.id).where(Organization.id == after)).first()
         if anchor: query = query.where(tuple_(func.lower(Organization.name), Organization.id) > tuple(anchor))
     query = query.order_by(func.lower(Organization.name), Organization.id).limit(limit)
-    return [CompanySummary.model_validate({**_org(org), 'dispatcher_count': total, 'active_dispatcher_count': active})
-            for org, total, active in db.execute(query)]
+    return [CompanySummary.model_validate({**_org(org), 'dispatcher_count': total, 'active_dispatcher_count': active, 'logo_url': logo})
+            for org, total, active, logo in db.execute(query)]
 
 
 def _org(org):
@@ -40,7 +43,33 @@ def company_detail(db, org):
     sessions = db.scalar(select(func.count()).select_from(LoginSession).where(LoginSession.organization_id == org.id, LoginSession.expires_at > now()))
     return CompanyDetail.model_validate({**_org(org), 'dispatcher_count': roles.get('DISPATCHER', 0), 'active_dispatcher_count': active,
         'shipper_account_count': roles.get('SHIPPER', 0), 'driver_account_count': roles.get('DRIVER', 0),
-        'active_session_count': sessions}).model_dump(mode='json')
+        'active_session_count': sessions, **company_totals(db, org.id), **company_contact(db, org.id)}).model_dump(mode='json')
+
+
+TOTAL_FIELDS = ('shipper_count', 'driver_count', 'order_count')
+
+
+def company_totals(db, organization_id):
+    # Count saved records in every status, including archived directory records.
+    counts = db.execute(select(*[
+        select(func.count()).select_from(model).where(model.organization_id == organization_id).scalar_subquery()
+        for model in (Shipper, Driver, Order)
+    ])).one()
+    return dict(zip(TOTAL_FIELDS, counts))
+
+
+def company_contact(db, organization_id):
+    row = db.scalar(select(Settings).where(Settings.organization_id == organization_id))
+    data = row.data if row else {}
+    address = data.get('address')
+    return {'logo_url': data.get('logo_url', ''), 'phone': data.get('phone', ''), 'address': address.get('text', '') if isinstance(address, dict) else address or '',
+            'settings_version': row.version if row else None}
+
+
+def include_company_details(db, organization_id, detail):
+    # Older idempotent results predate these fields; enrich without reapplying writes.
+    if all(field in detail for field in (*TOTAL_FIELDS, 'phone', 'address', 'settings_version', 'logo_url')): return detail
+    return {**company_totals(db, organization_id), **company_contact(db, organization_id), **detail}
 
 
 def _sessions():

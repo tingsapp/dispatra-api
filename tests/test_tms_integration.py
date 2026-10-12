@@ -257,7 +257,6 @@ def signature(payload: bytes, secret=SECRET):
 @pytest.fixture
 def intake(client, tms, monkeypatch):
     monkeypatch.setattr(geocode, 'verify', lambda text_, postal: {'text': text_, 'latitude': 49.28, 'longitude': -123.11})
-    check(post(client, '/api/v1/companies/acme/rate-cards', {'code': 'TMS', 'data': {'name': 'Imported price (TMS)', 'method': 'IMPORTED'}}), 201)
     check(put(client, body(field_maps={'order': ORDER_MAP})))
     tms_side = TestClient(app)  # a TMS has no session, Origin or X-Requested-With
     def send(payload, secret=SECRET, raw=None):

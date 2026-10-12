@@ -33,29 +33,69 @@ def create_organization(db, actor, data, key):
         db.add(admin); db.flush()
         from app.operations.seeding import seed_pricing
         seed_pricing(db, actor, organization)
+        from app.operations.models import Settings
+        settings = db.scalar(select(Settings).where(Settings.organization_id == organization.id))
+        settings.data = {**settings.data, 'phone': data.phone, 'address': data.address or None}
         audit(db, actor, 'organization.created', organization.id, organization.id)
         audit(db, actor, 'dispatcher.created', admin.id, organization.id)
         db.flush()
         return OrganizationView.model_validate(organization).model_dump(mode='json')
-    return once(db, actor, key, 'organization', data.model_dump(), run)
+    return once(db, actor, key, 'organization', company_payload(data), run)
 
 
 def update_company(db, actor, organization_id, data, key):
     def run():
+        serialize_lock(db, organization_id)
         org = company(db, organization_id, True); expect(org, data.version, 'Company')
-        if org.name != data.name:
-            org.name = data.name
-            from app.operations.models import Settings
-            settings = db.scalar(select(Settings).where(Settings.organization_id == org.id).with_for_update())
-            if settings:
-                # Company Profile shows the same identity; bump its version so open dispatcher drafts reload.
-                settings.data = {**settings.data, 'company_name': data.name}
-                settings.version += 1
+        apply_company_details(db, org, data)
         org.version += 1; org.updated_at = now()
         audit(db, actor, 'organization.updated', org.id, org.id)
         db.flush()
         return queries.company_detail(db, org)
-    return once(db, actor, key, f'platform-company-update:{organization_id}', data.model_dump(), run)
+    result = once(db, actor, key, f'platform-company-update:{organization_id}', company_payload(data), run)
+    return queries.include_company_details(db, organization_id, result)
+
+
+def company_payload(data):
+    # Preserve pre-contact request hashes on idempotent replays.
+    payload = data.model_dump(mode='json')
+    for field in ('phone', 'address', 'settings_version'):
+        if field not in data.model_fields_set: payload.pop(field, None)
+    return payload
+
+
+def apply_company_details(db, org, data):
+    from app.operations.models import Settings
+    settings = db.scalar(select(Settings).where(Settings.organization_id == org.id).with_for_update())
+    contact = {field: getattr(data, field) for field in ('phone', 'address') if getattr(data, field) is not None}
+    if contact:
+        if not settings: raise HTTPException(409, 'Company settings have not been initialized. Run the pricing seeder.')
+        if data.settings_version is None: raise HTTPException(422, 'Company settings version is required when editing phone or address.')
+        expect(settings, data.settings_version, 'Company settings')
+    changed = org.name != data.name
+    org.name = data.name
+    if settings:
+        changes = {'company_name': data.name} if changed else {}
+        if 'phone' in contact and settings.data.get('phone', '') != contact['phone']:
+            changes['phone'] = contact['phone']
+        if 'address' in contact:
+            current = settings.data.get('address')
+            text = current.get('text', '') if isinstance(current, dict) else current or ''
+            if text != contact['address']: changes['address'] = contact['address'] or None
+        if changes:
+            settings.data = {**settings.data, **changes}
+            settings.version += 1
+            settings.updated_at = now()
+            changed = True
+    return changed
+
+
+def apply_company_access(db, actor, org, active):
+    org.active = active
+    if not active:
+        db.execute(delete(LoginSession).where(LoginSession.organization_id == org.id))
+        close_open_duty(db, actor, org.id)
+    audit(db, actor, 'organization.activated' if active else 'organization.suspended', org.id, org.id)
 
 
 def set_company_status(db, actor, organization_id, active, data, key):
@@ -63,14 +103,12 @@ def set_company_status(db, actor, organization_id, active, data, key):
     def run():
         org = company(db, organization_id, True); expect(org, data.version, 'Company')
         if org.active == active: raise HTTPException(409, 'Company is already ' + ('active.' if active else 'suspended.'))
-        org.active = active; org.version += 1; org.updated_at = now()
-        if not active:
-            db.execute(delete(LoginSession).where(LoginSession.organization_id == org.id))
-            close_open_duty(db, actor, org.id)
-        audit(db, actor, 'organization.activated' if active else 'organization.suspended', org.id, org.id)
+        apply_company_access(db, actor, org, active)
+        org.version += 1; org.updated_at = now()
         db.flush()
         return queries.company_detail(db, org)
-    return once(db, actor, key, f'platform-company-{"activate" if active else "suspend"}:{organization_id}', data.model_dump(), run)
+    result = once(db, actor, key, f'platform-company-{"activate" if active else "suspend"}:{organization_id}', data.model_dump(), run)
+    return queries.include_company_details(db, organization_id, result)
 
 
 def close_open_duty(db, actor, organization_id):
@@ -90,8 +128,16 @@ def dispatcher(db, organization_id, user_id, lock=False):
 
 
 def serialize_lock(db, organization_id):
-    # Serializes account changes per company so the last-active-dispatcher guard cannot race.
+    # Serializes account changes per company so dispatcher limits cannot race.
     company_lock(db, SimpleNamespace(organization_id=organization_id))
+
+
+def ensure_dispatcher_capacity(db, organization_id, activating=None):
+    query = select(User.id).where(User.organization_id == organization_id, User.role == 'DISPATCHER')
+    if activating is not None:
+        query = query.where(User.active.is_(True), User.id != activating)
+    if db.scalar(query.limit(1)):
+        raise HTTPException(409, 'Only one dispatcher account is allowed per company.')
 
 
 def unique_login(db, organization_id, login_id, current=None):
@@ -117,6 +163,7 @@ def create_dispatcher(db, actor, organization_id, data, key):
         nonlocal password
         serialize_lock(db, organization_id)
         org = company(db, organization_id)
+        ensure_dispatcher_capacity(db, org.id)
         unique_login(db, org.id, data.login_id)
         password = secrets.token_urlsafe(18)
         account = User(organization_id=org.id, scope=str(org.id), login_id=data.login_id, display_name=data.display_name,
@@ -133,10 +180,14 @@ def update_dispatcher(db, actor, organization_id, user_id, data, key):
     def run():
         serialize_lock(db, organization_id)
         account = dispatcher(db, organization_id, user_id, True); expect(account, data.version, 'Dispatcher account')
-        if account.login_id != data.login_id: unique_login(db, organization_id, data.login_id, account.id)
-        account.login_id = data.login_id; account.display_name = data.display_name
+        apply_dispatcher_details(db, account, data)
         return touched(db, actor, account, 'dispatcher.updated')
     return once(db, actor, key, f'platform-dispatcher-update:{user_id}', data.model_dump(), run)
+
+
+def apply_dispatcher_details(db, account, data):
+    if account.login_id != data.login_id: unique_login(db, account.organization_id, data.login_id, account.id)
+    account.login_id = data.login_id; account.display_name = data.display_name
 
 
 def set_dispatcher_active(db, actor, organization_id, user_id, active, data, key):
@@ -144,10 +195,12 @@ def set_dispatcher_active(db, actor, organization_id, user_id, active, data, key
         serialize_lock(db, organization_id)
         account = dispatcher(db, organization_id, user_id, True); expect(account, data.version, 'Dispatcher account')
         if account.active == active: raise HTTPException(409, 'Dispatcher account is already ' + ('active.' if active else 'deactivated.'))
+        if active:
+            ensure_dispatcher_capacity(db, organization_id, activating=account.id)
         if not active:
             others = db.scalar(select(func.count()).select_from(User).where(User.organization_id == organization_id,
                 User.role == 'DISPATCHER', User.active.is_(True), User.id != account.id))
-            if not others: raise HTTPException(409, 'Keep at least one active dispatcher. Add or activate another dispatcher first.')
+            if not others: raise HTTPException(409, 'Keep the company dispatcher active. Suspend the company to block workspace access.')
             revoke(db, account.id)
         account.active = active
         return touched(db, actor, account, 'dispatcher.activated' if active else 'dispatcher.deactivated')
@@ -158,14 +211,18 @@ def reset_dispatcher_password(db, actor, organization_id, user_id, data, key):
     password = None
     def run():
         nonlocal password
-        rate_limit('platform-reset:' + str(actor.id), 30)
         account = dispatcher(db, organization_id, user_id, True); expect(account, data.version, 'Dispatcher account')
         password = secrets.token_urlsafe(18)
-        account.password_hash = hash_password(password)
-        revoke(db, account.id)
+        apply_dispatcher_password(db, actor, account, password)
         return touched(db, actor, account, 'dispatcher.password_reset')
     result = once(db, actor, key, f'platform-dispatcher-reset:{user_id}', data.model_dump(), run)
     return {**result, 'initial_password': password}
+
+
+def apply_dispatcher_password(db, actor, account, password):
+    rate_limit('platform-reset:' + str(actor.id), 30)
+    account.password_hash = hash_password(password)
+    revoke(db, account.id)
 
 
 def revoke_dispatcher_sessions(db, actor, organization_id, user_id, key):

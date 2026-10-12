@@ -25,10 +25,6 @@ def ids(client):
     return {c['slug']: c['id'] for c in check(client.get(ROOT))}
 
 
-def dispatcher(client, org_id, login_id='second', key=None):
-    return check(post(client, f'{ROOT}/{org_id}/dispatchers', dict(login_id=login_id, display_name='Second Dispatcher'), key), 201)
-
-
 def command(client, path, body=None, key=None):
     return client.post(path, json=body if body is not None else {}, headers={'Idempotency-Key': key or str(uuid4())})
 
@@ -87,56 +83,67 @@ def test_company_search_detail_edit_and_audit(client, companies):
     assert check(client.get('/api/v1/auth/me'))['organization']['name'] == 'Acme Logistics'
 
 
-def test_dispatcher_lifecycle_reset_revoke_and_last_active_guard(client, companies):
-    acme = companies['acme']
+def test_new_company_includes_imported_price_and_seed_preserves_edits(client):
+    login(client)
     key = str(uuid4())
-    created = dispatcher(client, acme, key=key)
-    password = created['initial_password']
-    assert len(password) >= 20 and created['active'] and created['last_login_at'] is None
-    replay = dispatcher(client, acme, key=key)
-    assert replay['id'] == created['id'] and replay['initial_password'] is None
-    assert post(client, f'{ROOT}/{acme}/dispatchers', dict(login_id='second')).status_code == 409
-    assert post(client, f'{ROOT}/{acme}/dispatchers', dict(login_id='dispatcher')).status_code == 409
-    other_login = post(client, f"{ROOT}/{companies['other']}/dispatchers", dict(login_id='second'))
-    assert other_login.status_code == 201, 'login IDs are unique per company, not globally'
+    body = dict(name='Acme', slug='acme', admin_login='dispatcher', password=PASSWORD)
+    created = check(post(client, ROOT, body, key), 201)
+    assert check(post(client, ROOT, body, key), 201)['id'] == created['id']
+    login(client, 'dispatch', 'acme', 'dispatcher')
+    base = '/api/v1/companies/acme'
+    rates = check(client.get(base + '/rate-cards'))
+    assert {r['data']['method'] for r in rates if r['active']} == {'BASE_PLUS_DISTANCE', 'FIXED', 'ZONE', 'HOURLY', 'IMPORTED'}
+    imported, = [r for r in rates if r['data']['method'] == 'IMPORTED']
+    assert imported['data']['name'] == 'Imported price' and imported['active'] and not imported['is_default']
+    assert all(not imported['data'][flag] for flag in ('apply_fuel', 'apply_service', 'apply_vehicle', 'apply_accessorials'))
+    assert next(r for r in rates if r['is_default'])['data']['method'] == 'BASE_PLUS_DISTANCE'
+    edited = check(client.put(base + '/rate-cards/' + imported['id'], json={
+        'version': imported['version'], 'active': False, 'is_default': False,
+        'data': {**imported['data'], 'name': 'Custom TMS terms'},
+    }, headers={'Idempotency-Key': str(uuid4())}))
+    assert check(post(client, base + '/pricing/seed', {}))['created'] == 0
+    assert check(post(client, base + '/pricing/seed', {}))['created'] == 0
+    imported_cards = [r for r in check(client.get(base + '/rate-cards')) if r['data']['method'] == 'IMPORTED']
+    assert imported_cards == [edited]
+
+
+def test_dispatcher_lifecycle_reset_revoke_and_single_account_guard(client, companies):
+    acme = companies['acme']
+    created, = check(client.get(f'{ROOT}/{acme}/dispatchers'))
+    assert created['login_id'] == 'dispatcher'
+    for org in companies.values():
+        blocked = post(client, f'{ROOT}/{org}/dispatchers', dict(login_id='second'))
+        assert blocked.status_code == 409 and 'Only one dispatcher account' in blocked.text
     base = f"{ROOT}/{acme}/dispatchers/{created['id']}"
     with TestClient(app, headers=HEADERS) as desk:
-        login(desk, 'dispatch', 'acme', 'second', password)
-        listed = next(d for d in check(client.get(f'{ROOT}/{acme}/dispatchers')) if d['id'] == created['id'])
-        assert listed['last_login_at'] and listed['active_session_count'] == 1 and 'initial_password' not in listed
-        updated = check(patch(client, base, {'version': 1, 'login_id': 'second-desk', 'display_name': 'Desk Two'}))
-        assert updated['version'] == 2 and updated['login_id'] == 'second-desk'
-        assert patch(client, base, {'version': 1, 'login_id': 'x-desk'}).status_code == 409
-        assert patch(client, base, {'version': 2, 'login_id': 'dispatcher'}).status_code == 409
-        reset = check(command(client, base + '/reset-password', {'version': 2}))
-        assert reset['initial_password'] and reset['initial_password'] != password and reset['version'] == 3
+        login(desk, 'dispatch', 'acme', 'dispatcher')
+        listed = check(client.get(f'{ROOT}/{acme}/dispatchers'))[0]
+        assert listed['last_login_at'] and listed['active_session_count'] == 1
+        updated = check(patch(client, base, {'version': 1, 'login_id': 'main-desk', 'display_name': 'Main Desk'}))
+        assert updated['version'] == 2 and updated['login_id'] == 'main-desk'
+        assert patch(client, base, {'version': 1, 'login_id': 'stale'}).status_code == 409
+        assert desk.get('/api/v1/auth/me').status_code == 200
+        key = str(uuid4())
+        reset = check(command(client, base + '/reset-password', {'version': 2}, key))
+        assert reset['initial_password'] and reset['version'] == 3
+        assert check(command(client, base + '/reset-password', {'version': 2}, key))['initial_password'] is None
         assert desk.get('/api/v1/auth/me').status_code == 401
-        assert desk.post('/api/v1/auth/login', json=dict(portal='dispatch', organization='acme', login_id='second-desk', password=password)).status_code == 401
-        login(desk, 'dispatch', 'acme', 'second-desk', reset['initial_password'])
+        assert desk.post('/api/v1/auth/login', json=dict(portal='dispatch', organization='acme', login_id='main-desk', password=PASSWORD)).status_code == 401
+        login(desk, 'dispatch', 'acme', 'main-desk', reset['initial_password'])
         assert check(command(client, base + '/revoke-sessions')) == {'revoked': 1}
         assert desk.get('/api/v1/auth/me').status_code == 401
-        login(desk, 'dispatch', 'acme', 'second-desk', reset['initial_password'])
-        deactivated = check(command(client, base + '/deactivate', {'version': 3}))
-        assert not deactivated['active'] and deactivated['active_session_count'] == 0
-        assert desk.get('/api/v1/auth/me').status_code == 401
-        assert desk.post('/api/v1/auth/login', json=dict(portal='dispatch', organization='acme', login_id='second-desk', password=reset['initial_password'])).status_code == 401
-    first = next(d for d in check(client.get(f'{ROOT}/{acme}/dispatchers')) if d['login_id'] == 'dispatcher')
-    blocked = command(client, f"{ROOT}/{acme}/dispatchers/{first['id']}/deactivate", {'version': first['version']})
-    assert blocked.status_code == 409 and 'at least one active dispatcher' in blocked.text
-    assert command(client, base + '/deactivate', {'version': 4}).status_code == 409
-    check(command(client, base + '/activate', {'version': 4}))
-    check(command(client, f"{ROOT}/{acme}/dispatchers/{first['id']}/deactivate", {'version': first['version']}))
+        blocked = command(client, base + '/deactivate', {'version': 3})
+        assert blocked.status_code == 409 and 'Suspend the company' in blocked.text
     actions = {e['action'] for e in check(client.get(f'{ROOT}/{acme}/audit'))}
-    assert {'dispatcher.created', 'dispatcher.updated', 'dispatcher.password_reset', 'dispatcher.sessions_revoked',
-            'dispatcher.deactivated', 'dispatcher.activated'} <= actions
+    assert {'dispatcher.created', 'dispatcher.updated', 'dispatcher.password_reset', 'dispatcher.sessions_revoked'} <= actions
     with owner_engine.connect() as db:
         stored = str(db.execute(text('SELECT result FROM operations')).all()) + str(db.execute(text('SELECT * FROM audit_events')).all())
-        assert password not in stored and reset['initial_password'] not in stored and 'initial_password' not in stored
+        assert reset['initial_password'] not in stored and 'initial_password' not in stored
 
 
 def test_cross_company_dispatcher_isolation(client, companies):
     acme, other = companies['acme'], companies['other']
-    created = dispatcher(client, acme)
+    created, = check(client.get(f'{ROOT}/{acme}/dispatchers'))
     foreign = f"{ROOT}/{other}/dispatchers/{created['id']}"
     assert patch(client, foreign, {'version': 1, 'login_id': 'stolen'}).status_code == 404
     for action in ['reset-password', 'deactivate', 'activate']:
@@ -147,7 +154,7 @@ def test_cross_company_dispatcher_isolation(client, companies):
     assert post(client, f'{ROOT}/{uuid4()}/dispatchers', dict(login_id='ghost')).status_code == 404
     # A dispatcher of one company cannot sign in to another company's workspace.
     with TestClient(app, headers=HEADERS) as desk:
-        assert desk.post('/api/v1/auth/login', json=dict(portal='dispatch', organization='other', login_id='second', password=created['initial_password'])).status_code == 401
+        assert desk.post('/api/v1/auth/login', json=dict(portal='dispatch', organization='other', login_id='dispatcher', password='Wrong-company-password-1')).status_code == 401
 
 
 def test_company_suspension_revokes_access_and_preserves_records(client, companies):

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, DateTime, Text, Integer
+from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, DateTime, Text, Integer, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -21,6 +21,8 @@ class Organization(Base):
 class User(Base):
     __tablename__ = 'users'
     __table_args__ = (
+        Index('one_active_company_dispatcher', 'organization_id', unique=True,
+              postgresql_where=text("role = 'DISPATCHER' AND active")),
         UniqueConstraint('scope','login_id'), UniqueConstraint('shipper_id'), UniqueConstraint('driver_id'),
         ForeignKeyConstraint(['organization_id','shipper_id'], ['shippers.organization_id','shippers.id']),
         ForeignKeyConstraint(['organization_id','driver_id'], ['drivers.organization_id','drivers.id']),

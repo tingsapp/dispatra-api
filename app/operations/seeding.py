@@ -59,11 +59,18 @@ def seed_pricing(db, actor, organization=None):
             created += 1
     for source in SEED['pricing']['rateCards']:
         if db.scalar(select(RateCard.id).where(RateCard.organization_id == org_id, RateCard.code == source['code'])): continue
+        # Keep an existing imported card, including an intentionally archived one.
+        if source['pricingMethod'] == 'IMPORTED' and db.scalar(select(RateCard.id).where(
+                RateCard.organization_id == org_id, RateCard.data['method'].astext == 'IMPORTED')): continue
         data = RateData(name=source['name'], method=source['pricingMethod'], base_fee=source['baseFee'],
             included_km=source['includedKm'], per_km=source['kmRate'], fixed_amount=source['fixedAmount'],
             hourly_rate=source['hourlyRate'], minimum_minutes=source['minimumBillableMinutes'],
             increment_minutes=source['billingIncrementMinutes'], minimum_subtotal=source.get('minimumOrderSubtotal') or 0,
-            dimensional_divisor=source['dimensionalDivisor'])
+            dimensional_divisor=source['dimensionalDivisor'],
+            apply_fuel=source.get('applyFuelSurcharge', True),
+            apply_service=source.get('applyServiceMultiplier', True),
+            apply_vehicle=source.get('applyVehicleSurcharge', True),
+            apply_accessorials=source.get('applyAccessorials', True))
         if data.method == 'ZONE':
             data.zones = [Zone(id=z['id'], name=z['name'], postal_codes=z['postalCodes']) for z in SEED['pricing']['zones']]
             data.weight_bands = [WeightBand(from_kg=0, to_kg=Decimal('99') * Decimal('0.45359237'), prices={'zone_1': Decimal('20')})]

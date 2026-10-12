@@ -25,7 +25,7 @@ def remove_fixture_admin():
 def test_demo_logins_pricing_and_repeat_preserve_edits():
     remove_fixture_admin()
     initial = seed()
-    assert initial['pricing']['created'] == 33
+    assert initial['pricing']['created'] == 34
     assert all(account['initial_password'] == '123456' for account in initial['accounts'])
     for account in initial['accounts']:
         with TestClient(app, headers=HEADERS) as client:
@@ -41,7 +41,7 @@ def test_demo_logins_pricing_and_repeat_preserve_edits():
             assert result['organization']['slug'] == 'demo'
             base = '/api/v1/companies/demo'
             if account['role'] == 'DISPATCHER':
-                assert len(client.get(base+'/rate-cards').json()) == 6
+                assert len(client.get(base+'/rate-cards').json()) == 7
                 assert client.get(base+'/drivers').status_code == 200
             elif account['role'] == 'SHIPPER':
                 assert client.get(base+'/shipper/profile').status_code == 200
@@ -65,7 +65,7 @@ def test_demo_logins_pricing_and_repeat_preserve_edits():
     assert replay['pricing']['created'] == 0
     assert all(a['initial_password'] is None for a in replay['accounts'])
     with Session(owner_engine) as db:
-        for model, count in [(Driver,1),(Shipper,1),(Vehicle,1),(RateCard,6),(Catalog,27),(DutySession,0)]:
+        for model, count in [(Driver,1),(Shipper,1),(Vehicle,1),(RateCard,7),(Catalog,27),(DutySession,0)]:
             assert db.scalar(select(func.count()).select_from(model)) == count
         assert db.scalar(select(func.count()).select_from(User).where(User.organization_id == DEMO_ID)) == 3
         assert db.scalar(select(Driver)).name == 'Edited Demo Driver'
@@ -86,6 +86,21 @@ def test_demo_refuses_an_unrelated_company():
         seed()
     with Session(owner_engine) as db:
         assert db.scalar(select(func.count()).select_from(RateCard)) == 0
+        assert db.get(User, DISPATCHER_ID) is None
+
+
+def test_demo_does_not_add_another_dispatcher_to_its_company():
+    from fastapi import HTTPException
+    with Session(owner_engine) as db, db.begin():
+        db.add(Organization(id=DEMO_ID, slug='demo', name='Dispatra Demo'))
+        db.flush()
+        db.add(User(organization_id=DEMO_ID, scope=str(DEMO_ID), login_id='existing-desk',
+                    role='DISPATCHER', password_hash='not-a-login-hash', active=False))
+    with pytest.raises(HTTPException) as error:
+        seed()
+    assert error.value.status_code == 409
+    with Session(owner_engine) as db:
+        assert db.scalar(select(func.count()).select_from(User).where(User.organization_id == DEMO_ID)) == 1
         assert db.get(User, DISPATCHER_ID) is None
 
 
