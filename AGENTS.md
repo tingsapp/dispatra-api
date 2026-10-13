@@ -52,7 +52,7 @@ Read relevant code/tests, implement a cohesive slice, add unit/integration/tenan
 
 ## Company/customer access
 
-Shared PostgreSQL with transaction-local organization/customer context, forced RLS and composite tenant relationships is the approved first implementation. Never run HTTP handlers with migration/owner credentials. Use `app.bootstrap` for the first platform owner; public signup is prohibited. First login does not require a password change. Customer self-service uses explicit profile fields; account terms and business identity remain administrative. Passwords are Argon2 hashes and session tokens are opaque/hash-stored. Test actual PostgreSQL RLS with a non-owner role; SQLite is not isolation evidence. Preserve frozen Alembic migrations independently of future ORM model changes.
+Shared PostgreSQL with transaction-local organization/customer context, forced RLS and composite tenant relationships is the approved first implementation. Never run HTTP handlers with migration/owner credentials. Use `app.bootstrap` for the first platform owner; public trial signup may create a new company and its dispatcher only. Platform-owner enrollment remains prohibited through HTTP. First login does not require a password change. Customer self-service uses explicit profile fields; account terms and business identity remain administrative. Passwords are Argon2 hashes and session tokens are opaque/hash-stored. Test actual PostgreSQL RLS with a non-owner role; SQLite is not isolation evidence. Preserve frozen Alembic migrations independently of future ORM model changes.
 
 ## Cross-project change impact
 

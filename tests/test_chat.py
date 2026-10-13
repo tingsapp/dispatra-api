@@ -131,7 +131,7 @@ def test_reassignment_revokes_previous_driver_and_shippers_are_isolated(setup):
         # Dispatchers keep both drivers' chats.
         assert len([c for c in chats(dispatcher, order) if c['kind'] == 'DRIVER_SHIPPER']) == 2
 
-    other = check(post(dispatcher, BASE + '/shippers', {**w['shipper_body'], 'email': 'other@example.com', 'company_name': 'Other Co'}), 201)
+    other = check(post(dispatcher, BASE + '/shippers', {**w['shipper_body'], 'phone':'6045550198', 'email': 'other@example.com', 'company_name': 'Other Co'}), 201)
     with TestClient(app, headers=HEADERS) as stranger:
         login(stranger, 'customer', 'acme', 'other@example.com', other['initial_password'])
         assert stranger.get(BASE + f'/orders/{order["id"]}/chats').status_code == 404

@@ -31,10 +31,10 @@ async def boundary(request: Request, call_next):
     tms_webhook = request.method == 'POST' and TMS_WEBHOOK.match(request.url.path) is not None
     # API keys are sent explicitly by servers and never attached by browsers, so they carry no CSRF risk.
     api_key = not request.cookies.get('dispatra_session') and request.headers.get('authorization', '').startswith('Bearer dsp_')
-    native_request = tms_webhook or api_key or (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
+    native_request = not request.url.path.startswith(('/api/v1/auth/signup', '/api/v1/auth/verification')) and (tms_webhook or api_key or (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
         and request.headers.get('x-requested-with') == 'Dispatra'
         and (request.url.path == '/api/v1/auth/driver/login'
-             or request.headers.get('authorization', '').startswith('Bearer dm_')))
+             or request.headers.get('authorization', '').startswith('Bearer dm_'))))
     if request.method not in {'GET','HEAD','OPTIONS'} and not native_request and (
         request.headers.get('origin') not in origins or request.headers.get('x-requested-with') != 'Dispatra'
     ):
@@ -65,7 +65,11 @@ async def validation_error(request, exc):
     return error(request, 422, 'Check the entered information.', fields)
 
 @app.exception_handler(IntegrityError)
-async def conflict(request, exc): return error(request, 409, 'A record with those identifiers already exists, or a relationship is invalid.')
+async def conflict(request, exc):
+    constraint = getattr(getattr(exc.orig, 'diag', None), 'constraint_name', '')
+    if constraint in {'users_role_login_unique', 'users_role_phone_unique'}:
+        return error(request, 409, 'That email or phone is already used by an account with this role.')
+    return error(request, 409, 'A record with those identifiers already exists, or a relationship is invalid.')
 
 @app.exception_handler(SQLAlchemyError)
 async def unavailable(request, exc): return error(request, 503, 'Database unavailable. Please try again.')
@@ -81,13 +85,16 @@ def ready() -> dict[str,str]:
     with engine.connect() as connection:
         role = connection.execute(text('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user')).one()
         if role.rolsuper or role.rolbypassrls: raise HTTPException(503, 'Runtime database role is not restricted.')
-        connection.execute(text('SELECT id FROM organizations LIMIT 0'))
+        connection.execute(text('SELECT id, verification_pending FROM organizations LIMIT 0'))
+        connection.execute(text('SELECT id FROM email_verifications LIMIT 0'))
         connection.execute(text('SELECT id, pricing FROM orders LIMIT 0'))
         connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
         connection.execute(text('SELECT id, status FROM email_deliveries LIMIT 0'))
         connection.execute(text('SELECT seq, tx FROM events LIMIT 0'))
         connection.execute(text('SELECT id, status FROM agent_runs LIMIT 0'))
         connection.execute(text('SELECT id, status FROM technical_issues LIMIT 0'))
+        connection.execute(text('SELECT id, status FROM order_watch_incidents LIMIT 0'))
+        connection.execute(text('SELECT id, monthly_price FROM subscription_plans LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
@@ -100,11 +107,15 @@ for operational_router in [directory_router, orders_router, driver_router, repor
 
 from .platform.routes import router as platform_router
 app.include_router(platform_router)
+from .platform.billing import router as billing_router, public_router as subscription_router
+app.include_router(billing_router)
+app.include_router(subscription_router)
 from .platform.notification_routes import router as platform_notifications_router
 app.include_router(platform_notifications_router)
-from .agents.routes import router as agent_monitor_router, client_router as diagnostic_router
+from .agents.routes import router as agent_monitor_router, client_router as diagnostic_router, company_router as company_activity_router
 app.include_router(agent_monitor_router)
 app.include_router(diagnostic_router)
+app.include_router(company_activity_router)
 from .events.routes import router as events_router
 app.include_router(events_router)
 from .events.websocket import router as websocket_router
@@ -120,3 +131,7 @@ app.include_router(push_router)
 from .integrations.routes import api_keys as api_key_router, receiver as tms_receiver, router as integrations_router, webhooks as webhook_router
 for integration_router in [integrations_router, tms_receiver, webhook_router, api_key_router]:
     app.include_router(integration_router)
+
+from .order_watch.routes import owner_router as order_watch_owner, company_router as order_watch_company
+app.include_router(order_watch_owner)
+app.include_router(order_watch_company)

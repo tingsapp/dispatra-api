@@ -7,8 +7,10 @@ from app.operations.models import Order, Settings
 from .models import AgentRun, AgentLog, TechnicalIssue
 from .schemas import AgentLogView, AgentRunView, TechnicalIssueView
 from .classification import issue_agent
+from app.order_watch.models import Incident
+from app.order_watch.commands import OPEN as OPERATIONAL_OPEN
 
-NAMES = ('ORDER', 'DISPATCH', 'TECHNICAL')
+NAMES = ('ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL')
 OPEN = ('NEEDS_ADMIN', 'AWAITING_APPROVAL', 'APPROVED', 'APPLYING', 'FAILED')
 STALE_AFTER = timedelta(minutes=5)
 
@@ -27,6 +29,8 @@ def snapshot(db):
     queued = dict(db.execute(select(AgentRun.agent, func.count()).where(AgentRun.status == 'QUEUED').group_by(AgentRun.agent)).all())
     classification = issue_agent()
     issue_counts = dict(db.execute(select(classification, func.count()).where(TechnicalIssue.status.in_(OPEN)).group_by(classification)).all())
+    operational_count = db.scalar(select(func.count()).select_from(Incident).where(Incident.status.in_(OPERATIONAL_OPEN)))
+    issue_counts['OPERATIONAL'] = operational_count
     # Queue sizes are operational counts only; no email, Order or driver detail leaves this endpoint.
     queued['ORDER'] = db.scalar(select(func.count()).select_from(EmailIntake).join(Organization, Organization.id == EmailIntake.organization_id)
         .where(EmailIntake.status == 'RECEIVED', Organization.active.is_(True)))
@@ -40,7 +44,7 @@ def snapshot(db):
     return {'observed_at': observed, 'agents': agents,
         'running': sum(bool(item['run'] and item['run'].status == 'RUNNING' and not item['stale']) for item in agents),
         'awaiting_approval': db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status == 'AWAITING_APPROVAL')),
-        'needs_attention': db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status.in_(['NEEDS_ADMIN', 'AWAITING_APPROVAL', 'FAILED']))),
+        'needs_attention': operational_count + db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status.in_(['NEEDS_ADMIN', 'AWAITING_APPROVAL', 'FAILED']))),
         'automatic_fixes_24h': db.scalar(select(func.coalesce(func.sum(TechnicalIssue.fixed_count), 0)).where(TechnicalIssue.automatic.is_(True), TechnicalIssue.status == 'FIXED', TechnicalIssue.created_at >= observed - timedelta(hours=24))),
         'errors_24h': db.scalar(select(func.count()).select_from(AgentLog).where(AgentLog.level == 'ERROR', AgentLog.created_at >= observed - timedelta(hours=24))),
         'issues': [issue_view(db, row, name, agent) for row, name, agent in rows]}

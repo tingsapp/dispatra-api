@@ -7,7 +7,7 @@ from app.models import Base, now
 
 class AgentRun(Base):
     __tablename__ = 'agent_runs'
-    __table_args__ = (CheckConstraint("agent IN ('ORDER','DISPATCH','TECHNICAL')"),
+    __table_args__ = (CheckConstraint("agent IN ('ORDER','DISPATCH','TECHNICAL','OPERATIONAL')"),
         CheckConstraint("status IN ('QUEUED','RUNNING','SUCCEEDED','FAILED')"),
         CheckConstraint('progress BETWEEN 0 AND 100'), Index('ix_agent_runs_recent', 'agent', 'created_at'))
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -23,7 +23,8 @@ class AgentRun(Base):
 
 class AgentLog(Base):
     __tablename__ = 'agent_logs'
-    __table_args__ = (CheckConstraint("level IN ('INFO','WARNING','ERROR')"), Index('ix_agent_logs_recent', 'created_at', 'id'))
+    __table_args__ = (CheckConstraint("level IN ('INFO','WARNING','ERROR')"), Index('ix_agent_logs_recent', 'created_at', 'id'),
+        Index('ix_agent_logs_company_recent', 'organization_id', 'created_at', 'id'))
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     run_id: Mapped[UUID] = mapped_column(ForeignKey('agent_runs.id'))
     organization_id: Mapped[UUID | None] = mapped_column(ForeignKey('organizations.id'))

@@ -17,7 +17,7 @@ from .models import Event, Notification
 PENDING = 'dispatra_events'
 # Account, credential and platform administration actions are audited but never fanned out.
 PRIVATE = ('session.', 'password.', 'dispatcher.', 'platform_owner.', 'technical.', 'demo.', 'company.',
-    'organization.created', 'organization.activated', 'organization.suspended')
+    'organization.created', 'organization.activated', 'organization.suspended', 'organization.trial_')
 ACTOR_TYPES = {'USER', 'SYSTEM', 'AGENT'}
 
 
@@ -69,12 +69,14 @@ def resolve(db, action, entity_id):
     from app.intake.models import EmailIntake, MailboxConnection
     from app.dispatch.models import DispatchDecision
     from app.chat.models import Conversation, Message
+    from app.order_watch.models import Incident as WatchIncident, Question as WatchQuestion
     kind = action.split('.', 1)[0]
     entity = {'customer': 'shipper', 'pricing': 'settings'}.get(kind, kind)
     model = {'order': m.Order, 'route': m.Route, 'stop': m.RouteStop, 'evidence': m.Evidence, 'issue': m.Issue,
         'email': m.EmailDelivery, 'duty': m.DutySession, 'driver': m.Driver, 'shipper': m.Shipper,
         'vehicle': m.Vehicle, 'quote': m.Quote, 'rate': m.RateCard, 'catalog': m.Catalog, 'notification': Notification,
-        'intake': EmailIntake, 'mailbox': MailboxConnection, 'dispatch': DispatchDecision, 'message': Message}.get(entity)
+        'intake': EmailIntake, 'mailbox': MailboxConnection, 'dispatch': DispatchDecision, 'message': Message,
+        'watch': WatchQuestion if action=='watch.question_created' else WatchIncident}.get(entity)
     row = db.get(model, entity_id) if model else None
     result = Audience(entity, getattr(row, 'version', None))
     if row is None:
@@ -93,6 +95,9 @@ def resolve(db, action, entity_id):
     elif entity == 'issue':
         order = db.get(m.Order, row.order_id)
         if order: _order_scope(db, order, result)
+    elif entity == 'watch':
+        result.order_id = row.order_id
+        if action == 'watch.question_created': result.driver_id, result.route_id = row.driver_id, row.route_id
     elif entity == 'duty': result.driver_id = row.driver_id
     # Dispatch decisions name the Order for dispatchers only; the Shipper and driver hear about the assignment itself.
     elif entity == 'dispatch': result.order_id = row.order_id

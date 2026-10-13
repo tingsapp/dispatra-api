@@ -74,10 +74,8 @@ def test_stale_versions_do_not_save_any_part(client, overview, record):
 
 def test_login_conflicts_do_not_save_company_fields(client, overview):
     org, account, body = overview
-    login(client, 'dispatch', 'acme', 'dispatcher')
-    customer(client)
-    login(client)
-    body['dispatcher']['login_id'] = 'customer'
+    company(client, 'other')
+    body['dispatcher']['login_id'] = 'other-dispatcher'
     assert save(client, org, body).status_code == 409
     assert_unchanged(client, org, account)
 

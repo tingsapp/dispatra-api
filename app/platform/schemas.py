@@ -15,6 +15,9 @@ class CompanySummary(BaseModel):
     name: str
     logo_url: str
     active: bool
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    trial_activated_at: datetime | None = None
     version: int
     created_at: datetime
     dispatcher_count: int
@@ -114,7 +117,7 @@ class PlatformNotificationView(BaseModel):
     read_at: datetime | None
     organization_id: UUID
     company_name: str
-    target: Literal['company', 'monitor'] = 'company'
+    target: Literal['company', 'monitor', 'operational'] = 'company'
 
 
 class PlatformInbox(BaseModel):

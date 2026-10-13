@@ -26,19 +26,8 @@ def expect(row, version, label):
 
 def create_organization(db, actor, data, key):
     def run():
-        organization = Organization(id=uuid4(), slug=data.slug, name=data.name)
-        db.add(organization); db.flush()
-        admin = User(organization_id=organization.id, scope=str(organization.id), login_id=data.admin_login,
-                     display_name=data.admin_display_name, password_hash=hash_password(data.password), role='DISPATCHER')
-        db.add(admin); db.flush()
-        from app.operations.seeding import seed_pricing
-        seed_pricing(db, actor, organization)
-        from app.operations.models import Settings
-        settings = db.scalar(select(Settings).where(Settings.organization_id == organization.id))
-        settings.data = {**settings.data, 'phone': data.phone, 'address': data.address or None}
-        audit(db, actor, 'organization.created', organization.id, organization.id)
-        audit(db, actor, 'dispatcher.created', admin.id, organization.id)
-        db.flush()
+        from app.provisioning import provision_company
+        organization, _ = provision_company(db, data, actor=actor)
         return OrganizationView.model_validate(organization).model_dump(mode='json')
     return once(db, actor, key, 'organization', company_payload(data), run)
 
@@ -91,8 +80,9 @@ def apply_company_details(db, org, data):
 
 
 def apply_company_access(db, actor, org, active):
+    expired_trial = org.trial_ends_at is not None and org.trial_activated_at is None and org.trial_ends_at <= now()
     org.active = active
-    if not active:
+    if not active or expired_trial:
         db.execute(delete(LoginSession).where(LoginSession.organization_id == org.id))
         close_open_duty(db, actor, org.id)
     audit(db, actor, 'organization.activated' if active else 'organization.suspended', org.id, org.id)
@@ -141,9 +131,9 @@ def ensure_dispatcher_capacity(db, organization_id, activating=None):
 
 
 def unique_login(db, organization_id, login_id, current=None):
-    query = select(User.id).where(User.scope == str(organization_id), User.login_id == login_id)
+    query = select(User.id).where(User.role == 'DISPATCHER', func.lower(User.login_id) == login_id.lower())
     if current: query = query.where(User.id != current)
-    if db.scalar(query): raise HTTPException(409, 'That login ID is already used in this company.')
+    if db.scalar(query): raise HTTPException(409, 'That email is already used by a dispatcher.')
 
 
 def revoke(db, user_id):

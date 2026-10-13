@@ -51,6 +51,12 @@ def notes(db, action, entity_id, audience, actor, recipients):
 
     def to(users, severity, title, body): return [Note(user, severity, title, body) for user in users]
 
+    if action in {'watch.detected','watch.escalated','watch.driver_replied','watch.update_requested'}:
+        from app.order_watch.models import Incident
+        incident = db.get(Incident, entity_id)
+        if incident: return to(dispatch(), incident.severity, incident.title, f'{number}: review operational evidence and suggested actions.')
+    if action == 'watch.question_created':
+        return to(driver(), 'WARNING', 'Order progress question', f'{number}: the Operational agent needs a progress update. Open this order to reply.')
     if action == 'order.created' and order:
         result = []
         if actor.kind == 'AGENT':

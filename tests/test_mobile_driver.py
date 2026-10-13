@@ -64,7 +64,7 @@ def test_notification_ownership_replay_and_release(setup):
         assert read['read_at'] and read['version'] > row['version']
         assert check(post(native, BASE + f'/driver/notifications/{row["id"]}/read', {'version':row['version']}, read_key)) == read
         assert post(native, BASE + f'/driver/notifications/{uuid4()}/read', {'version':1}).status_code == 404
-        second = check(post(w['client'], BASE + '/drivers', {**w['driver_body'], 'email':'another@example.com', 'vehicle_id':None}), 201)
+        second = check(post(w['client'], BASE + '/drivers', {**w['driver_body'], 'phone':'6045550199', 'email':'another@example.com', 'vehicle_id':None}), 201)
         with TestClient(app, headers=HEADERS) as other:
             login(other, 'driver', 'acme', second['email'], second['initial_password'])
             assert check(other.get(BASE + '/driver/notifications')) == []

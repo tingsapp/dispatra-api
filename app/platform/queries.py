@@ -34,7 +34,7 @@ def companies(db, search=None, status=None, after=None, limit=50):
 
 
 def _org(org):
-    return {key: getattr(org, key) for key in ('id', 'slug', 'name', 'active', 'version', 'created_at', 'updated_at')}
+    return {key: getattr(org, key) for key in ('id', 'slug', 'name', 'active', 'version', 'created_at', 'updated_at', 'trial_started_at', 'trial_ends_at', 'trial_activated_at')}
 
 
 def company_detail(db, org):

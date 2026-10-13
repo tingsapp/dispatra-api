@@ -5,7 +5,7 @@ import secrets
 from types import SimpleNamespace
 from datetime import timedelta
 from fastapi import Depends, HTTPException, Request, Response
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from sqlalchemy.orm import Session
 from .database import session, context
 from .models import User, Organization, LoginSession, now
@@ -23,27 +23,45 @@ def account_view(db, user):
 
 def start_session(db, user, response, mobile=False):
     token = ('dm_' if mobile else 'ws_') + secrets.token_urlsafe(32)
-    expires_at = now() + timedelta(hours=12)
+    started_at = now()
+    expires_at = started_at + timedelta(hours=12)
+    organization = db.get(Organization, user.organization_id) if user.organization_id else None
+    if organization and organization.trial_ends_at and organization.trial_activated_at is None:
+        expires_at = min(expires_at, organization.trial_ends_at)
     db.add(LoginSession(token_hash=digest(token), user_id=user.id, organization_id=user.organization_id,
                         expires_at=expires_at))
     if not mobile:
-        response.set_cookie(COOKIE, token, httponly=True, secure=SECURE, samesite='strict', max_age=43200, path='/')
+        response.set_cookie(COOKIE, token, httponly=True, secure=SECURE, samesite='strict', max_age=max(0, int((expires_at - started_at).total_seconds())), path='/')
     return {'token': token, 'expires_at': expires_at, 'account': account_view(db, user)}
 
 def login(db, data, request, response, mobile=False):
     ip = request.client.host if request.client else 'unknown'
     rate_limit('ip:' + ip, 100)
-    rate_limit(f'login:{data.organization}:{data.login_id}', 10)
-    # Suspended companies are resolved so a correct password can receive an explicit suspension notice.
-    organization = db.scalar(select(Organization).where(Organization.slug == data.organization)) if data.organization else None
-    scope = str(organization.id) if organization else 'platform'
-    context(db, organization.id if organization else None)
-    user = db.scalar(select(User).where(User.scope == scope, User.login_id == data.login_id).with_for_update())
-    matches = verify(data.password, user.password_hash if user else DUMMY_HASH)
     role = {'platform':'ADMIN','dispatch':'DISPATCHER','customer':'SHIPPER','driver':'DRIVER'}[data.portal]
-    valid_scope = (data.portal == 'platform' and data.organization is None) or (data.portal != 'platform' and organization is not None)
-    if not user or not matches or not user.active or user.role != role or not valid_scope:
-        raise HTTPException(401, 'Login ID or password is incorrect.')
+    rate_limit(f'login:{role}:{data.login_id}', 10)
+    # The SELECT-only policy exposes one role/login match before its tenant is known.
+    # Clear that lookup context before locking or accessing any company records.
+    db.execute(text("SELECT set_config('app.login_role', :role, true), set_config('app.login_id', :login, true)"),
+               {'role': role, 'login': data.login_id})
+    try:
+        identity = db.execute(select(User.id, User.organization_id).where(
+            User.role == role, User.login_id == data.login_id)).first()
+    finally:
+        db.execute(text("SELECT set_config('app.login_role', '', true), set_config('app.login_id', '', true)"))
+    context(db, identity.organization_id if identity else None)
+    user = db.scalar(select(User).where(User.id == identity.id, User.role == role,
+        User.login_id == data.login_id).with_for_update()) if identity else None
+    matches = verify(data.password, user.password_hash if user else DUMMY_HASH)
+    organization = db.get(Organization, user.organization_id) if user and user.organization_id else None
+    # An optional old company hint must match; new clients omit it entirely.
+    valid_scope = (data.portal == 'platform' and data.organization is None) or (
+        data.portal != 'platform' and organization is not None and
+        (data.organization is None or data.organization == organization.slug))
+    if not user or not matches or not user.active or not valid_scope:
+        raise HTTPException(401, 'Email or password is incorrect.')
+    if organization and organization.verification_pending and user.role == 'DISPATCHER' and not mobile:
+        from .verification import pending
+        return pending(db, user, response)
     if organization and not organization.active:
         raise HTTPException(403, 'This company workspace is suspended. Contact Dispatra support.')
     if user.driver_id:

@@ -127,7 +127,7 @@ def test_shipper_booking_and_role_isolation(setup):
 def test_shipper_preferred_driver_and_rate_card(setup):
     w=setup;client=w['client']
     default=next(r for r in w['rates'] if r['is_default'])
-    plain=check(post(client,BASE+'/shippers',{**w['shipper_body'],'email':'bob@example.com','rate_card_id':None}),201)
+    plain=check(post(client,BASE+'/shippers',{**w['shipper_body'], 'phone':'6045550198','email':'bob@example.com','rate_card_id':None}),201)
     assert plain['rate_card_id']==default['id'] and plain['rate_card_name']==default['data']['name']
     with TestClient(app,headers=HEADERS) as portal:
         login(portal,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
@@ -169,7 +169,7 @@ def test_seed_is_repeatable_and_preserves_changes(setup):
 
 def test_atomic_accounts_and_idempotency_do_not_store_passwords(setup):
     w=setup;client=w['client'];key=str(uuid4())
-    body={**w['shipper_body'],'email':'second@example.com'}
+    body={**w['shipper_body'], 'phone':'6045550198','email':'second@example.com'}
     first=check(post(client,BASE+'/shippers',body,key),201)
     replay=check(post(client,BASE+'/shippers',body,key),201)
     assert first['id']==replay['id'] and first['initial_password'] and replay['initial_password'] is None
@@ -410,7 +410,7 @@ def test_order_tracking_live_location_privacy(setup):
     avatar = 'https://example.com/dana.png'
     check(client.put(BASE+f'/drivers/{w["driver"]["id"]}', json=dict(version=w['driver']['version'],
         data={**w['driver_body'], 'avatar_url': avatar}), headers={'Idempotency-Key': str(uuid4())}))
-    other=check(post(client,BASE+'/shippers',{**w['shipper_body'],'name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
+    other=check(post(client,BASE+'/shippers',{**w['shipper_body'], 'phone':'6045550198','name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
     stamp=lambda: datetime.now(timezone.utc).isoformat()
     locate=lambda: check(post(mobile,BASE+'/driver/location',dict(duty_id=w['duty']['id'],captured_at=stamp(),latitude=49.2601,longitude=-123.1101,accuracy_m=8,location_permission='GRANTED')),201)
     start=lambda route: check(post(mobile,BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'])))
@@ -496,7 +496,7 @@ def test_tracking_map_image_follows_tracking_visibility(setup, monkeypatch):
     assert 'label:P|49.260000,-123.110000' in url and 'label:D|49.270000,-123.110000' in url and 'label:T|49.260100,-123.110100' in url and 'enc:' in url
     assert image(client,order).status_code==200 and len(fetched)==1
     with TestClient(app,headers=HEADERS) as alice, TestClient(app,headers=HEADERS) as bob:
-        other=check(post(client,BASE+'/shippers',{**w['shipper_body'],'name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
+        other=check(post(client,BASE+'/shippers',{**w['shipper_body'], 'phone':'6045550198','name':'Bob Shipper','company_name':'Other Co','email':'bob@example.com'}),201)
         login(alice,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
         login(bob,'customer','acme',other['email'],other['initial_password'])
         assert image(alice,order).status_code==200

@@ -87,7 +87,7 @@ def test_shippers_have_no_payment_terms(setup):
     w = setup
     assert 'terms' not in w['shipper']
     assert 'terms' not in check(w['client'].get(BASE + f'/shippers/{w["shipper"]["id"]}'))
-    body = {**w['shipper_body'], 'email': 'terms@example.com', 'terms': 'NET30'}
+    body = {**w['shipper_body'], 'phone':'6045550198', 'email': 'terms@example.com', 'terms': 'NET30'}
     assert post(w['client'], BASE + '/shippers', body).status_code == 422
     body.pop('terms')
     saved = check(post(w['client'], BASE + '/shippers', body), 201)
@@ -115,7 +115,7 @@ def test_public_entity_numbers_are_company_scoped_and_server_owned(setup, monkey
     assert w['vehicle']['number'] == 'DAV-TEST VAN'
     order = new_order(w)
     assert re.fullmatch(r'DAO-[1-9][0-9]{3}', order['number'])
-    data = {**w['driver_body'], 'name': 'Second Driver', 'email': 'second-driver@example.com', 'vehicle_id': None}
+    data = {**w['driver_body'], 'phone':'6045550199', 'name': 'Second Driver', 'email': 'second-driver@example.com', 'vehicle_id': None}
     second = check(post(w['client'], BASE + '/drivers', data), 201)
     assert re.fullmatch(r'DAD-[1-9][0-9]{3}', second['number'])
     assert second['number'] != w['driver']['number']

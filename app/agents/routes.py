@@ -6,11 +6,18 @@ from app.models import User
 from app.routes import DB, OperationKey
 from app.security import rate_limit
 from app.platform.schemas import VersionCommand
-from . import commands, diagnostics, queries
+from . import activity, commands, diagnostics, queries
 from .schemas import AgentName, AgentMonitorView, AgentLogPage, AgentRunView, TechnicalIssueView, TechnicalIssuePage, ClientDiagnostic, DiagnosticAccepted
+from .schemas import CompanyActivityPage
 
 router = APIRouter(prefix='/api/v1/platform/agents', tags=['Platform agents'])
 Owner = Annotated[User, Depends(auth.platform)]
+company_router = APIRouter(prefix='/api/v1/companies/{slug}/activity', tags=['Company activity'])
+
+
+@company_router.get('', response_model=CompanyActivityPage)
+def company_activity(slug: str, db: DB, user: Annotated[User, Depends(auth.dispatcher)], before: str | None = Query(None, max_length=50), limit: int = Query(30, ge=1, le=100)):
+    return activity.page(db, user, before, limit)
 
 
 @router.get('/monitor', response_model=AgentMonitorView)

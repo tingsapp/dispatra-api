@@ -138,6 +138,11 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
         DutySession.ended_at.is_(None))))
     observed_at = now()
     attention = {order.id: attention_flags(order, visits_by_stop, observed_at) for order in orders}
+    from app.order_watch.models import Incident as OperationalIncident
+    watched = db.scalars(select(OperationalIncident).where(OperationalIncident.organization_id == user.organization_id,
+        OperationalIncident.status.in_(('OPEN','ACKNOWLEDGED')), OperationalIncident.source_issue_id.is_(None))).all()
+    for incident in watched:
+        if incident.order_id in attention: attention[incident.order_id].append(('OPERATIONAL', incident.title + ': ' + incident.description))
     for order_id, description in no_driver(db, user.organization_id, orders).items(): attention[order_id].append(('NO_DRIVER', description))
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,

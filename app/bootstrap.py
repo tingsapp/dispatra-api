@@ -4,7 +4,7 @@
     python -m app.bootstrap --status          report whether an owner exists
     python -m app.bootstrap --reset-password  set a new owner password and revoke owner sessions
 
-There is no public signup. Credentials are read from the terminal only and are never printed or stored in plaintext.
+There is no public platform-owner signup. Credentials are read from the terminal only and are never printed or stored in plaintext.
 """
 import argparse
 import getpass
@@ -69,7 +69,7 @@ def reset_owner_password(db, password):
     account.active = True
     account.version += 1; account.updated_at = now()
     db.execute(delete(LoginSession).where(LoginSession.user_id == account.id))
-    db.execute(delete(LoginBucket).where(LoginBucket.key == digest(f'login:None:{account.login_id}')))
+    db.execute(delete(LoginBucket).where(LoginBucket.key.in_([digest(f'login:ADMIN:{account.login_id}'), digest(f'login:None:{account.login_id}')])))
     audit(db, account, 'platform_owner.password_reset', account.id, None)
     return account
 

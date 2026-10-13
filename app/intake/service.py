@@ -95,6 +95,7 @@ def poll_mailbox(organization_id: UUID):
             if identity:
                 stored += 1
                 if values['status'] == 'FAILED': signal(db, 'intake.failed', db.get(EmailIntake, identity))
+                else: signal(db, 'intake.received', db.get(EmailIntake, identity))
         # A concurrent poll may have advanced further; duplicates were skipped by Message-ID.
         row.last_uid = max(row.last_uid, last_uid) if row.uid_validity == validity else last_uid
         row.uid_validity, row.last_polled_at, row.last_error = validity, now(), None

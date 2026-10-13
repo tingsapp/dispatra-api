@@ -1,7 +1,7 @@
 """Append-only company event log and per-recipient notification inbox (migration 0020)."""
 from datetime import datetime
 from uuid import UUID, uuid4
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Identity, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Identity, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models import Base, now
 
@@ -10,6 +10,7 @@ class Event(Base):
     """One committed change. `tx` (xid8, database default) is not mapped; feed queries read it directly."""
     __tablename__ = 'events'
     __table_args__ = (UniqueConstraint('organization_id', 'id'),
+        Index('ix_events_company_recent', 'organization_id', 'created_at', 'id'),
         CheckConstraint("actor_type IN ('USER','SYSTEM','AGENT')", name='event_actor_type'))
     seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id: Mapped[UUID] = mapped_column(unique=True, default=uuid4)

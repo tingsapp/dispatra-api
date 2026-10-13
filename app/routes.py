@@ -7,17 +7,40 @@ from . import auth, services
 from .database import session
 from .models import User, LoginSession
 from .operations.models import Shipper
-from .schemas import (Login, AccountView, CustomerCreate,
-                      CustomerAccessView, CustomerView, ProfileUpdate, PasswordChange, PasswordReset, DriverLogin, DriverSession)
+from .schemas import (Login, AccountView, CustomerCreate, TrialSignup,
+                      CustomerAccessView, CustomerView, ProfileUpdate, PasswordChange, PasswordReset, DriverLogin, DriverSession,
+                      VerificationView, VerificationCode)
 from .security import digest
 
 router = APIRouter(prefix='/api/v1')
 DB = Annotated[Session, Depends(session)]
 OperationKey = Annotated[str, Header(alias='Idempotency-Key', min_length=16, max_length=80, pattern=r'^[a-zA-Z0-9-]+$')]
 
-@router.post('/auth/login', response_model=AccountView)
+@router.post('/auth/signup', response_model=AccountView | VerificationView, status_code=201)
+def signup(data: TrialSignup, request: Request, response: Response, db: DB, idempotency_key: OperationKey):
+    from .registration import start_trial
+    return start_trial(db, data, request, response, idempotency_key)
+
+@router.post('/auth/login', response_model=AccountView | VerificationView)
 def login(data: Login, request: Request, response: Response, db: DB):
     return auth.login(db, data, request, response)
+
+@router.get('/auth/verification', response_model=VerificationView)
+def verification_status(request: Request, db: DB):
+    from .verification import current, view
+    row, _, org = current(db, request)
+    if not org.verification_pending: raise HTTPException(409, 'Email is already verified. Please sign in.')
+    return view(row)
+
+@router.post('/auth/verification/resend', response_model=VerificationView)
+def verification_resend(request: Request, response: Response, db: DB, idempotency_key: OperationKey):
+    from .verification import resend
+    return resend(db, request, response, idempotency_key)
+
+@router.post('/auth/verification/confirm', response_model=AccountView)
+def verification_confirm(data: VerificationCode, request: Request, response: Response, db: DB, idempotency_key: OperationKey):
+    from .verification import confirm
+    return confirm(db, data, request, response, idempotency_key)
 
 @router.post('/auth/driver/login', response_model=DriverSession)
 def driver_login(data: DriverLogin, request: Request, response: Response, db: DB):

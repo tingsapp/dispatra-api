@@ -24,7 +24,7 @@ def snapshot(client):
 def update_profile(client, slug='acme', key=None):
     path = f'/api/v1/companies/{slug}/settings'
     original = client.get(path).json()
-    return client.put(path, json={'version': original['version'], 'data': {**original['data'], 'phone': '6045550199'}},
+    return client.put(path, json={'version': original['version'], 'data': {**original['data'], 'phone': '6045550199' if slug == 'acme' else '6045550198'}},
                       headers={'Idempotency-Key': key or str(uuid4())})
 
 

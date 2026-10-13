@@ -82,7 +82,7 @@ def test_cursor_reset_tenant_isolation_and_rollback(setup):
     assert types(view) == ['order.created']
     with TestClient(app, headers=HEADERS) as owner:
         login(owner)
-        check(post(owner, '/api/v1/platform/organizations', dict(name='Other', slug='other', admin_login='dispatcher', password='Initial-password-123!')), 201)
+        check(post(owner, '/api/v1/platform/organizations', dict(name='Other', slug='other', admin_login='other-dispatcher', password='Initial-password-123!')), 201)
         login(owner, 'dispatch', 'other', 'dispatcher')
         foreign = check(owner.get('/api/v1/companies/other/sync'))
         own_events = check(owner.get('/api/v1/companies/other/sync', params={'cursor': cursor}))['changes']

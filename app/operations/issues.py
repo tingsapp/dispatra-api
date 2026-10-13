@@ -7,7 +7,7 @@ from .models import Issue, Order, OrderStop, Route, RouteStop
 from .common import record, version, changed, command, dump
 
 
-def report(db, actor, identity, data, key):
+def report(db, actor, identity, data, key, *, monitor_incident_id=None):
     def run():
         order = record(db, Order, actor, identity, True)
         if actor.role == 'DRIVER':
@@ -20,6 +20,8 @@ def report(db, actor, identity, data, key):
             if stop.order_id != identity: raise HTTPException(404, 'Stop not found.')
         row = Issue(organization_id=actor.organization_id, order_id=identity, **data.model_dump())
         db.add(row); db.flush(); audit(db, actor, 'issue.reported', row.id, actor.organization_id)
+        from app.order_watch.commands import reported
+        reported(db, actor, row, monitor_incident_id)
         if order.status == 'COMPLETED':
             order.status = 'IN_PROGRESS'; order.completed_at = None; changed(db, actor, order, 'order.completion_held')
         return jsonable_encoder(dump(row))

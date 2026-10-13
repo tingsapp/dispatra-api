@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator, TypeAdapter
 
 Name = Annotated[str, Field(min_length=1, max_length=160)]
 LoginID = Annotated[str, Field(min_length=3, max_length=254, pattern=r'^[a-z0-9][a-z0-9@._+-]*$')]
@@ -25,6 +25,9 @@ class Login(Input):
     portal: Literal['platform','dispatch','customer','driver']
     login_id: LoginID
     password: Annotated[str, Field(min_length=1, max_length=128)]
+    @field_validator('login_id', mode='before')
+    @classmethod
+    def normalize_login(cls, value): return value.strip().lower() if isinstance(value, str) else value
     @field_validator('password', mode='before')
     @classmethod
     def exact_password(cls, value): return value
@@ -44,12 +47,42 @@ class OrganizationCreate(Input):
             raise ValueError('Choose another company identifier')
         return v
 
+class TrialSignup(Input):
+    slug: Slug
+    name: Name
+    full_name: Name
+    email: EmailStr
+    phone: CompanyPhone = ''
+    address: CompanyAddress = ''
+    password: Password
+
+    @field_validator('slug')
+    @classmethod
+    def reserved(cls, value): return OrganizationCreate.reserved(value)
+
+    @field_validator('email')
+    @classmethod
+    def login_email(cls, value): return TypeAdapter(LoginID).validate_python(str(value).lower())
+
+class VerificationView(BaseModel):
+    verification_required: Literal[True] = True
+    email: str
+    expires_at: datetime
+    resend_at: datetime
+    delivery_status: Literal['PENDING','SENDING','SENT','FAILED','UNKNOWN']
+
+class VerificationCode(Input):
+    code: Annotated[str, Field(pattern=r'^[0-9]{6}$')]
+
 class OrganizationView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     slug: str
     name: str
     active: bool
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    trial_activated_at: datetime | None = None
 
 class ProfileInput(Input):
     contact_name: Annotated[str, Field(max_length=160)] = ''
@@ -94,7 +127,6 @@ class AccountView(BaseModel):
     shipper_id: UUID | None = None
 
 class DriverLogin(Login):
-    organization: Slug
     portal: Literal['driver'] = 'driver'
 
 class DriverSession(BaseModel):

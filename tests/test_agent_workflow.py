@@ -50,7 +50,7 @@ def test_email_auto_dispatch_driver_completion(agent, monkeypatch, ranking):
                 plate=f'FLOW{index}', province='BC', payload_kg=1000, volume_m3=12,
                 length_cm=300, width_cm=180, height_cm=180)), 201)
             driver = check(post(client, BASE + '/drivers', dict(name=f'Workflow Driver {index}',
-                email=f'workflow{index}@example.com', phone='6045550102', address=address(lat=latitude), vehicle_id=vehicle['id'])), 201)
+                email=f'workflow{index}@example.com', phone=f'60455501{index + 2:02d}', address=address(lat=latitude), vehicle_id=vehicle['id'])), 201)
             mobile = sessions.enter_context(TestClient(app, headers=HEADERS))
             login(mobile, 'driver', 'acme', driver['email'], driver['initial_password'])
             if on_duty:

@@ -19,6 +19,18 @@ owner_engine = create_engine(owner_url)
 HEADERS = {'Origin':'http://testserver','X-Requested-With':'Dispatra'}
 PASSWORD = 'Initial-password-123!'
 
+@pytest.fixture
+def verification_mail(monkeypatch):
+    from cryptography.fernet import Fernet
+    for name,value in {'SMTP_HOST':'smtp.example.test','SMTP_USERNAME':'verify@example.test','SMTP_FROM':'verify@example.test','SMTP_APP_PASSWORD':'test-only','MAILBOX_ENCRYPTION_KEY':Fernet.generate_key().decode()}.items():
+        monkeypatch.setenv(name,value)
+
+def confirm_trial(client, email):
+    from app.intake import vault
+    with owner_engine.connect() as db:
+        secret = db.scalar(text('SELECT secret FROM email_verifications WHERE email=:email AND consumed_at IS NULL'), {'email':email.lower()})
+    return post(client, '/api/v1/auth/verification/confirm', {'code':vault.unseal(secret)})
+
 @pytest.fixture(autouse=True)
 def reset_database():
     with owner_engine.begin() as c:
@@ -31,6 +43,8 @@ def client():
     with TestClient(app, headers=HEADERS) as client: yield client
 
 def login(client, portal='platform', organization=None, login_id='owner', password=PASSWORD):
+    if organization and organization != 'acme' and login_id in ('dispatcher', 'customer'):
+        login_id = f'{organization}-{login_id}'
     response = client.post('/api/v1/auth/login', json=dict(portal=portal, organization=organization, login_id=login_id, password=password))
     assert response.status_code == 200, response.text
     return response.json()
@@ -39,11 +53,12 @@ def post(client, path, body, key=None):
     return client.post(path,json=body,headers={'Idempotency-Key':key or str(uuid4())})
 
 def company(client, slug='acme'):
-    response = post(client,'/api/v1/platform/organizations',dict(name=slug.title(),slug=slug,admin_login='dispatcher',password=PASSWORD))
+    response = post(client,'/api/v1/platform/organizations',dict(name=slug.title(),slug=slug,admin_login='dispatcher' if slug == 'acme' else f'{slug}-dispatcher',password=PASSWORD))
     assert response.status_code == 201, response.text
     return response.json()
 
 def customer(client, slug='acme', number='C-001', login_id='customer'):
+    if slug != 'acme' and login_id == 'customer': login_id = f'{slug}-customer'
     response = post(client,f'/api/v1/companies/{slug}/customers',dict(name='ABC Trading',number=number,login_id=login_id,password=PASSWORD))
     assert response.status_code == 201, response.text
     return response.json()

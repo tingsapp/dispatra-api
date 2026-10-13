@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 from app.schemas import Input
 
-AgentName = Literal['ORDER', 'DISPATCH', 'TECHNICAL']
+AgentName = Literal['ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL']
 
 
 class AgentRunView(BaseModel):
@@ -85,3 +85,23 @@ class ClientDiagnostic(Input):
 
 class DiagnosticAccepted(BaseModel):
     accepted: bool = True
+
+
+class CompanyActivityEntry(BaseModel):
+    id: str
+    source: Literal['AGENT', 'EVENT']
+    agent: AgentName | None
+    actor: Literal['AGENT', 'DISPATCHER', 'SHIPPER', 'DRIVER', 'SYSTEM', 'UNKNOWN']
+    kind: str
+    title: str
+    level: Literal['INFO', 'WARNING', 'ERROR']
+    created_at: datetime
+    order_id: UUID | None
+    order_number: str | None
+
+
+class CompanyActivityPage(BaseModel):
+    items: list[CompanyActivityEntry]
+    next_before: str | None
+    observed_at: datetime
+    time_zone: str | None

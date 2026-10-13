@@ -102,7 +102,7 @@ def test_a_token_moves_to_the_driver_who_registers_it_last(setup):
     w = setup
     vehicle = check(post(w['client'], BASE + '/vehicles', dict(name='Second Van', type_id=w['type_id'], plate='TEST456', province='BC',
         payload_kg=1000, volume_m3=12, length_cm=300, width_cm=180, height_cm=180, pallet_capacity=2)), 201)
-    second = check(post(w['client'], BASE + '/drivers', {**w['driver_body'], 'name': 'Sam Second', 'email': 'sam@example.com', 'vehicle_id': vehicle['id']}), 201)
+    second = check(post(w['client'], BASE + '/drivers', {**w['driver_body'], 'phone':'6045550199', 'name': 'Sam Second', 'email': 'sam@example.com', 'vehicle_id': vehicle['id']}), 201)
     with TestClient(app, headers={'X-Requested-With': 'Dispatra'}) as first, TestClient(app, headers={'X-Requested-With': 'Dispatra'}) as other:
         native_login(first, w)
         register(first)

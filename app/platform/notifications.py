@@ -11,6 +11,10 @@ from .schemas import PlatformNotificationView
 
 
 OWNER_NOTICES = {
+    'watch.update_requested': ('WARNING', 'Driver progress update requested', 'A reported ready time passed without recorded completion. Review the operational report in Monitor.'),
+    'watch.detected': ('WARNING', 'Operational risk detected', 'The Operational agent found an order risk. Review the evidence in Monitor.'),
+    'watch.escalated': ('CRITICAL', 'Operational risk escalated', 'An order risk has become urgent. Review it in Monitor.'),
+    'watch.driver_replied': ('WARNING', 'Driver clarification received', 'A driver replied to the Operational agent. Review the report in Monitor.'),
     'technical.approval_required': ('CRITICAL', 'Technical repair needs approval', 'The Technical agent proposed a repair. Review it in Monitor before it runs.'),
     'technical.problem_detected': ('CRITICAL', 'Technical problem reported', 'The Technical agent found a problem requiring investigation. Review it in Monitor.'),
     'settings.updated': ('INFO', 'Company settings updated', 'The dispatcher updated company settings.'),
@@ -39,6 +43,10 @@ def notify_owner(db, actor, action, organization_id, entity_id, actor_type='USER
         if recipient is None or (actor_type == 'USER' and recipient == actor.id): return
         context(db, organization_id)
         severity, title, body = OWNER_NOTICES[action]
+        if action.startswith('watch.'):
+            from app.order_watch.models import Incident
+            incident = db.get(Incident, entity_id)
+            if incident: severity = incident.severity
         db.add(Notification(id=uuid4(), organization_id=organization_id, recipient_user_id=recipient,
             kind=action, title=title, body=body, severity=severity))
         db.flush()
@@ -55,7 +63,7 @@ def view(db, row):
     return PlatformNotificationView.model_validate({**{field: getattr(row, field) for field in
         ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')},
         'company_name': db.scalar(select(Organization.name).where(Organization.id == row.organization_id)),
-        'target': 'monitor' if row.kind.startswith('technical.') else 'company'}).model_dump(mode='json')
+        'target': 'operational' if row.kind.startswith('watch.') or row.kind == 'issue.reported' else 'monitor' if row.kind.startswith('technical.') else 'company'}).model_dump(mode='json')
 
 
 def page(db, user, limit, before=None):
@@ -69,7 +77,7 @@ def page(db, user, limit, before=None):
         .order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit))
     items = [PlatformNotificationView.model_validate({**{field: getattr(row, field) for field in
         ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')}, 'company_name': name,
-        'target': 'monitor' if row.kind.startswith('technical.') else 'company'}) for row, name in rows]
+        'target': 'operational' if row.kind.startswith('watch.') or row.kind == 'issue.reported' else 'monitor' if row.kind.startswith('technical.') else 'company'}) for row, name in rows]
     unread = db.scalar(select(func.count()).select_from(inbox(user).where(Notification.read_at.is_(None)).subquery()))
     return {'items': items, 'unread': unread}
 

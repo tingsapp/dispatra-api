@@ -1,0 +1,31 @@
+"""Operational agent observations and least-privilege driver clarification."""
+from alembic import op
+revision = '0040_order_watch'
+down_revision = '0039_trial_signup'
+branch_labels = None
+depends_on = None
+SCHEMA_SQL = ["\nCREATE TABLE order_watch_incidents (\n\torder_id UUID NOT NULL, \n\tstop_id UUID, \n\tsource_issue_id UUID, \n\tfingerprint VARCHAR(200) NOT NULL, \n\tkind VARCHAR(40) NOT NULL, \n\ttitle VARCHAR(160) NOT NULL, \n\tdescription VARCHAR(1000) NOT NULL, \n\tseverity VARCHAR(12) NOT NULL, \n\tcertainty VARCHAR(24) NOT NULL, \n\tstatus VARCHAR(20) NOT NULL, \n\tevidence JSONB NOT NULL, \n\tsuggestions JSONB NOT NULL, \n\tresponse_due_at TIMESTAMP WITH TIME ZONE, \n\tacknowledged_at TIMESTAMP WITH TIME ZONE, \n\tresolved_at TIMESTAMP WITH TIME ZONE, \n\tresolution VARCHAR(500) NOT NULL, \n\tid UUID NOT NULL, \n\torganization_id UUID NOT NULL, \n\tversion INTEGER NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tUNIQUE (organization_id, id), \n\tUNIQUE (organization_id, fingerprint), \n\tFOREIGN KEY(organization_id, order_id) REFERENCES orders (organization_id, id), \n\tFOREIGN KEY(organization_id, stop_id) REFERENCES order_stops (organization_id, id), \n\tFOREIGN KEY(organization_id, source_issue_id) REFERENCES operation_issues (organization_id, id), \n\tCHECK (status IN ('OPEN','ACKNOWLEDGED','RESOLVED','SUPERSEDED')), \n\tCHECK (certainty IN ('OBSERVED','PREDICTED','REPORTED','NEEDS_CONFIRMATION')), \n\tCHECK (severity IN ('WARNING','CRITICAL')), \n\tFOREIGN KEY(organization_id) REFERENCES organizations (id)\n)\n\n", 'CREATE INDEX ix_order_watch_incidents_organization_id ON order_watch_incidents (organization_id)', 'CREATE INDEX ix_order_watch_open ON order_watch_incidents (organization_id, status, created_at)', "\nCREATE TABLE order_watch_questions (\n\tincident_id UUID NOT NULL, \n\torder_id UUID NOT NULL, \n\troute_id UUID NOT NULL, \n\tdriver_id UUID NOT NULL, \n\tgeneration INTEGER NOT NULL, \n\tprompt VARCHAR(600) NOT NULL, \n\tstatus VARCHAR(16) NOT NULL, \n\treason VARCHAR(32), \n\tdetails VARCHAR(1000) NOT NULL, \n\testimated_ready_at TIMESTAMP WITH TIME ZONE, \n\tanswered_at TIMESTAMP WITH TIME ZONE, \n\tid UUID NOT NULL, \n\torganization_id UUID NOT NULL, \n\tversion INTEGER NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tUNIQUE (organization_id, id), \n\tUNIQUE (incident_id), \n\tFOREIGN KEY(organization_id, incident_id) REFERENCES order_watch_incidents (organization_id, id), \n\tFOREIGN KEY(organization_id, order_id) REFERENCES orders (organization_id, id), \n\tFOREIGN KEY(organization_id, route_id) REFERENCES routes (organization_id, id), \n\tFOREIGN KEY(organization_id, driver_id) REFERENCES drivers (organization_id, id), \n\tCHECK (status IN ('OPEN','ANSWERED','CLOSED')), \n\tFOREIGN KEY(organization_id) REFERENCES organizations (id)\n)\n\n", 'CREATE INDEX ix_order_watch_questions_organization_id ON order_watch_questions (organization_id)', '\nCREATE TABLE order_watch_estimates (\n\troute_id UUID NOT NULL, \n\tgeneration INTEGER NOT NULL, \n\troute_version INTEGER NOT NULL, \n\tnext_stop_id UUID NOT NULL, \n\tcaptured_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tobserved_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tdata JSONB NOT NULL, \n\tid UUID NOT NULL, \n\torganization_id UUID NOT NULL, \n\tversion INTEGER NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tUNIQUE (organization_id, id), \n\tUNIQUE (route_id), \n\tFOREIGN KEY(organization_id, route_id) REFERENCES routes (organization_id, id), \n\tFOREIGN KEY(organization_id) REFERENCES organizations (id)\n)\n\n', 'CREATE INDEX ix_order_watch_estimates_organization_id ON order_watch_estimates (organization_id)']
+OWNER = "current_setting('app.platform',true) = 'true' AND coalesce(current_setting('app.shipper_id',true),'') = '' AND coalesce(current_setting('app.driver_id',true),'') = ''"
+TENANT = "organization_id::text = current_setting('app.organization_id',true) AND coalesce(current_setting('app.shipper_id',true),'') = '' AND coalesce(current_setting('app.driver_id',true),'') = ''"
+
+
+def upgrade():
+    op.execute("ALTER TABLE agent_runs DROP CONSTRAINT agent_runs_agent_check")
+    op.execute("ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_agent_check CHECK (agent IN ('ORDER','DISPATCH','TECHNICAL','OPERATIONAL'))")
+    for sql in SCHEMA_SQL:op.execute(sql)
+    for table in ('order_watch_incidents','order_watch_questions','order_watch_estimates'):
+        op.execute(f'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY')
+        op.execute(f'ALTER TABLE {table} FORCE ROW LEVEL SECURITY')
+        expression=f'({OWNER}) OR ({TENANT})'
+        if table=='order_watch_questions':
+            expression+= " OR (organization_id::text=current_setting('app.organization_id',true) AND driver_id::text=current_setting('app.driver_id',true) AND EXISTS (SELECT 1 FROM routes r JOIN orders o ON o.route_id=r.id AND o.organization_id=r.organization_id WHERE r.id=order_watch_questions.route_id AND r.organization_id=order_watch_questions.organization_id AND r.driver_id=order_watch_questions.driver_id AND r.generation=order_watch_questions.generation AND o.id=order_watch_questions.order_id AND o.status IN ('ASSIGNED','IN_PROGRESS') AND r.status IN ('PLANNED','IN_PROGRESS')))"
+        op.execute(f'CREATE POLICY operational_scope ON {table} USING ({expression}) WITH CHECK ({expression})')
+        op.execute(f'GRANT SELECT,INSERT,UPDATE ON {table} TO dispatra_app')
+
+
+def downgrade():
+    for table in ('order_watch_estimates','order_watch_questions','order_watch_incidents'):op.execute(f'DROP TABLE {table}')
+    op.execute("DELETE FROM agent_logs WHERE run_id IN (SELECT id FROM agent_runs WHERE agent='OPERATIONAL')")
+    op.execute("DELETE FROM agent_runs WHERE agent='OPERATIONAL'")
+    op.execute("ALTER TABLE agent_runs DROP CONSTRAINT agent_runs_agent_check")
+    op.execute("ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_agent_check CHECK (agent IN ('ORDER','DISPATCH','TECHNICAL'))")

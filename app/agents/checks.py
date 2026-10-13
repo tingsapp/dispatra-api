@@ -73,7 +73,8 @@ def scan(db, progress):
         .where(EmailIntake.status == 'RECEIVED', Organization.active.is_(True)))
     pending_dispatch = db.scalar(select(func.count()).select_from(Order).join(Settings, Settings.organization_id == Order.organization_id)
         .join(Organization, Organization.id == Order.organization_id).where(Organization.active.is_(True), Order.status == 'NEW', Settings.data['dispatch_mode'].astext == 'AUTO'))
-    for agent, pending in [('ORDER', pending_order), ('DISPATCH', pending_dispatch)]:
+    pending_operational = db.scalar(select(func.count()).select_from(AgentRun).where(AgentRun.agent == 'OPERATIONAL', AgentRun.status == 'QUEUED'))
+    for agent, pending in [('ORDER', pending_order), ('DISPATCH', pending_dispatch), ('OPERATIONAL', pending_operational)]:
         latest = db.scalar(select(AgentRun).where(AgentRun.agent == agent).order_by(AgentRun.created_at.desc()).limit(1))
         if (pending or latest and latest.status == 'RUNNING') and (not latest or latest.heartbeat_at < now() - timedelta(minutes=5)):
             report(db, progress, f'worker:{agent}:{latest.id if latest else "not-started"}', 'WORKER_PROGRESS', f'{agent.title()} agent progress is overdue',
