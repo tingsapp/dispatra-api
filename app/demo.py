@@ -52,6 +52,12 @@ def seed_demo(db):
         org = Organization(id=DEMO_ID, slug='demo', name='Dispatra Demo')
         db.add(org)
         db.flush()
+    from app.models import CompanySubscription, SubscriptionPlan
+    from app.subscription import MONTHLY_PLAN_ID
+    if db.get(CompanySubscription, org.id) is None:
+        plan = db.get(SubscriptionPlan, MONTHLY_PLAN_ID)
+        db.add(CompanySubscription(organization_id=org.id, monthly_price=plan.monthly_price, currency=plan.currency))
+        db.flush()
     context(db, org.id)
     dispatcher = db.get(User, DISPATCHER_ID)
     password = None

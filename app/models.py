@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
-from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, DateTime, Text, Integer, Numeric, Index, text, and_, or_, func
+from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Date, DateTime, Text, Integer, Numeric, Index, text, and_, or_, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -21,6 +21,23 @@ class SubscriptionPlan(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     monthly_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(3))
+    version: Mapped[int] = mapped_column(default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class CompanySubscription(Base):
+    __tablename__ = 'company_subscriptions'
+    __table_args__ = (
+        CheckConstraint("status IN ('NOT_SUBSCRIBED', 'ACTIVE', 'PAUSED', 'CANCELLED')"),
+        CheckConstraint('monthly_price >= 0'),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'"),
+        CheckConstraint("status <> 'ACTIVE' OR (monthly_price IS NOT NULL AND starts_on IS NOT NULL)"),
+        CheckConstraint('version >= 1'),
+    )
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey('organizations.id'), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default='NOT_SUBSCRIBED')
+    monthly_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(String(3))
+    starts_on: Mapped[date | None] = mapped_column(Date)
     version: Mapped[int] = mapped_column(default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

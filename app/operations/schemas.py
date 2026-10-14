@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
-from pydantic import BaseModel, ConfigDict, Field, EmailStr, AwareDatetime, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, AwareDatetime, StrictBool, field_validator, model_validator
 from app.schemas import Input, Name, Password
 
 Money = Annotated[Decimal, Field(ge=0, le=10000000, max_digits=16, decimal_places=4)]
@@ -32,6 +32,7 @@ class Address(Input):
 
 class SettingsData(Input):
     company_name: Name = 'Dispatra Logistics'
+    tms_workspace: StrictBool = False
     contact_name: str = Field(default='', max_length=160)
     email: EmailStr | Literal[''] = ''
     phone: str = Field(default='', max_length=50)

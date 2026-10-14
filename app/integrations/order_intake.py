@@ -187,7 +187,7 @@ def _context(db, organization_id):
         return [{'id': str(row.id), 'code': row.code, 'name': row.data.get('name', row.code)} for row in db.scalars(select(Catalog).where(
             Catalog.organization_id == organization_id, Catalog.kind == kind, Catalog.active.is_(True)))]
     card = db.scalar(select(RateCard.id).where(RateCard.organization_id == organization_id, RateCard.active.is_(True),
-        RateCard.data['method'].astext == 'IMPORTED').order_by(RateCard.created_at).limit(1))
+        RateCard.data['method'].astext == 'IMPORTED').order_by(RateCard.is_default.desc(), RateCard.created_at, RateCard.id).limit(1))
     return {'organization_id': organization_id, 'map': (connection.field_maps if connection else {}).get('order', {}),
         'zone': ZoneInfo(config.time_zone), 'weight': Decimal('0.45359237') if config.weight_unit == 'lb' else Decimal('1'),
         'size': Decimal('2.54') if config.dimension_unit == 'in' else Decimal('1'), 'services': choices('SERVICE'),

@@ -70,6 +70,10 @@ The admin bell uses an owner-only inbox for dispatcher company-settings/password
 
 Swagger is at `/docs`; the versioned API is `/api/v1`. Use the web public entry at `/`, platform administration at `/admin` (companies at `/admin/companies`, a company at `/admin/companies/{id}`, owner profile at `/admin/profile`), and company workspaces at `/{company-slug}/`. Authenticated Profile uses database company settings, session email/role, and real password changes. Other operational frontend screens use browser demo records; connecting them while preserving their original UI is a separate integration step.
 
+## Vehicle subscription pricing
+
+The default plan and company subscription `monthly_price` are prices per registered vehicle per month. Expected recurring revenue multiplies each contributing company's saved rate by its current non-archived vehicle count; inactive registered vehicles still count, and an empty fleet contributes zero. Amounts remain exact and grouped by currency, with annualized revenue equal to monthly revenue times 12. Subscription status/start-date rules and workspace access remain independent. Existing saved price/currency values are preserved; no payment collection or schema migration is introduced.
+
 ## Admin agent Monitor
 
 Migration `0037_agent_monitor` stores agent runs, append-only activity logs, technical reports and coarse runtime-error counters. `/admin/monitor` shows a single request-to-delivery flowchart with Order/Dispatch agents in the flow and the Technical agent monitoring it. Red dots mark agents needing attention; clicking anywhere on an agent card opens its scoped reports, with complete open-issue counts in accessible labels and the dialog. Activity, approvals and fix history remain in optional bounded dialogs. Restart Order and Dispatch workers after upgrading to record their progress; an idle completed run is not proof a process is alive. The owner notification bell opens Monitor for technical reports.

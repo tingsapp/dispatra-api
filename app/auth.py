@@ -18,8 +18,13 @@ SECURE = os.environ.get('COOKIE_SECURE', 'true').lower() != 'false'
 
 def account_view(db, user):
     org = db.get(Organization, user.organization_id) if user.organization_id else None
+    tms_workspace = False
+    if org and user.role == 'DISPATCHER':
+        from .operations.models import Settings
+        settings = db.scalar(select(Settings).where(Settings.organization_id == org.id))
+        tms_workspace = bool(settings and settings.data.get('tms_workspace') is True)
     return AccountView(id=user.id, login_id=user.login_id, display_name=user.display_name, role=user.role, driver_id=user.driver_id, shipper_id=user.shipper_id,
-                       organization=OrganizationView.model_validate(org) if org else None)
+                       organization=OrganizationView.model_validate(org) if org else None, tms_workspace=tms_workspace)
 
 def start_session(db, user, response, mobile=False):
     token = ('dm_' if mobile else 'ws_') + secrets.token_urlsafe(32)

@@ -22,11 +22,19 @@ def save_settings(db, actor, data, key):
             service = db.get(Catalog, data.data.default_service_id)
             if service is None or service.organization_id != actor.organization_id or service.kind != 'SERVICE' or not service.active:
                 raise HTTPException(422, 'Choose an active service level as the default.')
-        row.data = data.data.model_dump(mode='json')
+        values = data.data.model_dump(mode='json')
+        if 'tms_workspace' not in data.data.model_fields_set:
+            values['tms_workspace'] = row.data.get('tms_workspace', False)
+        if 'tms_workspace' in data.data.model_fields_set:
+            from .tms_pricing import apply_workspace_rate
+            apply_workspace_rate(db, actor, row, values['tms_workspace'])
+        row.data = values
         db.get(Organization, actor.organization_id).name = data.data.company_name
         changed(db, actor, row, 'settings.updated')
         return SettingsView.model_validate(row).model_dump(mode='json')
-    return command(db, actor, key, 'settings', data.model_dump(mode='json'), run)
+    payload = data.model_dump(mode='json')
+    if 'tms_workspace' not in data.data.model_fields_set: payload['data'].pop('tms_workspace')
+    return command(db, actor, key, 'settings', payload, run)
 
 
 def save_catalog(db, actor, data, key, identity=None):

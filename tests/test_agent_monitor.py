@@ -39,7 +39,7 @@ def failed_intake(agent):
 def test_owner_monitor_auth_rls_and_live_progress(client):
     login(client); org = company(client)
     initial = snapshot(client)
-    assert len(initial['agents']) == 4 and all(item['run'] is None for item in initial['agents'])
+    assert len(initial['agents']) == 5 and all(item['run'] is None for item in initial['agents'])
     with monitor_run('ORDER') as progress:
         progress.step('Validating queued work.', 40, UUID(org['id']))
         live = snapshot(client)
@@ -254,7 +254,7 @@ def test_agent_issue_counts_are_complete_and_scoped_pages_use_one_classification
         db.add(TechnicalIssue(fingerprint='runtime:test', kind='RUNTIME_ERROR', title='Runtime issue', description='Review application.', status='NEEDS_ADMIN'))
         db.add(TechnicalIssue(fingerprint='fixed:test', kind='MAILBOX_CONNECTION', title='Fixed', description='Recovered.', status='FIXED'))
     current = snapshot(client)
-    assert {item['agent']: item['issue_count'] for item in current['agents']} == {'ORDER': 101, 'DISPATCH': 1, 'TECHNICAL': 1, 'OPERATIONAL': 0}
+    assert {item['agent']: item['issue_count'] for item in current['agents']} == {'ORDER': 101, 'DISPATCH': 1, 'TECHNICAL': 1, 'OPERATIONAL': 0, 'CHAT': 0}
     assert len(current['issues']) == 100
     page = client.get(ROOT + '/issues', params={'agent': 'ORDER', 'limit': 1}).json()
     assert page['items'][0]['agent'] == 'ORDER' and page['next_before']

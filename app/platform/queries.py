@@ -4,7 +4,7 @@ from app.models import Organization, User, LoginSession, AuditEvent, now
 from app.operations.models import Shipper, Driver, Order, Settings
 from .schemas import CompanySummary, CompanyDetail, DispatcherView, AuditEntry
 
-AUDITED = ('organization.%', 'dispatcher.%')
+AUDITED = ('organization.%', 'dispatcher.%', 'subscription.company_%')
 
 
 def _role_count(role, active_only=False):

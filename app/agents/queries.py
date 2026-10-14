@@ -10,7 +10,7 @@ from .classification import issue_agent
 from app.order_watch.models import Incident
 from app.order_watch.commands import OPEN as OPERATIONAL_OPEN
 
-NAMES = ('ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL')
+NAMES = ('ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL', 'CHAT')
 OPEN = ('NEEDS_ADMIN', 'AWAITING_APPROVAL', 'APPROVED', 'APPLYING', 'FAILED')
 STALE_AFTER = timedelta(minutes=5)
 
@@ -26,6 +26,8 @@ def snapshot(db):
     observed = now()
     latest = db.scalars(select(AgentRun).distinct(AgentRun.agent).order_by(AgentRun.agent, AgentRun.created_at.desc(), AgentRun.id.desc())).all()
     runs = {row.agent: row for row in latest}
+    active_chat = db.scalar(select(AgentRun).where(AgentRun.agent == 'CHAT', AgentRun.status == 'RUNNING', AgentRun.heartbeat_at >= observed - STALE_AFTER).order_by(AgentRun.created_at.desc()).limit(1))
+    if active_chat: runs['CHAT'] = active_chat
     queued = dict(db.execute(select(AgentRun.agent, func.count()).where(AgentRun.status == 'QUEUED').group_by(AgentRun.agent)).all())
     classification = issue_agent()
     issue_counts = dict(db.execute(select(classification, func.count()).where(TechnicalIssue.status.in_(OPEN)).group_by(classification)).all())

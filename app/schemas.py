@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, StrictBool, field_validator, TypeAdapter
 
 Name = Annotated[str, Field(min_length=1, max_length=160)]
 LoginID = Annotated[str, Field(min_length=3, max_length=254, pattern=r'^[a-z0-9][a-z0-9@._+-]*$')]
@@ -37,6 +37,7 @@ class OrganizationCreate(Input):
     name: Name
     phone: CompanyPhone = ''
     address: CompanyAddress = ''
+    tms_workspace: StrictBool = False
     admin_login: LoginID
     admin_display_name: Annotated[str, Field(max_length=160)] = ''
     password: Password
@@ -54,6 +55,7 @@ class TrialSignup(Input):
     email: EmailStr
     phone: CompanyPhone = ''
     address: CompanyAddress = ''
+    tms_workspace: StrictBool = False
     password: Password
 
     @field_validator('slug')
@@ -123,6 +125,7 @@ class AccountView(BaseModel):
     display_name: str = ''
     role: Literal['ADMIN','DISPATCHER','SHIPPER','DRIVER']
     organization: OrganizationView | None
+    tms_workspace: bool = False
     driver_id: UUID | None = None
     shipper_id: UUID | None = None
 

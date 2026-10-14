@@ -50,6 +50,7 @@ def company_payload(data):
     payload = data.model_dump(mode='json')
     for field in ('phone', 'address', 'settings_version'):
         if field not in data.model_fields_set: payload.pop(field, None)
+    if payload.get('tms_workspace') is False: payload.pop('tms_workspace')
     return payload
 
 

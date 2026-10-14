@@ -7,7 +7,7 @@ from app.models import Base, now
 
 class AgentRun(Base):
     __tablename__ = 'agent_runs'
-    __table_args__ = (CheckConstraint("agent IN ('ORDER','DISPATCH','TECHNICAL','OPERATIONAL')"),
+    __table_args__ = (CheckConstraint("agent IN ('ORDER','DISPATCH','TECHNICAL','OPERATIONAL','CHAT')"),
         CheckConstraint("status IN ('QUEUED','RUNNING','SUCCEEDED','FAILED')"),
         CheckConstraint('progress BETWEEN 0 AND 100'), Index('ix_agent_runs_recent', 'agent', 'created_at'))
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)

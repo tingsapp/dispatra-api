@@ -21,7 +21,9 @@ class TenantRecord:
 
 class Settings(TenantRecord, Base):
     __tablename__ = 'company_settings'
-    __table_args__ = (UniqueConstraint('organization_id'),)
+    __table_args__ = (UniqueConstraint('organization_id'),
+        ForeignKeyConstraint(['organization_id', 'native_rate_card_id'], ['rate_cards.organization_id', 'rate_cards.id'], name='settings_native_rate_company'))
+    native_rate_card_id: Mapped[UUID | None]
     data: Mapped[dict] = mapped_column(JSONB)
 
 

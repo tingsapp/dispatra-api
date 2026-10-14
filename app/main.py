@@ -95,6 +95,7 @@ def ready() -> dict[str,str]:
         connection.execute(text('SELECT id, status FROM technical_issues LIMIT 0'))
         connection.execute(text('SELECT id, status FROM order_watch_incidents LIMIT 0'))
         connection.execute(text('SELECT id, monthly_price FROM subscription_plans LIMIT 0'))
+        connection.execute(text('SELECT organization_id, status FROM company_subscriptions LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
@@ -110,6 +111,8 @@ app.include_router(platform_router)
 from .platform.billing import router as billing_router, public_router as subscription_router
 app.include_router(billing_router)
 app.include_router(subscription_router)
+from .platform.subscription_routes import router as company_subscription_router
+app.include_router(company_subscription_router)
 from .platform.notification_routes import router as platform_notifications_router
 app.include_router(platform_notifications_router)
 from .agents.routes import router as agent_monitor_router, client_router as diagnostic_router, company_router as company_activity_router
@@ -135,3 +138,11 @@ for integration_router in [integrations_router, tms_receiver, webhook_router, ap
 from .order_watch.routes import owner_router as order_watch_owner, company_router as order_watch_company
 app.include_router(order_watch_owner)
 app.include_router(order_watch_company)
+
+from .connectors.routes import router as connectors_router
+app.include_router(connectors_router)
+from .connectors.privacy import CallbackPrivacyMiddleware
+app.add_middleware(CallbackPrivacyMiddleware)
+
+from .assistant.routes import router as assistant_router
+app.include_router(assistant_router)

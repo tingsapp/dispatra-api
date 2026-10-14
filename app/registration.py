@@ -23,12 +23,13 @@ def start_trial(db, data, request, response, key):
     actor = SimpleNamespace(id='trial:' + digest(key), organization_id=org_id)
     def create():
         company = OrganizationCreate(slug=data.slug, name=data.name, phone=data.phone, address=data.address,
-            admin_login=data.email, admin_display_name=data.full_name, password=data.password)
+            admin_login=data.email, admin_display_name=data.full_name, password=data.password, tms_workspace=data.tms_workspace)
         org, account = provision_company(db, company, organization_id=org_id, pending_verification=True)
         return {'user_id': str(account.id)}
     payload = data.model_dump(mode='json')
     # Blank addresses retain the payload shape used by older signup retries.
     if not data.address: payload.pop('address')
+    if not data.tms_workspace: payload.pop('tms_workspace')
     result = once(db, actor, key, 'signup', payload, create)
     user = db.get(User, UUID(result['user_id']))
     if user: db.refresh(user, with_for_update=True)

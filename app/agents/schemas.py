@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 from app.schemas import Input
 
-AgentName = Literal['ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL']
+AgentName = Literal['ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL', 'CHAT']
 
 
 class AgentRunView(BaseModel):

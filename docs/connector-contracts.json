@@ -1,0 +1,54 @@
+{
+  "rose-rocket": {
+    "name": "Rose Rocket",
+    "authentication": "authorization_code",
+    "authorize_url": "https://a.roserocket.com/authorize",
+    "token_url": "https://a.roserocket.com/oauth/token",
+    "identity_path": "/api/v1/me",
+    "audience": "https://roserocket.com",
+    "scopes": "offline_access email profile",
+    "known_fields": {"order": {"id": "id", "status": "status", "stops": "stops", "items": "commodities"}},
+    "documents": ["https://roserocket.readme.io/docs/rose-rocket-api-oauth-20-authentication-guide", "https://roserocket.readme.io/docs/order", "https://roserocket.readme.io/docs/task"],
+    "activation_requirements": ["Registered ISV application", "Confirmed API edition and connected-object retrieval", "Complete booking, fleet, money and unit mappings tested against a vendor sandbox"]
+  },
+  "cartoncloud": {
+    "name": "CartonCloud",
+    "authentication": "authorization_code_for_software_vendors",
+    "api_base": "https://api.na.cartoncloud.com",
+    "identity_path": "/users/me",
+    "headers": {"Accept-Version": "8"},
+    "known_fields": {"order": {"id": "id", "status": "status"}},
+    "documents": ["https://api-docs.cartoncloud.com/latest/guides/authentication", "https://api-docs.cartoncloud.com/latest/api-reference/consignments", "https://api-docs.cartoncloud.com/latest/guides/environments"],
+    "activation_requirements": ["Vendor OAuth registration and authorization endpoint", "Authorized tenant selection", "Complete consignment, customer, transport-product and cargo mappings tested in a vendor sandbox"]
+  },
+  "truckmate": {
+    "name": "Trimble TruckMate",
+    "authentication": "bearer_api_key_or_login_token",
+    "known_fields": {},
+    "documents": ["https://developer.trimble.com/docs/truckmate/guides/access/", "https://developer.trimble.com/docs/truckmate/reference/openapi/truckmate/"],
+    "activation_requirements": ["Licensed and reachable TruckMate REST API", "Installed edition OpenAPI specification", "Verified resource paths, field mappings and account identity check"]
+  },
+  "mcleod": {
+    "name": "McLeod LoadMaster / PowerBroker",
+    "authentication": "api_key_and_tenant",
+    "known_fields": {},
+    "documents": ["https://innovationhub.mcleodsoftware.com/McLeodAPI"],
+    "activation_requirements": ["Innovation Hub API access", "Selected cloud or direct-hosted API edition", "Verified resource paths, field mappings and account identity check"]
+  },
+  "aljex": {
+    "name": "Descartes Aljex",
+    "authentication": "gln_sso_session",
+    "known_fields": {},
+    "documents": ["https://aljex-docs.descartes.com/"],
+    "activation_requirements": ["GLN SSO API account registration", "Confirmed session-token header and tenant qualifier", "Authorized response fields and complete shipment mappings"]
+  },
+  "turvo": {
+    "name": "Turvo",
+    "authentication": "client_credentials",
+    "token_url": "https://publicapi.turvo.com/v1/oauth/token",
+    "token_format": "json",
+    "known_fields": {},
+    "documents": ["https://app.turvo.com/lobby/documentation"],
+    "activation_requirements": ["Public API Profile and API key", "Authorized account identity check", "Verified lookup values, shipment/fleet mappings and pagination"]
+  }
+}
