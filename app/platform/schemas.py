@@ -15,6 +15,8 @@ class CompanySummary(BaseModel):
     name: str
     logo_url: str
     active: bool
+    workspace_enabled: bool = True
+    payment_required: bool = False
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
     trial_activated_at: datetime | None = None
@@ -102,7 +104,7 @@ class AuditEntry(BaseModel):
     action: str
     entity_id: UUID
     actor_login_id: str
-    actor_role: Literal['ADMIN', 'DISPATCHER', 'SHIPPER', 'DRIVER']
+    actor_role: Literal['ADMIN', 'DISPATCHER', 'SHIPPER', 'DRIVER', 'SYSTEM']
     created_at: datetime
 
 

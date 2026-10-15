@@ -117,19 +117,17 @@ def test_signup_cannot_choose_privilege_existing_tenant_or_trial_period(client, 
     assert PASSWORD not in response.text
 
 
-def test_expired_trial_blocks_sessions_login_api_keys_and_worker_filters_until_owner_activation(client):
+def test_expired_trial_blocks_operations_but_keeps_dispatcher_billing_access(client):
     account = signup(client).json(); org = account['organization']
     base = '/api/v1/companies/trial-company'
     api_key = post(client, base + '/integrations/api-key', {}).json()['key']
-    from test_manual_operations import address
-    driver = post(client, base + '/drivers', {'name':'Trial Driver','email':'driver@example.com','phone':'6045550102','address':address()}).json()
-    with TestClient(app, headers=HEADERS) as mobile:
-        login(mobile, 'driver', login_id=driver['email'], password=driver['initial_password'])
-        assert post(mobile, base + '/driver/duty', {}).status_code == 201
     with owner_engine.begin() as db:
         db.execute(text("UPDATE organizations SET trial_started_at=now()-interval '31 days', trial_ends_at=now()-interval '1 day' WHERE id=:id"), {'id':org['id']})
-    assert client.get('/api/v1/auth/me').status_code == 401
-    assert client.post('/api/v1/auth/login', json={'portal':'dispatch','login_id':BODY['email'],'password':PASSWORD}).status_code == 403
+    assert client.get('/api/v1/auth/me').json()['organization']['payment_required']
+    login(client, 'dispatch', login_id=BODY['email'])
+    assert client.get(base + '/settings').status_code == 403
+    payment_response = client.get(base + '/billing/payment-method')
+    assert payment_response.status_code == 200, payment_response.text
     with TestClient(app, headers={'Authorization':'Bearer '+api_key}) as key_client:
         assert key_client.get(base + '/catalog').status_code == 401
     with Session(owner_engine) as db:
@@ -137,26 +135,21 @@ def test_expired_trial_blocks_sessions_login_api_keys_and_worker_filters_until_o
         assert not db.get(Organization, org['id']).active
     login(client)
     detail = client.get('/api/v1/platform/organizations/' + org['id']).json()
-    assert detail['active'] is False
+    assert detail['payment_required'] and not detail['active']
     assert client.get('/api/v1/platform/organizations', params={'status':'ACTIVE'}).json() == []
     assert len(client.get('/api/v1/platform/organizations', params={'status':'SUSPENDED'}).json()) == 1
-    activate = post(client, f"/api/v1/platform/organizations/{org['id']}/activate", {'version':detail['version']})
-    assert activate.status_code == 200, activate.text
-    assert activate.json()['active'] and activate.json()['trial_activated_at']
-    with owner_engine.connect() as db:
-        assert db.scalar(text('SELECT ended_at FROM duty_sessions WHERE driver_id=:id'), {'id':driver['id']}) is not None
-    login(client, 'dispatch', login_id=BODY['email'])
-    assert client.get(base + '/settings').status_code == 200
+    # Activating an already-enabled company cannot bypass the card requirement.
+    assert post(client, f"/api/v1/platform/organizations/{org['id']}/activate", {'version':detail['version']}).status_code == 409
 
 
-def test_trial_session_expires_at_cutoff_without_extending_trial(client):
+def test_dispatcher_session_survives_cutoff_for_billing_without_extending_trial(client):
     account = signup(client).json()
     with owner_engine.begin() as db:
         db.execute(text("UPDATE organizations SET trial_started_at=now()-interval '29 days', trial_ends_at=now()+interval '1 hour' WHERE id=:id"), {'id':account['organization']['id']})
     login(client, 'dispatch', login_id=BODY['email'])
     with owner_engine.connect() as db:
         expires, cutoff = db.execute(text('SELECT s.expires_at, o.trial_ends_at FROM login_sessions s JOIN organizations o ON o.id=s.organization_id ORDER BY s.expires_at LIMIT 1')).one()
-        assert expires == cutoff
+        assert expires > cutoff
 
 
 def test_concurrent_signup_same_email_has_one_committed_workspace(client):

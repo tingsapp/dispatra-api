@@ -53,9 +53,33 @@ class Organization(Base):
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trial_activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    payment_method_valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    billing_enrolled: Mapped[bool] = mapped_column(default=False, server_default=text('false'))
+    billing_access_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @hybrid_property
+    def payment_required(self):
+        trial_finished = self.trial_ends_at is not None and self.trial_ends_at <= now()
+        has_card = self.payment_method_valid_until is not None and self.payment_method_valid_until > now()
+        needs_billing = trial_finished or (self.trial_ends_at is None and self.billing_enrolled)
+        entitled = self.billing_access_until is not None and self.billing_access_until > now()
+        return needs_billing and (not has_card or not entitled)
+
+    @payment_required.expression
+    def payment_required(cls):
+        return and_(or_(and_(cls.trial_ends_at.is_not(None), cls.trial_ends_at <= func.now()),
+                           and_(cls.trial_ends_at.is_(None), cls.billing_enrolled)),
+                    or_(cls.payment_method_valid_until.is_(None), cls.payment_method_valid_until <= func.now(),
+                        cls.billing_access_until.is_(None), cls.billing_access_until <= func.now()))
+
+    @property
+    def workspace_enabled(self):
+        return self._active
+
     @hybrid_property
     def active(self):
-        return bool(self._active) and not self.verification_pending and (self.trial_ends_at is None or self.trial_activated_at is not None or self.trial_ends_at > now())
+        return bool(self._active) and not self.verification_pending and not self.payment_required
 
     @active.setter
     def active(self, value):
@@ -67,7 +91,7 @@ class Organization(Base):
     def active(cls):
         # Every SQL consumer (workers, API keys, webhooks and owner filters)
         # observes the same cutoff even when no expiry worker is running.
-        return and_(cls._active, cls.verification_pending.is_(False), or_(cls.trial_ends_at.is_(None), cls.trial_activated_at.is_not(None), cls.trial_ends_at > func.now()))
+        return and_(cls._active, cls.verification_pending.is_(False), ~cls.payment_required)
 
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

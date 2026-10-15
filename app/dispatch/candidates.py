@@ -56,7 +56,8 @@ def _measure(db, actor, order, driver, vehicle, route, on_route, planned_at, pla
     preferred = str(driver.id) == str(order.facts.get('preferred_driver_id') or '')
     requested = order.facts.get('vehicle_type_id')
     exact = not requested or str(vehicle.type_id) == str(requested)
-    facts = ['Shipper requested this driver'] if preferred else []
+    assigned = (order.booking or {}).get('assigned_driver')
+    facts = ['Shipper’s assigned driver'] if assigned else ['Shipper requested this driver'] if preferred else []
     if route: facts.append(f'Joins the planned route with {len(on_route)} order{"s" if len(on_route) != 1 else ""}, adding about {round(max(extra, 0))} min of driving')
     else: facts.append(f'Starts a new route, about {round(extra)} min of driving including the trip to pickup')
     if deadhead is not None: facts.append(f'About {deadhead} km from the first pickup ({"live GPS" if source == "GPS" else "home address"})')

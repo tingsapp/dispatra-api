@@ -96,5 +96,9 @@ def archive_vehicle(db, actor, identity, data, key):
         row.active = False
         row.archived_at = now()
         changed(db, actor, row, 'vehicle.archived')
+        from app.company_billing.models import CompanyBilling
+        from app.company_billing.recurring import request_sync
+        billing = db.get(CompanyBilling, actor.organization_id)
+        if billing: request_sync(billing)
         return {'id': str(row.id), 'version': row.version}
     return command(db, actor, key, 'vehicle-archive:' + str(identity), data.model_dump(), run)

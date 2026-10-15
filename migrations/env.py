@@ -2,6 +2,7 @@ import os
 from alembic import context
 from sqlalchemy import create_engine
 from app.models import Base
+from app.company_billing import models as company_billing_models
 from app.operations import models as operational_models
 from app.intake import models as intake_models
 from app.integrations import models as integration_models

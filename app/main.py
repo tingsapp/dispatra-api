@@ -30,8 +30,9 @@ async def boundary(request: Request, call_next):
     # A TMS webhook authenticates with an HMAC signature of the body, never a session, so browser checks do not apply.
     tms_webhook = request.method == 'POST' and TMS_WEBHOOK.match(request.url.path) is not None
     # API keys are sent explicitly by servers and never attached by browsers, so they carry no CSRF risk.
+    stripe_webhook = request.method == 'POST' and request.url.path == '/api/v1/billing/stripe/webhook'
     api_key = not request.cookies.get('dispatra_session') and request.headers.get('authorization', '').startswith('Bearer dsp_')
-    native_request = not request.url.path.startswith(('/api/v1/auth/signup', '/api/v1/auth/verification')) and (tms_webhook or api_key or (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
+    native_request = not request.url.path.startswith(('/api/v1/auth/signup', '/api/v1/auth/verification')) and (tms_webhook or stripe_webhook or api_key or (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
         and request.headers.get('x-requested-with') == 'Dispatra'
         and (request.url.path == '/api/v1/auth/driver/login'
              or request.headers.get('authorization', '').startswith('Bearer dm_'))))
@@ -85,7 +86,7 @@ def ready() -> dict[str,str]:
     with engine.connect() as connection:
         role = connection.execute(text('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user')).one()
         if role.rolsuper or role.rolbypassrls: raise HTTPException(503, 'Runtime database role is not restricted.')
-        connection.execute(text('SELECT id, verification_pending FROM organizations LIMIT 0'))
+        connection.execute(text('SELECT id, verification_pending, payment_method_valid_until, billing_enrolled, billing_access_until FROM organizations LIMIT 0'))
         connection.execute(text('SELECT id FROM email_verifications LIMIT 0'))
         connection.execute(text('SELECT id, pricing FROM orders LIMIT 0'))
         connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
@@ -96,6 +97,7 @@ def ready() -> dict[str,str]:
         connection.execute(text('SELECT id, status FROM order_watch_incidents LIMIT 0'))
         connection.execute(text('SELECT id, monthly_price FROM subscription_plans LIMIT 0'))
         connection.execute(text('SELECT organization_id, status FROM company_subscriptions LIMIT 0'))
+        connection.execute(text('SELECT organization_id, consented_at, stripe_subscription, pending, lease_until FROM company_billing LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
@@ -146,3 +148,6 @@ app.add_middleware(CallbackPrivacyMiddleware)
 
 from .assistant.routes import router as assistant_router
 app.include_router(assistant_router)
+
+from .company_billing.routes import router as company_payment_router
+app.include_router(company_payment_router)

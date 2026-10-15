@@ -85,6 +85,7 @@ class OrganizationView(BaseModel):
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
     trial_activated_at: datetime | None = None
+    payment_required: bool = False
 
 class ProfileInput(Input):
     contact_name: Annotated[str, Field(max_length=160)] = ''

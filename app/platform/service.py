@@ -93,7 +93,7 @@ def set_company_status(db, actor, organization_id, active, data, key):
     """Suspension revokes every company session and closes open driver duty; historical records are untouched."""
     def run():
         org = company(db, organization_id, True); expect(org, data.version, 'Company')
-        if org.active == active: raise HTTPException(409, 'Company is already ' + ('active.' if active else 'suspended.'))
+        if org._active == active: raise HTTPException(409, 'Company is already ' + ('active.' if active else 'suspended.'))
         apply_company_access(db, actor, org, active)
         org.version += 1; org.updated_at = now()
         db.flush()

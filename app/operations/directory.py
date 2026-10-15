@@ -25,6 +25,9 @@ def save_settings(db, actor, data, key):
         values = data.data.model_dump(mode='json')
         if 'tms_workspace' not in data.data.model_fields_set:
             values['tms_workspace'] = row.data.get('tms_workspace', False)
+        if values['dispatch_mode'] == 'AUTO' and row.data.get('dispatch_mode', 'MANUAL') != 'AUTO' and values['tms_workspace']:
+            from .dispatch_mode import require_connected_tms
+            require_connected_tms(db, actor)
         if 'tms_workspace' in data.data.model_fields_set:
             from .tms_pricing import apply_workspace_rate
             apply_workspace_rate(db, actor, row, values['tms_workspace'])
@@ -97,8 +100,14 @@ def default_rate(db, actor):
 def shipper_view(db, actor, row):
     """`rate_card_name` is the card that prices this shipper's orders: its own, else the company Default."""
     card = record(db, RateCard, actor, row.rate_card_id) if row.rate_card_id else default_rate(db, actor)
+    from .orders import company_scope
+    driver_name = None
+    if row.assigned_driver_id:
+        with company_scope(db, actor):
+            driver_name = db.scalar(select(Driver.name).where(Driver.organization_id == actor.organization_id,
+                Driver.id == row.assigned_driver_id))
     return jsonable_encoder({**{k: v for k, v in dump(row).items() if k not in {'contact_name', 'address'}},
-        'rate_card_name': card.data['name'] if card else None})
+        'rate_card_name': card.data['name'] if card else None, 'assigned_driver_name': driver_name})
 
 
 def save_shipper(db, actor, data, key, identity=None):
@@ -127,6 +136,13 @@ def save_shipper(db, actor, data, key, identity=None):
             customer.status = data.status
             user.active = data.status != 'INACTIVE'
             if not user.active: db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
+        # Older clients that omit the new field preserve the saved assignment.
+        selected = payload.assigned_driver_id if 'assigned_driver_id' in payload.model_fields_set or not identity else row.assigned_driver_id
+        if selected and (not identity or selected != row.assigned_driver_id):
+            driver = db.scalar(select(Driver).where(Driver.organization_id == actor.organization_id, Driver.id == selected,
+                Driver.active.is_(True), Driver.archived_at.is_(None)))
+            if driver is None: raise HTTPException(422, 'Choose an active company driver or no assigned driver.')
+        row.assigned_driver_id = selected
         customer.name, customer.email, customer.phone = payload.name, payload.email, payload.phone
         customer.address = payload.warehouse.text
         row.kind, row.company_name = payload.kind, payload.company_name
@@ -142,7 +158,11 @@ def save_shipper(db, actor, data, key, identity=None):
         else:
             db.flush(); audit(db, actor, 'shipper.created', row.id, actor.organization_id)
         return shipper_view(db, actor, row)
-    result = command(db, actor, key, 'shipper:' + str(identity or 'new'), data.model_dump(mode='json'), run)
+    values = data.model_dump(mode='json')
+    payload = data.data if identity else data
+    if 'assigned_driver_id' not in payload.model_fields_set:
+        (values['data'] if identity else values).pop('assigned_driver_id', None)
+    result = command(db, actor, key, 'shipper:' + str(identity or 'new'), values, run)
     return {**result, 'initial_password': password}
 
 
@@ -175,6 +195,10 @@ def save_vehicle(db, actor, data, key, identity=None):
         if identity: changed(db, actor, row, 'vehicle.updated')
         else:
             db.flush(); audit(db, actor, 'vehicle.created', row.id, actor.organization_id)
+        from app.company_billing.models import CompanyBilling
+        from app.company_billing.recurring import request_sync
+        billing = db.get(CompanyBilling, actor.organization_id)
+        if billing: request_sync(billing)
         return jsonable_encoder(dump(row))
     return command(db, actor, key, 'vehicle:' + str(identity or 'new'), data.model_dump(mode='json'), run)
 

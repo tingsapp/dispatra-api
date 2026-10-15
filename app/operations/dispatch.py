@@ -32,6 +32,7 @@ def equipment_key(value):
 
 def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
     if vehicle.data.get('availability') == 'UNAVAILABLE': raise HTTPException(409, 'Vehicle is unavailable.')
+    if driver.archived_at or vehicle.archived_at: raise HTTPException(409, 'Driver and vehicle must not be archived.')
     if not driver.active or not vehicle.active: raise HTTPException(409, 'Driver and vehicle must be active.')
     account = db.scalar(select(User).where(User.organization_id == actor.organization_id, User.driver_id == driver.id, User.active.is_(True)))
     if not account: raise HTTPException(409, 'Driver account is inactive.')
@@ -44,6 +45,9 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at):
     start = driver.data.get('shift_start'); end = driver.data.get('shift_end')
     if start and planned_at < datetime.fromisoformat(start): raise HTTPException(409, 'Route begins before the driver shift.')
     for order in orders:
+        assigned = (order.booking or {}).get('assigned_driver')
+        if assigned and assigned['id'] != str(driver.id):
+            raise HTTPException(409, 'This Order requires the shipper’s assigned driver: ' + assigned['name'] + '.')
         if order.pricing.get('status') != 'PRICED': raise HTTPException(409, 'Order needs pricing review before assignment.')
         if order.status == 'NEW' and datetime.fromisoformat(order.pricing['expires_at']) < now(): raise HTTPException(409, 'Order quote has expired; reprice it before assignment.')
         for stop in order.facts['stops']:

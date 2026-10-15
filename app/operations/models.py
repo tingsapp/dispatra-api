@@ -51,7 +51,8 @@ class Shipper(TenantRecord, Base):
     __tablename__ = 'shippers'
     __table_args__ = (UniqueConstraint('organization_id', 'id'), UniqueConstraint('organization_id', 'number'),
         CheckConstraint("status IN ('ACTIVE','INACTIVE','ON_HOLD')", name='shippers_status_check'),
-        ForeignKeyConstraint(['organization_id', 'rate_card_id'], ['rate_cards.organization_id', 'rate_cards.id']))
+        ForeignKeyConstraint(['organization_id', 'rate_card_id'], ['rate_cards.organization_id', 'rate_cards.id']),
+        ForeignKeyConstraint(['organization_id', 'assigned_driver_id'], ['drivers.organization_id', 'drivers.id'], name='shippers_assigned_driver_company'))
     number: Mapped[str] = mapped_column(String(50))
     name: Mapped[str] = mapped_column(String(160))
     contact_name: Mapped[str] = mapped_column(String(160), default='')
@@ -63,6 +64,7 @@ class Shipper(TenantRecord, Base):
     company_name: Mapped[str] = mapped_column(String(160), default='')
     warehouse: Mapped[dict | None] = mapped_column(JSONB)
     rate_card_id: Mapped[UUID | None]
+    assigned_driver_id: Mapped[UUID | None]
     discount: Mapped[dict] = mapped_column(JSONB, default=lambda: {'kind': 'NONE', 'value': '0'})
     instructions: Mapped[str] = mapped_column(Text, default='')
     # Order-update emails from the company mailbox; quotes are sent on request regardless.

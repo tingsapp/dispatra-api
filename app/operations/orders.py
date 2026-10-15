@@ -59,17 +59,29 @@ def order_view(row, actor):
         result['facts']['internal_notes'] = ''
         result['pricing']['context'] = {}
         if row.billing_shipper_id != actor.shipper_id:
-            result['booking'] = {'shipper': result['booking']['shipper']}
+            result['booking'] = {k: v for k, v in result['booking'].items() if k in {'shipper', 'assigned_driver'}}
     return result
 
 
-def booking_snapshot(db, actor, booking):
+def booking_snapshot(db, actor, booking, previous=None):
     def details(identity):
         profile = customer = operational_shipper(db, actor, identity)
         if customer.status != 'ACTIVE': raise HTTPException(409, 'Shipper account must be active to book.')
         return {'id': str(identity), 'name': customer.name, 'company_name': profile.company_name,
             'email': customer.email, 'phone': customer.phone, 'warehouse': profile.warehouse}
-    return {'shipper': details(booking.shipper_id), 'payer': details(booking.billing_shipper_id or booking.shipper_id)}
+    snapshot = {'shipper': details(booking.shipper_id), 'payer': details(booking.billing_shipper_id or booking.shipper_id)}
+    if previous is not None and previous['shipper']['id'] == str(booking.shipper_id):
+        # Directory changes apply to future Orders; editing a booking keeps its standing assignment.
+        assigned = previous.get('assigned_driver')
+    else:
+        profile = operational_shipper(db, actor, booking.shipper_id)
+        assigned = None
+        if profile.assigned_driver_id:
+            with company_scope(db, actor):
+                driver = record(db, Driver, actor, profile.assigned_driver_id)
+                assigned = {'id': str(driver.id), 'name': driver.name}
+    if assigned: snapshot['assigned_driver'] = assigned
+    return snapshot
 
 
 def price_or_review(db, actor, booking):
@@ -117,7 +129,7 @@ def update_order(db, actor, identity, data, key):
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
         from .pricing import retain_price
         retain_price(db, row)
-        row.facts, row.booking = booking.model_dump(mode='json'), booking_snapshot(db, actor, booking)
+        row.facts, row.booking = booking.model_dump(mode='json'), booking_snapshot(db, actor, booking, row.booking)
         row.pricing = price_or_review(db, actor, booking)
         row.shipper_id, row.billing_shipper_id = booking.shipper_id, booking.billing_shipper_id or booking.shipper_id
         row.service_id = booking.service_id

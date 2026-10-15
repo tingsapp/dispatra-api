@@ -34,7 +34,7 @@ def companies(db, search=None, status=None, after=None, limit=50):
 
 
 def _org(org):
-    return {key: getattr(org, key) for key in ('id', 'slug', 'name', 'active', 'version', 'created_at', 'updated_at', 'trial_started_at', 'trial_ends_at', 'trial_activated_at')}
+    return {key: getattr(org, key) for key in ('id', 'slug', 'name', 'active', 'workspace_enabled', 'payment_required', 'version', 'created_at', 'updated_at', 'trial_started_at', 'trial_ends_at', 'trial_activated_at')}
 
 
 def company_detail(db, org):
@@ -68,8 +68,10 @@ def company_contact(db, organization_id):
 
 def include_company_details(db, organization_id, detail):
     # Older idempotent results predate these fields; enrich without reapplying writes.
-    if all(field in detail for field in (*TOTAL_FIELDS, 'phone', 'address', 'settings_version', 'logo_url')): return detail
-    return {**company_totals(db, organization_id), **company_contact(db, organization_id), **detail}
+    if all(field in detail for field in (*TOTAL_FIELDS, 'phone', 'address', 'settings_version', 'logo_url', 'workspace_enabled', 'payment_required')): return detail
+    org = db.get(Organization, organization_id)
+    return {**company_totals(db, organization_id), **company_contact(db, organization_id), **detail,
+        'workspace_enabled': org.workspace_enabled, 'payment_required': org.payment_required, 'active': org.active}
 
 
 def _sessions():
@@ -92,8 +94,8 @@ def dispatchers(db, organization_id):
 
 
 def audit_history(db, organization_id, limit=50):
-    query = (select(AuditEvent, User.login_id, User.role).join(User, User.id == AuditEvent.actor_id)
+    query = (select(AuditEvent, User.login_id, User.role).outerjoin(User, User.id == AuditEvent.actor_id)
              .where(AuditEvent.organization_id == organization_id, or_(*[AuditEvent.action.like(prefix) for prefix in AUDITED]))
              .order_by(AuditEvent.created_at.desc(), AuditEvent.id).limit(limit))
-    return [AuditEntry(id=event.id, action=event.action, entity_id=event.entity_id, actor_login_id=login, actor_role=role, created_at=event.created_at)
+    return [AuditEntry(id=event.id, action=event.action, entity_id=event.entity_id, actor_login_id=login or 'Payment service', actor_role=role or 'SYSTEM', created_at=event.created_at)
             for event, login, role in db.execute(query)]

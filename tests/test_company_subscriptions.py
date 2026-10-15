@@ -62,7 +62,8 @@ def test_owner_authorization_and_database_isolation(client):
         assert client.get(BASE + '/billing/revenue').status_code == 403
     with Session(engine) as db, db.begin():
         context(db, org['id'])
-        assert db.scalar(text('SELECT count(*) FROM company_subscriptions')) == 0
+        assert db.scalar(text('SELECT count(*) FROM company_subscriptions')) == 1
+        assert db.scalar(text('SELECT organization_id FROM company_subscriptions')) == UUID(org['id'])
         assert db.execute(text("UPDATE company_subscriptions SET status='CANCELLED'")).rowcount == 0
         context(db, platform=True)
         assert db.scalar(text('SELECT count(*) FROM company_subscriptions')) == 2
@@ -193,7 +194,8 @@ def test_migration_backfill_preserves_access_and_snapshot_defaults(client):
     migration_path = Path(__file__).parents[1] / 'migrations/versions/0046_company_subscriptions.py'
     spec = importlib.util.spec_from_file_location('company_subscription_migration', migration_path)
     migration = importlib.util.module_from_spec(spec); spec.loader.exec_module(migration)
-    with owner_engine.begin() as db:
+    with owner_engine.connect() as db:
+        transaction = db.begin()
         with Operations.context(MigrationContext.configure(db)):
             migration.downgrade()
             db.execute(text("UPDATE subscription_plans SET monthly_price=12.34, currency='USD'"))
@@ -202,5 +204,7 @@ def test_migration_backfill_preserves_access_and_snapshot_defaults(client):
         assert str(row['organization_id']) == org['id'] and row['status'] == 'NOT_SUBSCRIBED'
         assert str(row['monthly_price']) == '12.34' and row['currency'] == 'USD'
         assert row['starts_on'] is None and row['version'] == 1
+        # Restore the fully migrated schema, including policies added after 0046.
+        transaction.rollback()
     assert client.get(f"{BASE}/organizations/{org['id']}").json() == before
     assert client.get(BASE + '/billing/revenue').json()['currencies'] == []

@@ -30,10 +30,21 @@ def subscription(db, organization_id, lock=False):
 
 def update_subscription(db, actor, organization_id, data, key):
     def run():
+        company(db, organization_id, lock=True)
         row = subscription(db, organization_id, lock=True)
         expect(row, data.version, 'Company subscription')
+        previous_status = row.status
         for field in ('status', 'monthly_price', 'currency', 'starts_on'):
             setattr(row, field, getattr(data, field))
+        from app.company_billing.models import CompanyBilling
+        from app.company_billing.recurring import request_sync
+        billing = db.get(CompanyBilling, organization_id)
+        if billing:
+            if data.status == 'ACTIVE' and previous_status in {'PAUSED', 'CANCELLED', 'NOT_SUBSCRIBED'}:
+                billing.restart_requested = True
+            request_sync(billing)
+        # Access is revoked in this transaction when an owner pauses/cancels.
+        if data.status != 'ACTIVE': db.get(Organization, organization_id).billing_access_until = None
         row.version += 1
         row.updated_at = now()
         audit(db, actor, 'subscription.company_updated', organization_id, organization_id)

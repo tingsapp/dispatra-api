@@ -25,7 +25,7 @@ def update_overview(db, actor, organization_id, data, key):
                     audit(db, actor, 'dispatcher.password_changed', account.id, org.id)
         if service.apply_company_details(db, org, data):
             audit(db, actor, 'organization.updated', org.id, org.id)
-        if org.active != data.active:
+        if org._active != data.active:
             service.apply_company_access(db, actor, org, data.active)
         org.version += 1
         org.updated_at = now()

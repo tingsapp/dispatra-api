@@ -76,6 +76,9 @@ def test_mode_changes_switch_default_atomically_restore_custom_rates_and_replay(
     assert result.status_code==200,result.text
     native=result.json()
     saved=client.get(BASE+'/settings').json();saved['data']['dispatch_mode']='AUTO'
+    enabled=client.put(BASE+'/settings',json={'version':saved['version'],'data':saved['data']},headers={'Idempotency-Key':str(uuid4())})
+    assert enabled.status_code==200,enabled.text
+    saved=enabled.json()
     key=str(uuid4());first=set_mode(client,True,key,saved)
     assert first.status_code==200,first.text
     assert first.json()['data']['dispatch_mode']=='AUTO'

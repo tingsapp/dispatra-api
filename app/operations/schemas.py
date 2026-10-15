@@ -211,6 +211,7 @@ class ShipperData(Input):
     phone: Annotated[str, Field(max_length=50)] = ''
     warehouse: Address
     rate_card_id: UUID | None = None
+    assigned_driver_id: UUID | None = None
     discount: Discount = Field(default_factory=Discount)
     instructions: Text = ''
     email_updates: bool = True
@@ -547,6 +548,8 @@ class ShipperView(RecordView):
     warehouse: Address
     rate_card_id: UUID | None
     rate_card_name: str | None = None
+    assigned_driver_id: UUID | None = None
+    assigned_driver_name: str | None = None
     discount: Discount
     instructions: str
     email_updates: bool = True

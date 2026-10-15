@@ -19,7 +19,7 @@ SECURE = os.environ.get('COOKIE_SECURE', 'true').lower() != 'false'
 def account_view(db, user):
     org = db.get(Organization, user.organization_id) if user.organization_id else None
     tms_workspace = False
-    if org and user.role == 'DISPATCHER':
+    if org and org.active and user.role == 'DISPATCHER':
         from .operations.models import Settings
         settings = db.scalar(select(Settings).where(Settings.organization_id == org.id))
         tms_workspace = bool(settings and settings.data.get('tms_workspace') is True)
@@ -31,7 +31,7 @@ def start_session(db, user, response, mobile=False):
     started_at = now()
     expires_at = started_at + timedelta(hours=12)
     organization = db.get(Organization, user.organization_id) if user.organization_id else None
-    if organization and organization.trial_ends_at and organization.trial_activated_at is None:
+    if organization and user.role != 'DISPATCHER' and organization.trial_ends_at and (not organization.payment_method_valid_until or organization.payment_method_valid_until <= started_at):
         expires_at = min(expires_at, organization.trial_ends_at)
     db.add(LoginSession(token_hash=digest(token), user_id=user.id, organization_id=user.organization_id,
                         expires_at=expires_at))
@@ -67,7 +67,7 @@ def login(db, data, request, response, mobile=False):
     if organization and organization.verification_pending and user.role == 'DISPATCHER' and not mobile:
         from .verification import pending
         return pending(db, user, response)
-    if organization and not organization.active:
+    if organization and not organization.active and not (user.role == 'DISPATCHER' and organization._active and not organization.verification_pending and organization.payment_required):
         raise HTTPException(403, 'This company workspace is suspended. Contact Dispatra support.')
     if user.driver_id:
         from .operations.models import Driver
@@ -124,7 +124,16 @@ def authenticated(request: Request, db: Session = Depends(session)):
     if token.startswith('dm_') and user.role != 'DRIVER': raise HTTPException(403, 'Driver access required.')
     if user.organization_id:
         org = db.get(Organization, user.organization_id)
-        if not org or not org.active: raise HTTPException(401, 'Please sign in.')
+        if not org: raise HTTPException(401, 'Please sign in.')
+        billing_path = (request.url.path in {'/api/v1/auth/me', '/api/v1/auth/password'} or
+            request.url.path in {f'/api/v1/companies/{org.slug}/billing/payments',
+                f'/api/v1/companies/{org.slug}/billing/payment-method',
+                f'/api/v1/companies/{org.slug}/billing/payment-method/setup',
+                f'/api/v1/companies/{org.slug}/billing/payment-method/confirm',
+                f'/api/v1/companies/{org.slug}/billing/payment-method/refresh'})
+        billing_access = user.role == 'DISPATCHER' and org._active and not org.verification_pending and org.payment_required and billing_path
+        if not org.active and not billing_access:
+            raise HTTPException(403, 'Complete your subscription payment to continue using this workspace.' if org.payment_required and org._active else 'This company workspace is suspended.')
     if user.driver_id:
         from .operations.models import Driver
         driver_record = db.get(Driver, user.driver_id)
