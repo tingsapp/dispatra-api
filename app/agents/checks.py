@@ -10,6 +10,7 @@ from app.operations.models import EmailDelivery, Order, Settings
 from app.events import publish
 from .models import AgentRun, RuntimeDiagnostic, TechnicalIssue
 from .maintenance import clean_expired_sessions
+from .machine_events import RUNTIME_VERIFIED
 
 SYSTEM = SimpleNamespace(id=None, role='TECHNICAL', organization_id=None, actor_type='AGENT')
 
@@ -32,7 +33,7 @@ def require_runtime_role(db):
 
 def scan(db, progress):
     require_runtime_role(db)
-    progress.step('Database connection and restricted runtime role verified.', 15)
+    progress.step(RUNTIME_VERIFIED, 15)
     count = clean_expired_sessions(db, SYSTEM, progress.id)
     if count:
         db.add(TechnicalIssue(fingerprint=f'expired-sessions:{progress.id}', kind='EXPIRED_SESSIONS', severity='WARNING',

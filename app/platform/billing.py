@@ -21,9 +21,12 @@ class SubscriptionPlanView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     name: Literal['Monthly subscription'] = 'Monthly subscription'
     interval: Literal['MONTHLY'] = 'MONTHLY'
+    trial_enabled: bool = True
     trial_days: int = TRIAL_DAYS
     monthly_price: Decimal | None
     currency: str
+    dispatch_monthly_price: Decimal | None = None
+    dispatch_currency: str = 'CAD'
 
 
 class MonthlyPlanView(SubscriptionPlanView):
@@ -36,6 +39,10 @@ class MonthlyPlanUpdate(Input):
     version: Annotated[int, Field(ge=1)]
     monthly_price: Price | None
     currency: Currency
+    dispatch_monthly_price: Price | None = None
+    dispatch_currency: Currency = 'CAD'
+    trial_enabled: Annotated[bool, Field(strict=True)] = True
+    trial_days: Annotated[int, Field(strict=True, ge=1, le=365)] = TRIAL_DAYS
 
 
 def monthly_plan(db, lock=False):
@@ -51,12 +58,17 @@ def update_plan(db, actor, data, key):
         if row.version != data.version: raise HTTPException(409, 'Subscription plan changed. Reload before saving.')
         row.monthly_price = data.monthly_price
         row.currency = data.currency
+        for field in ('dispatch_monthly_price', 'dispatch_currency', 'trial_enabled', 'trial_days'):
+            if field in data.model_fields_set: setattr(row, field, getattr(data, field))
         row.version += 1
         row.updated_at = now()
         audit(db, actor, 'subscription.plan_updated', row.id, None)
         db.flush()
         return MonthlyPlanView.model_validate(row).model_dump(mode='json')
-    return once(db, actor, key, 'subscription-plan-update', data.model_dump(mode='json'), run)
+    payload = data.model_dump(mode='json', exclude={'dispatch_monthly_price', 'dispatch_currency', 'trial_enabled', 'trial_days'})
+    for field in ('dispatch_monthly_price', 'dispatch_currency', 'trial_enabled', 'trial_days'):
+        if field in data.model_fields_set: payload[field] = data.model_dump(mode='json')[field]
+    return once(db, actor, key, 'subscription-plan-update', payload, run)
 
 
 router = APIRouter(prefix='/api/v1/platform/billing', tags=['Platform subscription and billing'])

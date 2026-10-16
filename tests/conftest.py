@@ -34,6 +34,7 @@ def confirm_trial(client, email):
 @pytest.fixture(autouse=True)
 def reset_database():
     with owner_engine.begin() as c:
+        c.execute(text('UPDATE subscription_plans SET trial_enabled=true, trial_days=30'))
         c.execute(text('TRUNCATE organizations, shippers, users, login_sessions, audit_events, operations, login_buckets CASCADE'))
     with Session(owner_engine) as db, db.begin():
         db.add(User(scope='platform',login_id='owner',role='ADMIN',password_hash=hash_password(PASSWORD)))

@@ -71,6 +71,7 @@ class AgentMonitorView(BaseModel):
     automatic_fixes_24h: int
     errors_24h: int
     issues: list[TechnicalIssueView]
+    machine: "MachineTelemetry | None" = None
 
 
 class TechnicalIssuePage(BaseModel):
@@ -105,3 +106,54 @@ class CompanyActivityPage(BaseModel):
     next_before: str | None
     observed_at: datetime
     time_zone: str | None
+
+
+MachineNode = Literal['inputs', 'ORDER', 'data', 'DISPATCH', 'delivery', 'OPERATIONAL', 'TECHNICAL', 'CHAT']
+
+
+class MachineAgentState(BaseModel):
+    agent: AgentName
+    state: Literal['PROCESSING', 'WAITING', 'ERROR', 'UNKNOWN']
+    detail: str
+    company_name: str | None
+    heartbeat_at: datetime | None
+    queued: int
+
+
+class MachineWorkload(BaseModel):
+    emails_waiting: int
+    emails_review: int
+    emails_failed: int
+    orders_waiting: int
+    auto_waiting: int
+    manual_waiting: int
+    no_driver: int
+    orders_assigned: int
+    orders_in_progress: int
+    routes_in_progress: int
+    completed_24h: int
+
+
+class MachineActivity(BaseModel):
+    id: str
+    source: Literal['EVENT', 'AGENT']
+    kind: str
+    from_node: MachineNode | None
+    to_node: MachineNode
+    title: str
+    level: Literal['INFO', 'WARNING', 'ERROR']
+    company_name: str | None
+    reference: str | None
+    created_at: datetime
+
+
+class MachineTelemetry(BaseModel):
+    observed_at: datetime
+    agents: list[MachineAgentState]
+    workload: MachineWorkload
+    activity: list[MachineActivity]
+    activity_truncated: bool
+    window_seconds: int = 86400
+
+
+AgentMonitorView.model_rebuild()

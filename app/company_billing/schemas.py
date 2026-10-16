@@ -10,6 +10,7 @@ class CompanyPaymentView(BaseModel):
     required: bool
     trial_ends_at: datetime | None
     setup_available: bool
+    recurring_authorized: bool = False
     monthly_price: Decimal | None = None
     currency: str = 'CAD'
     vehicle_count: int = 0
@@ -37,6 +38,10 @@ class CardSetupConfirm(Input):
 class CardSetupRequest(Input):
     consent: Literal[True]
     terms_version: Annotated[int, Field(ge=1)]
+
+
+class SubscriptionEnrollmentRequest(CardSetupRequest):
+    """Explicit recurring authorization for the company's existing saved card."""
 
 
 class CompanyPaymentEntry(BaseModel):

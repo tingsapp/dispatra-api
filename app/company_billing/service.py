@@ -35,6 +35,7 @@ def view(db, identity):
         period_end=row.period_end if row else None, invoice_url=row.invoice_url if row else None,
         sync_error=row.sync_error if row else False, status='SAVED' if saved else 'EXPIRED' if row and row.last4 else 'MISSING',
         required=org.payment_required, trial_ends_at=org.trial_ends_at, setup_available=provider.available(),
+        recurring_authorized=bool(row and row.consented_at),
         **({field: getattr(row, field) for field in ('brand', 'last4', 'exp_month', 'exp_year')} if row else {}))
 
 
@@ -69,12 +70,64 @@ def _start(db, actor, identity, key, terms_version):
     row.setup_session, row.setup_nonce = checkout['id'], nonce
     row.setup_terms_version = terms_version
     if not row.consented_at:
-        row.consent_terms = {'terms_version':agreement.version, 'monthly_price':str(agreement.monthly_price),
-            'currency':agreement.currency, 'interval':'month', 'unit':'non_archived_vehicle',
-            'trial_ends_at':org.trial_ends_at.isoformat() if org.trial_ends_at else None,
-            'actor_id':str(actor.id), 'accepted_at':now().isoformat()}
+        row.consent_terms = consent_terms(org, agreement, actor)
     db.flush()
     return {'url': url}
+
+
+def consent_terms(org, agreement, actor):
+    return {'terms_version':agreement.version, 'monthly_price':str(agreement.monthly_price),
+        'currency':agreement.currency, 'interval':'month', 'unit':'non_archived_vehicle',
+        'starts_on':agreement.starts_on.isoformat() if agreement.starts_on else None,
+        'trial_ends_at':org.trial_ends_at.isoformat() if org.trial_ends_at else None,
+        'actor_id':str(actor.id), 'accepted_at':now().isoformat()}
+
+
+def authorize_recurring(db, org, row, actor=None):
+    if not row.consented_at:
+        row.consented_at = now()
+        db.add(AuditEvent(actor_id=actor.id if actor else None, organization_id=org.id, entity_id=org.id,
+            action='subscription.company_recurring_consent'))
+    org.billing_enrolled = True
+    recurring.request_sync(row)
+
+
+def enroll(db, actor, identity, key, terms_version):
+    return once(db, actor, key, 'company-recurring-enroll:' + str(identity),
+        {'consent':True, 'terms_version':terms_version},
+        lambda: _enroll(db, actor, identity, terms_version))
+
+
+def _enroll(db, actor, identity, terms_version):
+    if not provider.available(): raise HTTPException(503, 'Subscription setup is unavailable. Please try again later.')
+    rate_limit('subscription-enroll:' + str(actor.id), 20)
+    org = organization(db, identity, True)
+    row = record(db, identity)
+    agreement, _ = recurring.terms(db, identity)
+    if agreement.status in {'PAUSED', 'CANCELLED'}:
+        raise HTTPException(409, 'Contact Dispatra to resume this subscription.')
+    if row.consented_at: return view(db, identity).model_dump(mode='json')
+    if agreement.version != terms_version:
+        raise HTTPException(409, 'Subscription terms changed. Reload and review them before continuing.')
+    if agreement.monthly_price is None:
+        raise HTTPException(409, 'Contact Dispatra to set your subscription rate before subscribing.')
+    if not row.stripe_customer or not row.payment_method:
+        raise HTTPException(409, 'Add a valid payment method before starting your subscription.')
+    customer = provider.call('GET', 'customers/' + row.stripe_customer)
+    if customer.get('deleted') or customer.get('id') != row.stripe_customer or customer.get('livemode') is not False:
+        raise HTTPException(409, 'Your saved payment method could not be verified. Replace it before subscribing.')
+    if (customer.get('invoice_settings') or {}).get('default_payment_method') != row.payment_method:
+        raise HTTPException(409, 'Your saved payment method changed. Replace it before subscribing.')
+    method = provider.call('GET', 'payment_methods/' + row.payment_method)
+    if (method.get('id') != row.payment_method or method.get('livemode') is not False or
+        method.get('customer') != row.stripe_customer or method.get('type') != 'card' or expires(method['card']) <= now()):
+        raise HTTPException(409, 'Add a valid payment method before starting your subscription.')
+    save_card(db, org, row, method, actor)
+    row.setup_terms_version = agreement.version
+    row.consent_terms = consent_terms(org, agreement, actor)
+    authorize_recurring(db, org, row, actor)
+    db.flush()
+    return view(db, identity).model_dump(mode='json')
 
 
 def expires(card):
@@ -119,12 +172,7 @@ def complete(db, identity, session_id, actor=None):
         raise HTTPException(409, 'Subscription terms changed. Review the updated rate and start setup again.')
     provider.call('POST', 'customers/' + row.stripe_customer, {'invoice_settings[default_payment_method]': method['id']}, 'dispatra-default:' + row.setup_nonce)
     save_card(db, org, row, method, actor)
-    if not row.consented_at:
-        row.consented_at = now()
-        db.add(AuditEvent(actor_id=actor.id if actor else None, organization_id=identity, entity_id=identity,
-            action='subscription.company_recurring_consent'))
-    org.billing_enrolled = True
-    recurring.request_sync(row)
+    authorize_recurring(db, org, row, actor)
     row.completed_session, row.setup_session, row.setup_nonce = session_id, None, None
     db.flush()
     return view(db, identity)

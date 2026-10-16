@@ -137,7 +137,8 @@ def test_disabled_organization_and_session_expiry(client,accounts):
     login(client,'customer','acme','customer')
     with owner_engine.begin() as db:
         db.execute(text("UPDATE organizations SET active=false WHERE slug='acme'"))
-    assert client.get('/api/v1/auth/me').status_code==401
+    suspended = client.get('/api/v1/auth/me')
+    assert suspended.status_code == 403 and 'suspended' in suspended.text
     with owner_engine.begin() as db:
         db.execute(text("UPDATE organizations SET active=true WHERE slug='acme'"))
         db.execute(text("UPDATE login_sessions SET expires_at=now()-interval '1 second'"))

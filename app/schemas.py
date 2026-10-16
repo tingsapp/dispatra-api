@@ -9,8 +9,8 @@ Password = Annotated[str, Field(min_length=12, max_length=128)]
 CompanyPhone = Annotated[str, Field(max_length=50)]
 CompanyAddress = Annotated[str, Field(max_length=500)]
 # First URL segments that can never be a company slug; mirrors RESERVED_SLUGS in the web client's pageRoutes.ts.
-RESERVED_SLUGS = frozenset({'admin', 'platform', 'prototype', 'api', 'assets', 'static', 'app', 'health', 'ready', 'login', 'signup', 'customer', 'dispatch',
-    'shipper', 'driver', 'www', 'pricing', 'about', 'contact', 'blog', 'help', 'docs', 'terms', 'privacy', 'support'})
+RESERVED_SLUGS = frozenset({'admin', 'platform', 'prototype', 'api', 'assets', 'static', 'app', 'health', 'ready', 'login', 'signup', 'plans', 'customer', 'dispatch',
+    'shipper', 'driver', 'www', 'pricing', 'about', 'how-it-works', 'contact', 'blog', 'help', 'docs', 'terms', 'privacy', 'support'})
 Slug = Annotated[str, Field(min_length=2, max_length=63, pattern=r'^[a-z0-9]+(?:-[a-z0-9]+)*$')]
 
 class Input(BaseModel):

@@ -16,11 +16,18 @@ class SubscriptionPlan(Base):
         CheckConstraint("id = '8eb730cb-226b-4ec1-a3fc-132279938d62'"),
         CheckConstraint('monthly_price >= 0'),
         CheckConstraint("currency ~ '^[A-Z]{3}$'"),
+        CheckConstraint('dispatch_monthly_price >= 0', name='subscription_plans_dispatch_price_check'),
+        CheckConstraint("dispatch_currency ~ '^[A-Z]{3}$'", name='subscription_plans_dispatch_currency_check'),
+        CheckConstraint('trial_days BETWEEN 1 AND 365', name='subscription_plans_trial_days_check'),
         CheckConstraint('version >= 1'),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True)
     monthly_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(3))
+    dispatch_monthly_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    dispatch_currency: Mapped[str] = mapped_column(String(3), default='CAD', server_default='CAD')
+    trial_enabled: Mapped[bool] = mapped_column(default=True, server_default=text('true'))
+    trial_days: Mapped[int] = mapped_column(default=30, server_default='30')
     version: Mapped[int] = mapped_column(default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -43,12 +50,13 @@ class CompanySubscription(Base):
 
 class Organization(Base):
     __tablename__ = 'organizations'
-    __table_args__ = (CheckConstraint("(trial_started_at IS NULL AND trial_ends_at IS NULL AND trial_activated_at IS NULL) OR (trial_started_at IS NOT NULL AND trial_ends_at IS NOT NULL AND trial_ends_at > trial_started_at AND (trial_activated_at IS NULL OR trial_activated_at >= trial_started_at))", name='trial_dates'),)
+    __table_args__ = (CheckConstraint('trial_duration_days BETWEEN 1 AND 365', name='organizations_trial_duration_days_check'), CheckConstraint("(trial_started_at IS NULL AND trial_ends_at IS NULL AND trial_activated_at IS NULL) OR (trial_started_at IS NOT NULL AND trial_ends_at IS NOT NULL AND trial_ends_at > trial_started_at AND (trial_activated_at IS NULL OR trial_activated_at >= trial_started_at))", name='trial_dates'),)
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     slug: Mapped[str] = mapped_column(String(63), unique=True)
     name: Mapped[str] = mapped_column(String(160))
     _active: Mapped[bool] = mapped_column('active', default=True)
     verification_pending: Mapped[bool] = mapped_column(default=False, server_default=text('false'))
+    trial_duration_days: Mapped[int | None] = mapped_column(Integer)
     trial_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trial_activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

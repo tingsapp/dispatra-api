@@ -23829,6 +23829,140 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/billing/subscription": {
+      "post": {
+        "tags": [
+          "Company subscription payment methods"
+        ],
+        "summary": "Company Enroll",
+        "operationId": "company_enroll_api_v1_companies__slug__billing_subscription_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionEnrollmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyPaymentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/billing/payment-method/confirm": {
       "post": {
         "tags": [
@@ -24914,6 +25048,117 @@
           }
         }
       }
+    },
+    "/api/v1/public/assistant/messages": {
+      "post": {
+        "tags": [
+          "Public Dispatra Chat"
+        ],
+        "summary": "Public Message",
+        "operationId": "public_message_api_v1_public_assistant_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantQuestion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAssistantReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -25337,6 +25582,16 @@
             },
             "type": "array",
             "title": "Issues"
+          },
+          "machine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineTelemetry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -27637,6 +27892,11 @@
             "type": "string",
             "title": "Logo Url"
           },
+          "tms_workspace": {
+            "type": "boolean",
+            "title": "Tms Workspace",
+            "default": false
+          },
           "active": {
             "type": "boolean",
             "title": "Active"
@@ -27996,6 +28256,11 @@
           "setup_available": {
             "type": "boolean",
             "title": "Setup Available"
+          },
+          "recurring_authorized": {
+            "type": "boolean",
+            "title": "Recurring Authorized",
+            "default": false
           },
           "monthly_price": {
             "anyOf": [
@@ -28395,6 +28660,11 @@
           "logo_url": {
             "type": "string",
             "title": "Logo Url"
+          },
+          "tms_workspace": {
+            "type": "boolean",
+            "title": "Tms Workspace",
+            "default": false
           },
           "active": {
             "type": "boolean",
@@ -31780,6 +32050,288 @@
         ],
         "title": "Login"
       },
+      "MachineActivity": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "EVENT",
+              "AGENT"
+            ],
+            "title": "Source"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "from_node": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "inputs",
+                  "ORDER",
+                  "data",
+                  "DISPATCH",
+                  "delivery",
+                  "OPERATIONAL",
+                  "TECHNICAL",
+                  "CHAT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Node"
+          },
+          "to_node": {
+            "type": "string",
+            "enum": [
+              "inputs",
+              "ORDER",
+              "data",
+              "DISPATCH",
+              "delivery",
+              "OPERATIONAL",
+              "TECHNICAL",
+              "CHAT"
+            ],
+            "title": "To Node"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "INFO",
+              "WARNING",
+              "ERROR"
+            ],
+            "title": "Level"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "kind",
+          "from_node",
+          "to_node",
+          "title",
+          "level",
+          "company_name",
+          "reference",
+          "created_at"
+        ],
+        "title": "MachineActivity"
+      },
+      "MachineAgentState": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "enum": [
+              "ORDER",
+              "DISPATCH",
+              "TECHNICAL",
+              "OPERATIONAL",
+              "CHAT"
+            ],
+            "title": "Agent"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PROCESSING",
+              "WAITING",
+              "ERROR",
+              "UNKNOWN"
+            ],
+            "title": "State"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "state",
+          "detail",
+          "company_name",
+          "heartbeat_at",
+          "queued"
+        ],
+        "title": "MachineAgentState"
+      },
+      "MachineTelemetry": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/MachineAgentState"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MachineWorkload"
+          },
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/MachineActivity"
+            },
+            "type": "array",
+            "title": "Activity"
+          },
+          "activity_truncated": {
+            "type": "boolean",
+            "title": "Activity Truncated"
+          },
+          "window_seconds": {
+            "type": "integer",
+            "title": "Window Seconds",
+            "default": 86400
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at",
+          "agents",
+          "workload",
+          "activity",
+          "activity_truncated"
+        ],
+        "title": "MachineTelemetry"
+      },
+      "MachineWorkload": {
+        "properties": {
+          "emails_waiting": {
+            "type": "integer",
+            "title": "Emails Waiting"
+          },
+          "emails_review": {
+            "type": "integer",
+            "title": "Emails Review"
+          },
+          "emails_failed": {
+            "type": "integer",
+            "title": "Emails Failed"
+          },
+          "orders_waiting": {
+            "type": "integer",
+            "title": "Orders Waiting"
+          },
+          "auto_waiting": {
+            "type": "integer",
+            "title": "Auto Waiting"
+          },
+          "manual_waiting": {
+            "type": "integer",
+            "title": "Manual Waiting"
+          },
+          "no_driver": {
+            "type": "integer",
+            "title": "No Driver"
+          },
+          "orders_assigned": {
+            "type": "integer",
+            "title": "Orders Assigned"
+          },
+          "orders_in_progress": {
+            "type": "integer",
+            "title": "Orders In Progress"
+          },
+          "routes_in_progress": {
+            "type": "integer",
+            "title": "Routes In Progress"
+          },
+          "completed_24h": {
+            "type": "integer",
+            "title": "Completed 24H"
+          }
+        },
+        "type": "object",
+        "required": [
+          "emails_waiting",
+          "emails_review",
+          "emails_failed",
+          "orders_waiting",
+          "auto_waiting",
+          "manual_waiting",
+          "no_driver",
+          "orders_assigned",
+          "orders_in_progress",
+          "routes_in_progress",
+          "completed_24h"
+        ],
+        "title": "MachineWorkload"
+      },
       "MailboxCheck": {
         "properties": {
           "host": {
@@ -32404,6 +32956,40 @@
             "type": "string",
             "pattern": "^[A-Z]{3}$",
             "title": "Currency"
+          },
+          "dispatch_monthly_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Monthly Price"
+          },
+          "dispatch_currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Dispatch Currency",
+            "default": "CAD"
+          },
+          "trial_enabled": {
+            "type": "boolean",
+            "title": "Trial Enabled",
+            "default": true
+          },
+          "trial_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Trial Days",
+            "default": 30
           }
         },
         "additionalProperties": false,
@@ -32429,6 +33015,11 @@
             "title": "Interval",
             "default": "MONTHLY"
           },
+          "trial_enabled": {
+            "type": "boolean",
+            "title": "Trial Enabled",
+            "default": true
+          },
           "trial_days": {
             "type": "integer",
             "title": "Trial Days",
@@ -32449,6 +33040,23 @@
           "currency": {
             "type": "string",
             "title": "Currency"
+          },
+          "dispatch_monthly_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Monthly Price"
+          },
+          "dispatch_currency": {
+            "type": "string",
+            "title": "Dispatch Currency",
+            "default": "CAD"
           },
           "id": {
             "type": "string",
@@ -33270,6 +33878,21 @@
           "captured_at"
         ],
         "title": "ProofEvidence"
+      },
+      "PublicAssistantReply": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "PublicAssistantReply"
       },
       "PushDeviceInput": {
         "properties": {
@@ -35211,6 +35834,28 @@
         ],
         "title": "StopInput"
       },
+      "SubscriptionEnrollmentRequest": {
+        "properties": {
+          "consent": {
+            "type": "boolean",
+            "const": true,
+            "title": "Consent"
+          },
+          "terms_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Terms Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "consent",
+          "terms_version"
+        ],
+        "title": "SubscriptionEnrollmentRequest",
+        "description": "Explicit recurring authorization for the company's existing saved card."
+      },
       "SubscriptionPlanView": {
         "properties": {
           "name": {
@@ -35224,6 +35869,11 @@
             "const": "MONTHLY",
             "title": "Interval",
             "default": "MONTHLY"
+          },
+          "trial_enabled": {
+            "type": "boolean",
+            "title": "Trial Enabled",
+            "default": true
           },
           "trial_days": {
             "type": "integer",
@@ -35245,6 +35895,23 @@
           "currency": {
             "type": "string",
             "title": "Currency"
+          },
+          "dispatch_monthly_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Monthly Price"
+          },
+          "dispatch_currency": {
+            "type": "string",
+            "title": "Dispatch Currency",
+            "default": "CAD"
           }
         },
         "type": "object",

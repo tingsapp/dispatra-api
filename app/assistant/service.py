@@ -3,6 +3,7 @@ import re
 from fastapi import HTTPException
 from app.models import now
 from app.agents.telemetry import monitor_run
+from app.agents.machine_events import WORKSPACE_RECORDS_READ
 from . import provider, search
 from .schemas import SearchPlan, GroundedAnswer, AssistantReply
 
@@ -20,6 +21,7 @@ def ask(db, actor, question):
             plan = SearchPlan(include_records=True, query=query, kinds=[], order_statuses=[])
         progress.step('Searching authorized company records.', 40, actor.organization_id)
         refs, counts = search.collect(db, actor.organization_id, plan)
+        progress.step(WORKSPACE_RECORDS_READ, 60, actor.organization_id)
         observed = now()
         facts = {'observed_at': observed.isoformat(), 'overview': search.overview(db, actor.organization_id),
             'matched_counts': counts, 'records': [ref.model_dump() for ref in refs],

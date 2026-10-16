@@ -19,7 +19,7 @@ def _escape(text):
 
 def companies(db, search=None, status=None, after=None, limit=50):
     query = (select(Organization, _role_count('DISPATCHER').label('dispatchers'), _role_count('DISPATCHER', True).label('active_dispatchers'),
-                    func.coalesce(Settings.data['logo_url'].astext, '').label('logo_url'))
+                    func.coalesce(Settings.data['logo_url'].astext, '').label('logo_url'), Settings.data['tms_workspace'].label('tms_workspace'))
              .outerjoin(Settings, Settings.organization_id == Organization.id))
     if search:
         pattern = f'%{_escape(search.strip().lower())}%'
@@ -29,8 +29,8 @@ def companies(db, search=None, status=None, after=None, limit=50):
         anchor = db.execute(select(func.lower(Organization.name), Organization.id).where(Organization.id == after)).first()
         if anchor: query = query.where(tuple_(func.lower(Organization.name), Organization.id) > tuple(anchor))
     query = query.order_by(func.lower(Organization.name), Organization.id).limit(limit)
-    return [CompanySummary.model_validate({**_org(org), 'dispatcher_count': total, 'active_dispatcher_count': active, 'logo_url': logo})
-            for org, total, active, logo in db.execute(query)]
+    return [CompanySummary.model_validate({**_org(org), 'dispatcher_count': total, 'active_dispatcher_count': active, 'logo_url': logo, 'tms_workspace': external is True})
+            for org, total, active, logo, external in db.execute(query)]
 
 
 def _org(org):
@@ -62,13 +62,13 @@ def company_contact(db, organization_id):
     row = db.scalar(select(Settings).where(Settings.organization_id == organization_id))
     data = row.data if row else {}
     address = data.get('address')
-    return {'logo_url': data.get('logo_url', ''), 'phone': data.get('phone', ''), 'address': address.get('text', '') if isinstance(address, dict) else address or '',
+    return {'tms_workspace': data.get('tms_workspace') is True, 'logo_url': data.get('logo_url', ''), 'phone': data.get('phone', ''), 'address': address.get('text', '') if isinstance(address, dict) else address or '',
             'settings_version': row.version if row else None}
 
 
 def include_company_details(db, organization_id, detail):
     # Older idempotent results predate these fields; enrich without reapplying writes.
-    if all(field in detail for field in (*TOTAL_FIELDS, 'phone', 'address', 'settings_version', 'logo_url', 'workspace_enabled', 'payment_required')): return detail
+    if all(field in detail for field in (*TOTAL_FIELDS, 'phone', 'address', 'settings_version', 'logo_url', 'tms_workspace', 'workspace_enabled', 'payment_required')): return detail
     org = db.get(Organization, organization_id)
     return {**company_totals(db, organization_id), **company_contact(db, organization_id), **detail,
         'workspace_enabled': org.workspace_enabled, 'payment_required': org.payment_required, 'active': org.active}

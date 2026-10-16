@@ -11,6 +11,7 @@ from app.models import Organization,now
 from app.agents.models import AgentRun
 from app.agents.checks import require_runtime_role
 from app.agents.telemetry import monitor_run
+from app.agents.machine_events import ORDER_EVIDENCE_REVIEWED
 from app.operations.models import Route,RouteStop,DutySession
 from app.operations.common import company_lock
 from . import traffic
@@ -71,6 +72,7 @@ def cycle(force=False):
                         org=db.get(Organization,organization_id)
                         if not org or not org.active:continue
                         count=scan_company(db,system(organization_id))
+                    progress.step(ORDER_EVIDENCE_REVIEWED, organization_id=organization_id)
                     progress.step(f'Reviewed {count} active orders using recorded evidence.',
                         10+int(85*(index+1)/max(1,len(organizations))),organization_id)
             return True

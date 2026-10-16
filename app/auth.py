@@ -127,6 +127,7 @@ def authenticated(request: Request, db: Session = Depends(session)):
         if not org: raise HTTPException(401, 'Please sign in.')
         billing_path = (request.url.path in {'/api/v1/auth/me', '/api/v1/auth/password'} or
             request.url.path in {f'/api/v1/companies/{org.slug}/billing/payments',
+                f'/api/v1/companies/{org.slug}/billing/subscription',
                 f'/api/v1/companies/{org.slug}/billing/payment-method',
                 f'/api/v1/companies/{org.slug}/billing/payment-method/setup',
                 f'/api/v1/companies/{org.slug}/billing/payment-method/confirm',

@@ -98,7 +98,7 @@ def confirm(db, data, request, response, key):
             raise HTTPException(409, 'This code has already been used. Please sign in.')
         row.consumed_at = now(); row.secret = None
         org.verification_pending = False
-        org.trial_started_at = now(); org.trial_ends_at = org.trial_started_at + timedelta(days=TRIAL_DAYS)
+        org.trial_started_at = now(); org.trial_ends_at = org.trial_started_at + timedelta(days=org.trial_duration_days or TRIAL_DAYS)
         org.trial_activated_at = None
         org.version += 1
         audit(db, user, 'organization.trial_started', org.id, org.id)

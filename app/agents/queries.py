@@ -26,8 +26,10 @@ def snapshot(db):
     observed = now()
     latest = db.scalars(select(AgentRun).distinct(AgentRun.agent).order_by(AgentRun.agent, AgentRun.created_at.desc(), AgentRun.id.desc())).all()
     runs = {row.agent: row for row in latest}
-    active_chat = db.scalar(select(AgentRun).where(AgentRun.agent == 'CHAT', AgentRun.status == 'RUNNING', AgentRun.heartbeat_at >= observed - STALE_AFTER).order_by(AgentRun.created_at.desc()).limit(1))
-    if active_chat: runs['CHAT'] = active_chat
+    # Newer finished runs must not conceal concurrent fresh processing.
+    active = db.scalars(select(AgentRun).where(AgentRun.status == 'RUNNING', AgentRun.heartbeat_at >= observed - STALE_AFTER)
+        .distinct(AgentRun.agent).order_by(AgentRun.agent, AgentRun.created_at.desc(), AgentRun.id.desc())).all()
+    runs.update({row.agent: row for row in active})
     queued = dict(db.execute(select(AgentRun.agent, func.count()).where(AgentRun.status == 'QUEUED').group_by(AgentRun.agent)).all())
     classification = issue_agent()
     issue_counts = dict(db.execute(select(classification, func.count()).where(TechnicalIssue.status.in_(OPEN)).group_by(classification)).all())
@@ -43,7 +45,8 @@ def snapshot(db):
         'queued': queued.get(name, 0), 'issue_count': issue_counts.get(name, 0)} for name in NAMES]
     rows = db.execute(select(TechnicalIssue, Organization.name, issue_agent()).outerjoin(Organization, Organization.id == TechnicalIssue.organization_id)
         .where(TechnicalIssue.status.in_(OPEN)).order_by(TechnicalIssue.created_at.desc(), TechnicalIssue.id.desc()).limit(100))
-    return {'observed_at': observed, 'agents': agents,
+    from . import machine
+    return {'observed_at': observed, 'agents': agents, 'machine': machine.snapshot(db, agents, observed),
         'running': sum(bool(item['run'] and item['run'].status == 'RUNNING' and not item['stale']) for item in agents),
         'awaiting_approval': db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status == 'AWAITING_APPROVAL')),
         'needs_attention': operational_count + db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status.in_(['NEEDS_ADMIN', 'AWAITING_APPROVAL', 'FAILED']))),

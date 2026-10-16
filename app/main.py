@@ -151,3 +151,6 @@ app.include_router(assistant_router)
 
 from .company_billing.routes import router as company_payment_router
 app.include_router(company_payment_router)
+
+from .assistant.public import router as public_assistant_router
+app.include_router(public_assistant_router)

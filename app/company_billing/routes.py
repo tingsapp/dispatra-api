@@ -4,7 +4,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, Header, Request, HTTPException, Query
 from app.auth import dispatcher, platform
 from app.routes import DB, OperationKey
-from .schemas import CompanyPaymentView, CardSetupView, CardSetupConfirm, CardSetupRequest, CompanyPaymentHistory
+from .schemas import CompanyPaymentView, CardSetupView, CardSetupConfirm, CardSetupRequest, SubscriptionEnrollmentRequest, CompanyPaymentHistory
 from . import service, webhook, history
 
 router = APIRouter(tags=['Company subscription payment methods'])
@@ -20,6 +20,11 @@ def company_payment(slug: str, db: DB, user=Depends(dispatcher)):
 @router.post(company + '/setup', response_model=CardSetupView)
 def company_setup(slug: str, data: CardSetupRequest, db: DB, idempotency_key: OperationKey, user=Depends(dispatcher)):
     return service.start(db, user, user.organization_id, idempotency_key, data.terms_version)
+
+
+@router.post('/api/v1/companies/{slug}/billing/subscription', response_model=CompanyPaymentView)
+def company_enroll(slug: str, data: SubscriptionEnrollmentRequest, db: DB, idempotency_key: OperationKey, user=Depends(dispatcher)):
+    return service.enroll(db, user, user.organization_id, idempotency_key, data.terms_version)
 
 
 @router.post(company + '/confirm', response_model=CompanyPaymentView)

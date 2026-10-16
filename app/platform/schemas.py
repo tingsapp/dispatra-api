@@ -14,6 +14,7 @@ class CompanySummary(BaseModel):
     slug: str
     name: str
     logo_url: str
+    tms_workspace: bool = False
     active: bool
     workspace_enabled: bool = True
     payment_required: bool = False
