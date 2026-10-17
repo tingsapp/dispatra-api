@@ -28,3 +28,9 @@ def decisions(slug: str, identity: UUID, db: DB, user: Dispatcher):
 @router.post('/dispatch-decisions/{identity}/approve', response_model=AssignmentView)
 def approve(slug: str, identity: UUID, data: DecisionApproval, db: DB, key: OperationKey, user: Dispatcher):
     return service.approve(db, user, identity, data, key)
+
+
+@router.post('/dispatch-plan', response_model=list[DecisionView])
+def fleet_plan(slug: str, db: DB, user: Dispatcher):
+    rate_limit(f'dispatch-plan:{user.id}', 10)
+    return service.suggest_fleet(db, user)

@@ -16,6 +16,7 @@ from . import profiles
 from .catalog import BY_ID
 from .models import Authorization, Connection, Inbox
 from .schemas import ConnectorView
+from . import availability
 
 MESSAGES = {
  'ACTIVATION_REQUIRED':'This connector needs activation by Dispatra before it can connect.',
@@ -23,6 +24,8 @@ MESSAGES = {
  'FORBIDDEN':'This connection does not have permission to read the required records.',
  'FORMAT_CHANGED':'The TMS returned a changed data format. Dispatra needs to update the connector.',
  'IDENTITY_NOT_VERIFIED':'The TMS account could not be verified.',
+ 'ACCOUNT_SELECTION_REQUIRED':'Dispatra needs to confirm which CartonCloud company to connect.',
+ 'COLLECTION_CHANGED':'The TMS records changed during synchronization. Dispatra will retry the complete import.',
  'CURRENCY_MISMATCH':'The TMS currency does not match this Dispatra workspace.',
 }
 
@@ -34,19 +37,22 @@ def get(db,user,provider,lock=False):
     query=select(Connection).where(Connection.organization_id==user.organization_id,Connection.provider==provider)
     return db.scalar(query.with_for_update() if lock else query)
 
-def view(provider,row=None):
-    info=require_provider(provider);ready=profiles.installed(provider) is not None
+def view(db,provider,row=None):
+    info=require_provider(provider);ready=availability.ready(provider) and availability.enabled(db,provider)
     status=row.status if row else 'NOT_CONNECTED'
     if not ready and status!='DISCONNECTED':status='ACTIVATION_REQUIRED'
+    paused = bool(row and row.paused) or (info.auth != 'request_setup' and not availability.enabled(db,provider))
+    if paused: status='PAUSED'
     return ConnectorView(id=provider,name=info.name,initials=info.initials,description=info.description,auth=info.auth,
-        ready=ready,status=status,account=row.account_label if row else None,version=row.version if row else None,
+        ready=ready,status=status,paused=paused,account=row.account_label if row else None,version=row.version if row else None,
         last_sync_at=row.last_sync_at if row else None,
         imported=(row.summary or {}).get('imported',0) if row else 0,review_count=(row.summary or {}).get('review',0) if row else 0,
-        message=MESSAGES['ACTIVATION_REQUIRED'] if not ready else MESSAGES.get(row.last_error,'Synchronization could not finish. Try again later.') if row and row.last_error else None,
+        message='Synchronization is paused by the administrator.' if paused else MESSAGES['ACTIVATION_REQUIRED'] if not ready else MESSAGES.get(row.last_error,'Synchronization could not finish. Try again later.') if row and row.last_error else None,
         credential_fields=[{'key':key,'label':label,'secret':secret} for key,label,secret in info.credential_fields])
 
-def require_profile(provider):
+def require_profile(db,provider):
     require_provider(provider); profile=profiles.installed(provider)
+    if not availability.enabled(db,provider):raise HTTPException(409,'This connector is paused or awaiting preparation.')
     if profile is None:raise HTTPException(503,MESSAGES['ACTIVATION_REQUIRED'])
     return profile
 
@@ -64,7 +70,7 @@ def guard(row,version):
     if row and row.lease:raise HTTPException(409,'Synchronization is running. Try again after it finishes.')
 
 def begin(db,user,slug,provider,data,key):
-    info=require_provider(provider);profile=require_profile(provider)
+    info=require_provider(provider);profile=require_profile(db,provider)
     credentials={name:value.get_secret_value() for name,value in data.credentials.items()}
     expected={field[0] for field in info.credential_fields}
     if info.auth=='oauth' and credentials:raise HTTPException(422,'Use the TMS authorization screen for this connection.')
@@ -74,6 +80,7 @@ def begin(db,user,slug,provider,data,key):
     digest=hashlib.sha256(json.dumps(credentials,sort_keys=True).encode()).hexdigest()
     def run():
         row=get(db,user,provider,True);guard(row,data.version)
+        if row and row.paused:raise HTTPException(409,'Synchronization is paused by the administrator.')
         if info.auth=='oauth':
             state=secrets.token_urlsafe(32);verifier=secrets.token_urlsafe(64)
             challenge=Authorization(organization_id=user.organization_id,user_id=user.id,provider=provider,
@@ -85,7 +92,7 @@ def begin(db,user,slug,provider,data,key):
                 'scope':profile.scopes,'state':state,'code_challenge':proof,'code_challenge_method':'S256'}
             if profile.audience:params['audience']=profile.audience
             audit(db,user,'connector.authorization_started',challenge.id,user.organization_id)
-            return {'connector':view(provider,row).model_dump(mode='json'),'authorization_url':profile.authorize_url+'?'+urlencode(params)}
+            return {'connector':view(db,provider,row).model_dump(mode='json'),'authorization_url':profile.authorize_url+'?'+urlencode(params)}
         if row is None:
             row=Connection(organization_id=user.organization_id,provider=provider,summary={},version=0)
             db.add(row)
@@ -93,17 +100,18 @@ def begin(db,user,slug,provider,data,key):
         row.status='CONNECTING';row.last_error=None;row.next_attempt_at=now();row.version+=1
         db.flush()
         audit(db,user,'connector.connection_requested',row.id,user.organization_id);db.flush()
-        return {'connector':view(provider,row).model_dump(mode='json'),'authorization_url':None}
+        return {'connector':view(db,provider,row).model_dump(mode='json'),'authorization_url':None}
     return command(db,user,key,'connector-connect:'+provider,{'version':data.version,'credential_digest':digest},run)
 
 def finish(db,user,slug,provider,state,code,error):
-    profile=require_profile(provider)
+    profile=require_profile(db,provider)
     challenge=db.scalar(select(Authorization).where(Authorization.organization_id==user.organization_id,
         Authorization.provider==provider,Authorization.user_id==user.id,
         Authorization.state_hash==hashlib.sha256(state.encode()).hexdigest()).with_for_update())
     if challenge is None or challenge.used or challenge.expires_at<=now() or challenge.profile_revision!=profile.revision:
         raise HTTPException(400,'This connection request expired or was already used. Start again.')
     row=get(db,user,provider,True);guard(row,challenge.connection_version)
+    if row and row.paused:raise HTTPException(409,'Synchronization is paused by the administrator.')
     if not error and not code:raise HTTPException(400,'The TMS did not return an authorization code.')
     challenge.used=True
     if error:
@@ -128,10 +136,11 @@ def action(db,user,provider,data,key,disconnect=False):
         if disconnect:
             row.status='DISCONNECTED';row.credentials=None;row.lease=None;row.lease_until=None;row.next_attempt_at=None;row.last_error=None
         else:
-            require_profile(provider)
+            require_profile(db,provider)
+            if row.paused:raise HTTPException(409,'Synchronization is paused by the administrator.')
             if not row.credentials:raise HTTPException(409,'Reconnect before synchronizing.')
             if row.lease:raise HTTPException(409,'Synchronization is already running.')
             row.next_attempt_at=now();row.last_error=None
         row.version+=1;audit(db,user,'connector.disconnected' if disconnect else 'connector.sync_requested',row.id,user.organization_id)
-        return view(provider,row).model_dump(mode='json')
+        return view(db,provider,row).model_dump(mode='json')
     return command(db,user,key,'connector-disconnect' if disconnect else 'connector-sync',{'provider':provider,'version':data.version},run)

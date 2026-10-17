@@ -7,7 +7,7 @@ from app.models import User
 from app.routes import DB, OperationKey
 from app.security import rate_limit
 from . import service
-from .catalog import PROVIDERS
+from .catalog import PROVIDERS, LEGACY_PROVIDERS
 from .models import Inbox
 from .schemas import ConnectInput, ConnectResult, ConnectorAction, ConnectorView, ReviewItem
 
@@ -16,7 +16,14 @@ Dispatcher=Annotated[User,Depends(auth.dispatcher)]
 
 @router.get('',response_model=list[ConnectorView])
 def list_connectors(slug:str,db:DB,user:Dispatcher):
-    return [service.view(info.id,service.get(db,user,info.id)) for info in PROVIDERS]
+    rows = []
+    for info in (*PROVIDERS, *LEGACY_PROVIDERS):
+        saved = service.get(db,user,info.id)
+        if info in LEGACY_PROVIDERS and (saved is None or saved.status == 'DISCONNECTED'):
+            continue
+        row = service.view(db,info.id,saved)
+        rows.append(row)
+    return rows
 
 @router.post('/{provider}/connect',response_model=ConnectResult)
 def connect(slug:str,provider:str,data:ConnectInput,db:DB,key:OperationKey,user:Dispatcher):

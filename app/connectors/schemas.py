@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 class CredentialField(BaseModel):
@@ -12,9 +13,10 @@ class ConnectorView(BaseModel):
     name: str
     initials: str
     description: str
-    auth: Literal['oauth', 'bearer', 'api_key', 'session', 'client_credentials']
+    auth: Literal['oauth', 'bearer', 'api_key', 'session', 'client_credentials', 'request_setup']
     ready: bool
-    status: Literal['ACTIVATION_REQUIRED','NOT_CONNECTED','CONNECTING','CONNECTED','SYNCING','RECONNECT_REQUIRED','SYNC_FAILED','DISCONNECTED']
+    status: Literal['ACTIVATION_REQUIRED','NOT_CONNECTED','CONNECTING','CONNECTED','SYNCING','RECONNECT_REQUIRED','SYNC_FAILED','DISCONNECTED','PAUSED']
+    paused: bool = False
     account: str | None = None
     version: int | None = None
     last_sync_at: datetime | None = None
@@ -42,3 +44,9 @@ class ReviewItem(BaseModel):
     reference: str
     reasons: list[str]
     created_at: datetime
+
+class ProviderView(BaseModel):
+    id: str
+    name: str
+    initials: str
+    connected_dispatchers: int

@@ -22,7 +22,7 @@ Read `spec.md` and `state.md` before work. `spec.md` is normative; `state.md` is
 - Exactly `AUTO` and `MANUAL` dispatch modes; use direct dispatcher or system assignment only.
 - Orders are the commercial/pricing unit. Multiple pickups and drop-offs are mandatory; stable-ID RouteStops belong to Routes, which contain many Orders and bind one driver plus one vehicle.
 - Drivers cannot self-assign or change price. Both modes automatically optimize after assignment.
-- Never mutate locked/in-progress routes automatically. Hard capacity, precedence, tenant, state, and POD rules cannot be overridden by AI or a dispatcher.
+- Locked planned routes cannot change. Executing routes accept only validated live insertions through the shared assignment command: preserve completed/current visits and cargo custody, require fresh accurate GPS, and gate further execution on driver acknowledgement. Hard capacity, precedence, tenant, state and POD rules cannot be overridden.
 - Customer price is independent of driver, deadhead, merged route distance, workload, and reassignment.
 - Required POD and idempotent completion are V1 behavior. V1 has no invoice generation, invoice documents, invoice email, payment terms or payment collection.
 

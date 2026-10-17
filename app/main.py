@@ -98,6 +98,9 @@ def ready() -> dict[str,str]:
         connection.execute(text('SELECT id, monthly_price FROM subscription_plans LIMIT 0'))
         connection.execute(text('SELECT organization_id, status FROM company_subscriptions LIMIT 0'))
         connection.execute(text('SELECT organization_id, consented_at, stripe_subscription, pending, lease_until FROM company_billing LIMIT 0'))
+        connection.execute(text('SELECT id, paused FROM connector_connections LIMIT 0'))
+        connection.execute(text('SELECT id, enabled FROM connector_providers LIMIT 0'))
+        connection.execute(text('SELECT id, status FROM connector_setup_requests LIMIT 0'))
     return {'status':'ready'}
 
 app.include_router(router)
@@ -143,6 +146,8 @@ app.include_router(order_watch_company)
 
 from .connectors.routes import router as connectors_router
 app.include_router(connectors_router)
+from .connectors.admin_routes import router as connector_admin_router
+app.include_router(connector_admin_router)
 from .connectors.privacy import CallbackPrivacyMiddleware
 app.add_middleware(CallbackPrivacyMiddleware)
 

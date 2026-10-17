@@ -22,6 +22,8 @@ def own_route(db, actor, identity, lock=False):
 def route_revision(route, data):
     version(route, data.version)
     if route.generation != data.generation: raise HTTPException(409, 'Assignment generation changed. Sync the Route.')
+    if route.plan.get('requires_acknowledgement'):
+        raise HTTPException(409, 'Route updated. Review and acknowledge the latest route before continuing.')
 
 
 def start_duty(db, actor, data, key):
@@ -100,12 +102,15 @@ def start_route(db, actor, identity, data, key):
                 raise HTTPException(409,'Route is too late for a delivery window; request dispatcher replanning.')
             if shift_end and arrival + timedelta(minutes=stop['service_minutes']) > shift_end:
                 raise HTTPException(409,'Route would exceed the driver shift.')
+        route.plan = {**route.plan, 'live_updates_supported': data.supports_live_updates}
         route.status, route.locked, route.started_at = 'IN_PROGRESS', True, now()
         for order in orders:
             order.status = 'IN_PROGRESS'; changed(db, actor, order, 'order.started')
         changed(db, actor, route, 'route.started')
         return route_view(db, actor, route)
-    return command(db, actor, key, 'route-start:' + str(identity), data.model_dump(), run)
+    payload = data.model_dump()
+    if 'supports_live_updates' not in data.model_fields_set: payload.pop('supports_live_updates')
+    return command(db, actor, key, 'route-start:' + str(identity), payload, run)
 
 
 def upload_evidence(db, actor, stop_id, data, key):
@@ -179,6 +184,7 @@ def complete_stop(db, actor, identity, visit_id, data, key):
 
 def finish_route(db, actor, identity, data, key):
     def run():
+        company_lock(db, actor)
         route = own_route(db, actor, identity, True); route_revision(route, data)
         if route.status != 'IN_PROGRESS': raise HTTPException(409, 'Route is not executing.')
         remaining = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id,
@@ -202,6 +208,7 @@ def close_duty_on_logout(db, user, actor=None):
 
 def arrive_stop(db, actor, identity, visit_id, data, key):
     def run():
+        company_lock(db, actor)
         route = own_route(db,actor,identity,True); route_revision(route,data)
         if route.status != 'IN_PROGRESS': raise HTTPException(409,'Route is not executing.')
         visit = record(db,RouteStop,actor,visit_id,True)
@@ -214,7 +221,26 @@ def arrive_stop(db, actor, identity, visit_id, data, key):
         previous = db.scalar(select(RouteStop).where(RouteStop.organization_id == actor.organization_id,RouteStop.route_id == identity,
             RouteStop.status == 'COMPLETED').order_by(RouteStop.position.desc()).limit(1))
         if previous and data.captured_at < previous.completed_at: raise HTTPException(409,'Arrival precedes the previous visit.')
+        stop = record(db, OrderStop, actor, visit.stop_id)
+        order = record(db, Order, actor, stop.order_id, True)
+        if order.status == 'ASSIGNED':
+            order.status = 'IN_PROGRESS'
+            changed(db, actor, order, 'order.started')
         visit.arrived_at = data.captured_at
         changed(db,actor,visit,'stop.arrived');changed(db,actor,route,'route.progress')
         return route_view(db,actor,route)
     return command(db,actor,key,'arrive:' + str(visit_id),data.model_dump(mode='json'),run)
+
+
+def acknowledge_route(db, actor, identity, data, key):
+    def run():
+        company_lock(db, actor)
+        route = own_route(db, actor, identity, True)
+        version(route, data.version)
+        if route.generation != data.generation or route.status != 'IN_PROGRESS':
+            raise HTTPException(409, 'Assignment changed. Reload the route.')
+        if route.plan.get('requires_acknowledgement') or not route.plan.get('live_updates_supported'):
+            route.plan = {**route.plan, 'requires_acknowledgement': False, 'live_updates_supported': True}
+            changed(db, actor, route, 'route.acknowledged')
+        return route_view(db, actor, route)
+    return command(db, actor, key, 'route-acknowledge:' + str(identity), data.model_dump(mode='json'), run)

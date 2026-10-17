@@ -297,3 +297,11 @@ New trial companies remain inaccessible until the dispatcher confirms a six-digi
 ```
 
 This worker sends verification messages only. Temporary SMTP failures retry; unknown acceptance waits for an explicit resend. Delivery content is encrypted until sent, and codes are never printed or returned by the API. Signup/login return a verification challenge until confirmed; refresh uses the restricted HttpOnly cookie, while normal workspace authentication remains blocked.
+
+
+## Named TMS connectors
+
+The dispatcher launch list is Rose Rocket, CartonCloud, Truckbase, Tailwind TMS and AscendTMS. The first two have server-only authentication preparation defaults; the last three are Request setup until implemented. Complete reviewed import profiles, registered vendor credentials and sandbox acceptance remain required before live activation. See [setup and activation instructions](docs/tms-connectors.md). Existing saved legacy connections are preserved.
+
+
+Owner connector administration is available at `/admin/integrations` after migration `0055_connector_management`. Apply the migration before restarting the API and named-connector worker. Admin Integrations is now a read-only connector card overview with connected-dispatcher counts and no tabs or control/request workflow. See [TMS connectors](docs/tms-connectors.md) for visibility, counts, Rose Rocket progress and vendor activation requirements.

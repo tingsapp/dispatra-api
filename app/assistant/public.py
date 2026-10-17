@@ -11,7 +11,12 @@ PUBLIC_FACTS = '''Dispatra is delivery and dispatch software, a product of Tings
 It connects order intake, dispatch, routes, driver delivery tracking and proof of delivery.
 The full TMS + Smart Dispatching plan includes the Dispatra workspace for orders, shippers, drivers,
 vehicles, rate cards, pricing, dispatch and delivery. Smart Dispatching is for teams using an external TMS;
-supported integrations depend on the provider and configuration. Ask the team about compatibility.
+supported integrations depend on the provider and configuration. The public Integrations & API guide
+is at /docs/integrations. Rose Rocket and CartonCloud are in preparation; Truckbase, Tailwind TMS and
+AscendTMS are planned. None of these five named connectors is available to connect yet. Do not claim
+that a listed provider is active. A ready connector lets a dispatcher sign in to the TMS and authorize
+their own company. Dispatra API keys and signed webhooks support custom company integrations; the
+dispatcher configures these in their workspace. Ask the team about compatibility.
 Email intake can read order requests from a configured mailbox. In AUTO mode the dispatch agent assigns
 eligible Ready Orders; MANUAL leaves assignment to a dispatcher. Both optimize routes after assignment.
 Drivers follow assigned routes and capture required proof of delivery. Drivers cannot self-assign Orders.
@@ -23,7 +28,7 @@ per month. Do not invent or quote a numeric price; existing company agreements m
 Dispatchers, shippers and drivers sign in at /login. A company creates its shipper and driver accounts.
 For account-specific support, demonstrations, pricing, compatibility or commercial arrangements, email
 dispatra@tingsapp.com. No response time or service guarantee is promised.
-Public pages: /about (About), /how-it-works (workflow), /help (FAQs), /plans, /contact, /terms, /privacy.
+Public pages: /about (About), /how-it-works (workflow), /help (FAQs), /plans, /contact, /docs/integrations (Integrations & API), /terms, /privacy.
 This public chat cannot access any company records, track an Order, see personal account data, reset a
 password, send email, change a plan, book a delivery or perform any operational action.'''
 INSTRUCTIONS = '''You are Dispatra Chat, the public website's product assistant. Answer briefly and helpfully

@@ -25,7 +25,7 @@ def check(response,code=200):
 
 def profile(provider='truckmate'):
  return {'provider':provider,'revision':'synthetic-1','api_version':'test-only','evidence':'Synthetic acceptance fixture, not vendor certification',
-  'base_url':'https://provider.example','identity':{'path':'/identity'},'account_id_path':'id','account_label_path':'name',
+  'base_url':'https://provider.example','identity':{'path':'/identity'},'account_id_path':'id','account_label_path':'name','identity_scope':'mapped',
   'resources':{'order':{'path':'/orders','records_path':'data','next_path':'next_cursor'}},'maps':{'order':dict(MAP)},
   'weight_unit':'lb','dimension_unit':'in','currency':'CAD','authorize_url':'https://login.example/authorize',
   'token_url':'https://login.example/token','client_id_env':'TEST_CONNECTOR_ID','client_secret_env':'TEST_CONNECTOR_SECRET','session_header':'X-Session-Token'}
@@ -58,11 +58,10 @@ def connection():
 def connect_truckmate(client,key=None):
  return check(post(client,BASE+'/truckmate/connect',{'credentials':{'base_url':'https://provider.example','api_key':'private-test-key'}},key))
 
-def test_catalogue_has_six_unactivated_cards_and_no_mapping_or_secrets(client,configured,monkeypatch):
+def test_unavailable_catalogue_is_visible_and_connections_remain_gated(client,configured,monkeypatch):
  monkeypatch.delenv('TMS_CONNECTOR_PROFILES_FILE')
- rows=check(client.get(BASE));assert len(rows)==6
- assert all(r['status']=='ACTIVATION_REQUIRED' and not r['ready'] for r in rows)
- assert all('maps' not in r and 'credentials' not in r for r in rows)
+ rows=check(client.get(BASE));assert [r['id'] for r in rows]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms']
+ assert all(not r['ready'] and r['status']=='ACTIVATION_REQUIRED' for r in rows)
  check(post(client,BASE+'/truckmate/connect',{'credentials':{'api_key':'not-stored'}}),503)
  with owner_engine.connect() as db:assert db.scalar(text('SELECT count(*) FROM connector_connections'))==0
 
@@ -70,6 +69,15 @@ def test_incomplete_or_wrong_provider_profile_never_activates(client,configured)
  p=profile();p['maps']['order'].pop('tax');configured['path'].write_text(json.dumps({'truckmate':p}))
  assert profiles.installed('truckmate') is None
  check(post(client,BASE+'/truckmate/connect',{'credentials':{}}),503)
+
+def test_existing_legacy_connection_remains_visible_until_disconnected(client,configured):
+ assert 'truckmate' not in [r['id'] for r in check(client.get(BASE))]
+ connected=connect_truckmate(client)['connector']
+ assert 'truckmate' in [r['id'] for r in check(client.get(BASE))]
+ check(post(client,BASE+'/truckmate/disconnect',{'version':connected['version']}))
+ assert 'truckmate' not in [r['id'] for r in check(client.get(BASE))]
+ with owner_engine.connect() as db:
+  assert db.scalar(text("SELECT count(*) FROM connector_connections WHERE provider='truckmate'"))==1
 
 def test_credentials_are_encrypted_and_retries_are_payload_bound(client,configured):
  key=str(uuid4());first=connect_truckmate(client,key);assert first['connector']['status']=='CONNECTING'
@@ -123,8 +131,12 @@ def test_oauth_state_is_pkce_bound_single_use_and_redirects_without_tokens(clien
   assert 'auth-code' not in db.scalar(text("SELECT credentials FROM connector_connections WHERE provider='rose-rocket'"))
 
 def test_each_provider_uses_internal_complete_profile_without_public_mapping(client,configured):
- for provider in BY_ID:
-  entry=check(client.get(BASE));row=next(r for r in entry if r['id']==provider);assert row['ready']
+ for provider, info in BY_ID.items():
+  if info.auth=='request_setup':
+   assert profiles.installed(provider) is None
+   check(post(client,BASE+f'/{provider}/connect',{'credentials':{}}),409)
+   continue
+  assert profiles.installed(provider) is not None
   creds={name:'test-credential' for name,_,_ in BY_ID[provider].credential_fields}
   if 'base_url' in creds:creds['base_url']='https://provider.example'
   check(post(client,BASE+f'/{provider}/connect',{'credentials':creds}))
@@ -179,3 +191,31 @@ def test_worker_identity_failure_does_not_claim_connected(client,configured,monk
  monkeypatch.setattr(http,'request',lambda *args,**kwargs:{'unexpected':'no-account'})
  assert not worker.sync(org,identity)
  row=next(r for r in check(client.get(BASE)) if r['id']=='truckmate');assert row['status']=='SYNC_FAILED' and row['last_sync_at'] is None
+
+@pytest.mark.parametrize('provider',['rose-rocket','cartoncloud'])
+def test_priority_connectors_authorize_then_import_through_existing_commands(client,configured,provider,monkeypatch):
+ configured['rows'].append(shipment())
+ if provider=='cartoncloud':
+  p=profile(provider);p['identity_scope']='cartoncloud_tenant'
+  p['resources']['order']['path']='/tenants/{account_id}/orders'
+  configured['path'].write_text(json.dumps({provider:p}))
+  old_request=http.request
+  def request(method,target,headers,body=None):
+   if '/identity' in target:return {'id':'person-id','tenants':[{'id':'account-1','name':'Test Transport'}]}
+   assert '/tenants/account-1/' in target
+   assert headers['Accept-Version']=='8'
+   return old_request(method,target,headers,body)
+  monkeypatch.setattr(http,'request',request)
+ reply=check(post(client,BASE+f'/{provider}/connect',{}))
+ state=parse_qs(urlsplit(reply['authorization_url']).query)['state'][0]
+ response=client.get(BASE+f'/{provider}/callback',params={'state':state,'code':'fixture-code'},follow_redirects=False)
+ assert response.status_code==303
+ with owner_engine.connect() as db:
+  org,identity=db.execute(text('SELECT organization_id,id FROM connector_connections WHERE provider=:provider'),{'provider':provider}).one()
+ assert worker.sync(org,identity)
+ row=next(r for r in check(client.get(BASE)) if r['id']==provider)
+ assert row['status']=='CONNECTED' and row['imported']==1
+ orders=check(client.get('/api/v1/companies/acme/orders'))
+ assert len([o for o in orders if o['facts'].get('external_reference')=='REMOTE-1'])==1
+ with owner_engine.connect() as db:
+  assert db.scalar(text('SELECT account_id FROM connector_connections WHERE id=:id'),{'id':identity})=='account-1'

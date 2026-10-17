@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from app.schemas import Input, LoginID, Name, Password, CompanyPhone, CompanyAddress
 
 DisplayName = Annotated[str, Field(max_length=160)]
@@ -88,6 +88,7 @@ class OverviewDispatcherUpdate(DispatcherUpdate):
 
 class CompanyOverviewUpdate(CompanyUpdate):
     active: bool
+    tms_workspace: StrictBool = Field(default_factory=lambda: False)
     dispatcher: OverviewDispatcherUpdate | None = None
 
 

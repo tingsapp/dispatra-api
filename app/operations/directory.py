@@ -31,12 +31,15 @@ def save_settings(db, actor, data, key):
         if 'tms_workspace' in data.data.model_fields_set:
             from .tms_pricing import apply_workspace_rate
             apply_workspace_rate(db, actor, row, values['tms_workspace'])
+        if 'dispatch_zones' not in data.data.model_fields_set:
+            values['dispatch_zones'] = row.data.get('dispatch_zones', [])
         row.data = values
         db.get(Organization, actor.organization_id).name = data.data.company_name
         changed(db, actor, row, 'settings.updated')
         return SettingsView.model_validate(row).model_dump(mode='json')
     payload = data.model_dump(mode='json')
     if 'tms_workspace' not in data.data.model_fields_set: payload['data'].pop('tms_workspace')
+    if 'dispatch_zones' not in data.data.model_fields_set: payload['data'].pop('dispatch_zones')
     return command(db, actor, key, 'settings', payload, run)
 
 

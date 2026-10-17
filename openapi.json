@@ -10839,7 +10839,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RouteCommand"
+                "$ref": "#/components/schemas/RouteStartCommand"
               }
             }
           }
@@ -12109,6 +12109,150 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DriverNotificationView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/driver/routes/{identity}/acknowledge": {
+      "post": {
+        "tags": [
+          "Driver execution"
+        ],
+        "summary": "Acknowledge",
+        "operationId": "acknowledge_api_v1_companies__slug__driver_routes__identity__acknowledge_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouteCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteView"
                 }
               }
             }
@@ -19244,6 +19388,122 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/dispatch-plan": {
+      "post": {
+        "tags": [
+          "Dispatch agent"
+        ],
+        "summary": "Fleet Plan",
+        "operationId": "fleet_plan_api_v1_companies__slug__dispatch_plan_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DecisionView"
+                  },
+                  "title": "Response Fleet Plan Api V1 Companies  Slug  Dispatch Plan Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/chats": {
       "get": {
         "tags": [
@@ -23461,6 +23721,111 @@
         }
       }
     },
+    "/api/v1/platform/integrations/providers": {
+      "get": {
+        "tags": [
+          "Connector administration"
+        ],
+        "summary": "Providers",
+        "operationId": "providers_api_v1_platform_integrations_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderView"
+                  },
+                  "type": "array",
+                  "title": "Response Providers Api V1 Platform Integrations Providers Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/assistant/messages": {
       "post": {
         "tags": [
@@ -26158,6 +26523,11 @@
             "minimum": 1.0,
             "title": "Version"
           },
+          "allow_live": {
+            "type": "boolean",
+            "title": "Allow Live",
+            "default": false
+          },
           "driver_id": {
             "type": "string",
             "format": "uuid",
@@ -26951,6 +27321,17 @@
             ],
             "title": "Route Id"
           },
+          "route_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Version"
+          },
           "planned_at": {
             "type": "string",
             "format": "date-time",
@@ -26999,6 +27380,62 @@
       },
       "CandidateMetrics": {
         "properties": {
+          "awaiting_duty": {
+            "type": "boolean",
+            "title": "Awaiting Duty",
+            "default": false
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone"
+          },
+          "zone_match": {
+            "type": "boolean",
+            "title": "Zone Match",
+            "default": false
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction",
+            "default": "UNKNOWN"
+          },
+          "worked_minutes": {
+            "type": "number",
+            "title": "Worked Minutes",
+            "default": 0
+          },
+          "remaining_minutes": {
+            "type": "number",
+            "title": "Remaining Minutes",
+            "default": 0
+          },
+          "completed_orders": {
+            "type": "integer",
+            "title": "Completed Orders",
+            "default": 0
+          },
+          "workload_ratio": {
+            "type": "number",
+            "title": "Workload Ratio",
+            "default": 0
+          },
+          "live_insertion": {
+            "type": "boolean",
+            "title": "Live Insertion",
+            "default": false
+          },
+          "road_verified": {
+            "type": "boolean",
+            "title": "Road Verified",
+            "default": false
+          },
           "extra_minutes": {
             "type": "number",
             "title": "Extra Minutes",
@@ -28090,6 +28527,10 @@
             "type": "boolean",
             "title": "Active"
           },
+          "tms_workspace": {
+            "type": "boolean",
+            "title": "Tms Workspace"
+          },
           "dispatcher": {
             "anyOf": [
               {
@@ -28898,7 +29339,8 @@
               "bearer",
               "api_key",
               "session",
-              "client_credentials"
+              "client_credentials",
+              "request_setup"
             ],
             "title": "Auth"
           },
@@ -28916,9 +29358,15 @@
               "SYNCING",
               "RECONNECT_REQUIRED",
               "SYNC_FAILED",
-              "DISCONNECTED"
+              "DISCONNECTED",
+              "PAUSED"
             ],
             "title": "Status"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
           },
           "account": {
             "anyOf": [
@@ -29567,6 +30015,33 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Discount"
+      },
+      "DispatchZone": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "postal_codes": {
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z]\\d[A-Za-z]( ?\\d[A-Za-z]\\d)?$"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Postal Codes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "postal_codes"
+        ],
+        "title": "DispatchZone"
       },
       "DispatcherCreate": {
         "properties": {
@@ -33879,6 +34354,34 @@
         ],
         "title": "ProofEvidence"
       },
+      "ProviderView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "initials": {
+            "type": "string",
+            "title": "Initials"
+          },
+          "connected_dispatchers": {
+            "type": "integer",
+            "title": "Connected Dispatchers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "initials",
+          "connected_dispatchers"
+        ],
+        "title": "ProviderView"
+      },
       "PublicAssistantReply": {
         "properties": {
           "message": {
@@ -34715,6 +35218,32 @@
         ],
         "title": "RouteCommand"
       },
+      "RouteStartCommand": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Generation"
+          },
+          "supports_live_updates": {
+            "type": "boolean",
+            "title": "Supports Live Updates",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "generation"
+        ],
+        "title": "RouteStartCommand"
+      },
       "RouteView": {
         "properties": {
           "id": {
@@ -35132,6 +35661,14 @@
             "title": "Dispatch Mode",
             "default": "MANUAL"
           },
+          "dispatch_zones": {
+            "items": {
+              "$ref": "#/components/schemas/DispatchZone"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Dispatch Zones"
+          },
           "default_service_id": {
             "anyOf": [
               {
@@ -35312,6 +35849,14 @@
             ],
             "title": "Dispatch Mode",
             "default": "MANUAL"
+          },
+          "dispatch_zones": {
+            "items": {
+              "$ref": "#/components/schemas/DispatchZone"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Dispatch Zones"
           },
           "default_service_id": {
             "anyOf": [

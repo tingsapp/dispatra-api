@@ -27,7 +27,8 @@ def fits_item(item, vehicle):
     return any(all(a <= b for a,b in zip(rotation,bay)) for rotation in permutations(dims))
 
 
-def optimize(stops, items, vehicle, start, end, max_work_minutes, travel_table=None):
+def optimize(stops, items, vehicle, start, end, max_work_minutes, travel_table=None, *,
+             initial_load=None, visited=(), first_stop=None, origin=None, origin_minutes=None):
     """Bounded search finds the shortest estimated feasible sequence among explored paths."""
     stop_map = {s['id']: s for s in stops}
     if vehicle.get('maximum_stops') and len(stops) > vehicle['maximum_stops']:
@@ -56,8 +57,9 @@ def optimize(stops, items, vehicle, start, end, max_work_minutes, travel_table=N
         candidates = []
         for identity in remaining:
             stop = stop_map[identity]
-            if any(i['pickup_id'] not in path for i in delivery_items[identity]): continue
-            duration = (travel_table.get((path[-1],identity)) if travel_table is not None else travel_minutes(stop_map[path[-1]]['address'], stop['address'])) if path else 0
+            if any(i['pickup_id'] not in path and i['pickup_id'] not in visited for i in delivery_items[identity]): continue
+            if not path and first_stop and identity != first_stop: continue
+            duration = (travel_table.get((path[-1],identity)) if travel_table is not None else travel_minutes(stop_map[path[-1]]['address'], stop['address'])) if path else (origin_minutes.get(identity) if origin_minutes is not None else travel_minutes(origin, stop['address']) if origin else 0)
             if duration is None: continue
             arrival = clock + timedelta(minutes=duration)
             if stop.get('window_start'): arrival = max(arrival, datetime.fromisoformat(stop['window_start']))
@@ -76,7 +78,10 @@ def optimize(stops, items, vehicle, start, end, max_work_minutes, travel_table=N
         for duration, identity, arrival, finish, next_load in sorted(candidates, key=lambda value: (value[0],value[1])):
             visit(path + [identity], remaining - {identity}, finish, next_load, score + duration,
                 schedule + [{'stop_id': identity, 'planned_at': arrival.isoformat(), 'load_kg': str(next_load[0]), 'volume_m3': str(next_load[1]), 'pallets': str(next_load[2])}])
-    visit([], set(stop_map), start, [Decimal(0)]*3, 0, [])
+    load = [Decimal(str(v)) for v in initial_load] if initial_load is not None else [Decimal(0)]*3
+    if any(value < 0 or value > capacity for value, capacity in zip(load, capacities)):
+        raise HTTPException(409, 'Confirmed cargo exceeds vehicle capacity.')
+    visit([], set(stop_map), start, load, 0, [])
     if best is None: raise HTTPException(409, 'No feasible Route found within the planning limit; review capacity, windows and shift.')
     return {'stops': best, 'travel_minutes': round(best_score,2), 'travel_basis': 'GOOGLE_ROADS_NO_TRAFFIC' if travel_table is not None else 'DEMO_GEODESIC_35_KPH',
         'is_road_eta': travel_table is not None, 'search_complete': explored <= budget, 'explored': min(explored,budget), 'planned_at': start.isoformat()}

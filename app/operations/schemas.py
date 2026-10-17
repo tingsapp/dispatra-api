@@ -30,6 +30,11 @@ class Address(Input):
         return self
 
 
+class DispatchZone(Input):
+    name: Name
+    postal_codes: list[Annotated[str, Field(pattern=r'^[A-Za-z]\d[A-Za-z]( ?\d[A-Za-z]\d)?$')]] = Field(min_length=1, max_length=200)
+
+
 class SettingsData(Input):
     company_name: Name = 'Dispatra Logistics'
     tms_workspace: StrictBool = False
@@ -55,8 +60,18 @@ class SettingsData(Input):
     quote_validity_days: int = Field(default=14, ge=1, le=365)
     # AUTO: the Dispatch agent assigns priced, unassigned Orders inside its horizon; MANUAL: dispatchers assign, the agent only recommends.
     dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
+    dispatch_zones: list[DispatchZone] = Field(default_factory=list, max_length=100)
     # New Orders (and Order agent emails that name no service) start on this active SERVICE; a Shipper's own default wins.
     default_service_id: UUID | None = None
+
+    @model_validator(mode='after')
+    def dispatch_zone_unique(self):
+        names = [z.name.casefold() for z in self.dispatch_zones]
+        if len(set(names)) != len(names): raise ValueError('Dispatch zone names must be unique')
+        prefixes = [(p.replace(' ', '').upper(), i) for i,z in enumerate(self.dispatch_zones) for p in z.postal_codes]
+        if any(i != j and (a.startswith(b) or b.startswith(a)) for a,i in prefixes for b,j in prefixes):
+            raise ValueError('Dispatch zones must not have overlapping postal prefixes')
+        return self
 
     @field_validator('logo_url')
     @classmethod
@@ -380,6 +395,7 @@ class Booking(Input):
 
 
 class Assignment(Version):
+    allow_live: StrictBool = False
     driver_id: UUID
     vehicle_id: UUID
     route_id: UUID | None = None
@@ -389,6 +405,10 @@ class Assignment(Version):
 
 class RouteCommand(Version):
     generation: int = Field(ge=1)
+
+
+class RouteStartCommand(RouteCommand):
+    supports_live_updates: StrictBool = False
 
 
 class ArrivalCommand(RouteCommand):

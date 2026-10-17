@@ -6,6 +6,16 @@ from app.schemas import Input
 
 
 class CandidateMetrics(BaseModel):
+    awaiting_duty: bool = False
+    zone: str | None = None
+    zone_match: bool = False
+    direction: str = 'UNKNOWN'
+    worked_minutes: float = 0
+    remaining_minutes: float = 0
+    completed_orders: int = 0
+    workload_ratio: float = 0
+    live_insertion: bool = False
+    road_verified: bool = False
     extra_minutes: float = Field(description='Estimated extra fleet driving: trip to pickup plus the Order, or the increase of a planned Route')
     deadhead_km: float | None = Field(description='Straight-line distance from the driver to the first pickup')
     position: Literal['GPS', 'HOME'] | None
@@ -22,6 +32,7 @@ class Candidate(BaseModel):
     vehicle_id: UUID
     vehicle_name: str
     route_id: UUID | None
+    route_version: int | None = None
     planned_at: datetime
     first_arrival: datetime
     metrics: CandidateMetrics

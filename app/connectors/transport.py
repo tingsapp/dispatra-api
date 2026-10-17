@@ -16,7 +16,7 @@ def token(profile, values, credentials=None):
     cid = credentials.get('client_id') or os.environ.get(profile.client_id_env or '')
     secret = credentials.get('client_secret') or os.environ.get(profile.client_secret_env or '')
     if not cid or not secret or not profile.token_url: raise Error('ACTIVATION_REQUIRED')
-    headers = {'Accept':'application/json'}
+    headers = {'Accept':'application/json', **profile.headers}
     if credentials.get('api_key'): headers['x-api-key'] = credentials['api_key']
     values = {**values, **({'audience':profile.audience} if profile.audience else {})}
     if profile.token_auth == 'basic': headers['Authorization'] = 'Basic ' + base64.b64encode(f'{cid}:{secret}'.encode()).decode()
@@ -49,8 +49,11 @@ def headers(provider, profile, credentials):
 
 def target(profile, resource, credentials, parameters=None):
     path=resource.path
-    for key in ('tenant',):
-        path=path.replace('{'+key+'}',urllib.parse.quote(credentials.get(key,''),safe=''))
+    for key in ('tenant', 'account_id'):
+        if '{'+key+'}' in path:
+            value = credentials.get(key)
+            if not value: raise Error('IDENTITY_NOT_VERIFIED')
+            path=path.replace('{'+key+'}',urllib.parse.quote(str(value),safe=''))
     if '{' in path: raise Error('ACTIVATION_REQUIRED')
     base=credentials.get('base_url') or profile.base_url
     parts=urllib.parse.urlsplit(base)
@@ -60,12 +63,24 @@ def target(profile, resource, credentials, parameters=None):
 def identity(provider,profile,credentials):
     resource=profile.identity
     payload=client.request(resource.method,target(profile,resource,credentials),headers(provider,profile,credentials),resource.body)
+    if profile.identity_scope == 'cartoncloud_tenant':
+        tenants = payload.get('tenants') if isinstance(payload, dict) else None
+        if not isinstance(tenants, list) or not tenants or any(not isinstance(t, dict) or not isinstance(t.get('id'), str) or not t['id'] for t in tenants):
+            raise Error('IDENTITY_NOT_VERIFIED')
+        expected = credentials.get('account_id') or profile.tenant_id
+        matches = [t for t in tenants if t['id'] == expected] if expected else tenants
+        if len(matches) != 1: raise Error('ACCOUNT_SELECTION_REQUIRED' if not expected else 'ACCOUNT_CHANGED')
+        tenant = matches[0]
+        return tenant['id'], str(tenant.get('name') or tenant['id'])[:160]
     account=read(payload,profile.account_id_path)
     label=read(payload,profile.account_label_path)
     if not isinstance(account,(str,int)) or not str(account): raise Error('IDENTITY_NOT_VERIFIED')
     return str(account),str(label or account)[:160]
 
 def fetch(provider,profile,resource,credentials):
+    if resource.adapter == 'rose_rocket_board':
+        from . import roserocket
+        return roserocket.fetch(profile,resource,credentials)
     auth=headers(provider,profile,credentials); endpoint=target(profile,resource,credentials)
     origin=urllib.parse.urlsplit(endpoint)[:2]; seen=set(); rows=[]; body=resource.body
     for _ in range(client.MAX_PAGES):

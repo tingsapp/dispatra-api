@@ -23,7 +23,8 @@ def key(connection,kind,external,revision):
 def current(db,org,identity,lease):
     row=db.scalar(select(Connection).where(Connection.organization_id==org,Connection.id==identity).with_for_update())
     from app.models import Organization
-    if row is None or row.lease!=lease or row.status=='DISCONNECTED' or not db.scalar(select(Organization.id).where(Organization.id==org,Organization.active)):raise Stale()
+    from .availability import enabled
+    if row is None or row.lease!=lease or row.status=='DISCONNECTED' or row.paused or not enabled(db,row.provider,lock=True) or not db.scalar(select(Organization.id).where(Organization.id==org,Organization.active)):raise Stale()
     return row
 
 def linked(db,org,connection,kind,external):

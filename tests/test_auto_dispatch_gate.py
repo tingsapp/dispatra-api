@@ -49,6 +49,15 @@ def test_external_auto_activation_connection_states_tenancy_and_native_modes(cli
         status(value)
         assert save(client, saved, dispatch_mode='AUTO').status_code == 409
     status('CONNECTED')
+    with owner_engine.begin() as db:
+        db.execute(text('UPDATE connector_connections SET paused=true WHERE id=:id'), {'id': identity})
+    assert save(client, saved, dispatch_mode='AUTO').status_code == 409
+    with owner_engine.begin() as db:
+        db.execute(text('UPDATE connector_connections SET paused=false WHERE id=:id'), {'id': identity})
+        db.execute(text("UPDATE connector_providers SET enabled=false WHERE provider='truckmate'"))
+    assert save(client, saved, dispatch_mode='AUTO').status_code == 409
+    with owner_engine.begin() as db:
+        db.execute(text("UPDATE connector_providers SET enabled=true WHERE provider='truckmate'"))
     monkeypatch.delenv('TMS_CONNECTOR_PROFILES_FILE')
     assert save(client, saved, dispatch_mode='AUTO').status_code == 409
     monkeypatch.setenv('TMS_CONNECTOR_PROFILES_FILE', str(configured['path']))

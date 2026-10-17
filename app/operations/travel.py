@@ -3,6 +3,7 @@
 No external requests in demo mode. Google keys are server-only environment secrets.
 """
 import json
+import math
 import os
 import urllib.request
 import urllib.error
@@ -17,7 +18,9 @@ def provider():
 def waypoint(address):
     if address.get('latitude') is None or address.get('longitude') is None:
         raise HTTPException(409,'Verified stop coordinates are required for road routing.')
-    return {'location':{'latLng':{'latitude':address['latitude'],'longitude':address['longitude']}}}
+    location = {'latLng': {'latitude': address['latitude'], 'longitude': address['longitude']}}
+    if address.get('heading') is not None: location['heading'] = int(address['heading'])
+    return {'location': location}
 
 
 def google(db, actor, method, payload, mask):
@@ -35,21 +38,33 @@ def google(db, actor, method, payload, mask):
 
 def matrix(db, actor, stops):
     if provider() == 'demo': return None
-    if len(stops) > 25: raise HTTPException(409,'Road matrix is limited to 25 stops per manual Route; split the Route.')
-    points=[{'waypoint':waypoint(s['address'])} for s in stops]
-    result=google(db,actor,'distanceMatrix/v2:computeRouteMatrix',
-        {'origins':points,'destinations':points,'travelMode':'DRIVE','routingPreference':'TRAFFIC_UNAWARE'},
-        'originIndex,destinationIndex,status,condition,duration')
-    table={}
-    if not isinstance(result,list): raise HTTPException(503,'Road routing returned an invalid matrix.')
-    for cell in result:
-        if cell.get('status',{}).get('code',0) != 0 or cell.get('condition') != 'ROUTE_EXISTS': continue
-        try:
-            origin,destination=stops[cell.get('originIndex',0)]['id'],stops[cell.get('destinationIndex',0)]['id']
-            seconds=float(cell['duration'].removesuffix('s'))
-            if seconds < 0: raise ValueError()
-            table[(origin,destination)]=seconds/60
-        except (KeyError,IndexError,ValueError,TypeError): raise HTTPException(503,'Road routing returned incomplete travel times.') from None
+    if len(stops) > 501: raise HTTPException(409, 'Route planning supports at most 500 stops plus the driver origin.')
+    # Bounded matrices remove the old 25-stop route limit while preserving provider request limits.
+    cache = db.info.setdefault('dispatch_road_matrices', {}) if db is not None else {}
+    cache_key = json.dumps([(s['id'],waypoint(s['address'])) for s in stops],sort_keys=True)
+    if cache_key in cache: return cache[cache_key]
+    table = {}
+    for start in range(0,len(stops),25):
+        origins = stops[start:start+25]
+        for end in range(0,len(stops),25):
+            destinations = stops[end:end+25]
+            result=google(db,actor,'distanceMatrix/v2:computeRouteMatrix',
+                {'origins':[{'waypoint':waypoint(s['address'])} for s in origins],
+                 'destinations':[{'waypoint':waypoint(s['address'])} for s in destinations],
+                 'travelMode':'DRIVE','routingPreference':'TRAFFIC_UNAWARE'},
+                'originIndex,destinationIndex,status,condition,duration')
+            if not isinstance(result,list): raise HTTPException(503,'Road routing returned an invalid matrix.')
+            for cell in result:
+                if cell.get('status',{}).get('code',0) != 0 or cell.get('condition') != 'ROUTE_EXISTS': continue
+                try:
+                    seconds=float(cell['duration'].removesuffix('s'))
+                    if seconds < 0 or not math.isfinite(seconds): raise ValueError()
+                    origin=origins[cell.get('originIndex',0)]['id']
+                    destination=destinations[cell.get('destinationIndex',0)]['id']
+                    table[(origin,destination)]=seconds/60
+                except (KeyError,IndexError,ValueError,TypeError):
+                    raise HTTPException(503,'Road routing returned incomplete travel times.') from None
+    if len(cache)<64: cache[cache_key]=table
     return table
 
 

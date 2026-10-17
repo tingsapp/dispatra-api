@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database import context, engine
 from app.events import publish
-from app.models import now
+from app.models import now, Organization
 from app.services import audit
 from app.operations import dispatch
 from app.operations.common import command, company_lock, record, settings
@@ -30,8 +30,7 @@ SYSTEM = SimpleNamespace(id=None, role=None)
 HORIZON = timedelta(hours=float(os.environ.get('DISPATCH_AGENT_HORIZON_HOURS') or '12'))
 RETRY = timedelta(minutes=5)
 REUSE = timedelta(minutes=2)
-ATTEMPTS = 3
-RULES_SUMMARY = 'Ranked by rules: extra driving time, current workload, vehicle match and the Shipper\'s requested driver.'
+RULES_SUMMARY = 'Ranked by feasible route detour, delivery area and work completed or committed today.'
 
 
 class AgentDispatcher:
@@ -58,6 +57,11 @@ def ranked(order_brief, candidates, organization_id=None):
     step('Ranking feasible driver candidates.', organization_id)
     try:
         ordered, summary = rank.rank(order_brief, candidates)
+        # AI explains and resolves close choices; it cannot overturn a materially better operational score.
+        first = ordered[0]['driver_id']
+        order_index = {c['driver_id']:i for i,c in enumerate(ordered)}
+        ordered.sort(key=lambda c:(int(c['score']//5),order_index[c['driver_id']]))
+        if ordered[0]['driver_id'] != first: summary = RULES_SUMMARY
         return ordered, 'AI', summary, None
     except rank.Unavailable as error:
         step('AI ranking unavailable; validated rule ranking used.', organization_id, 'WARNING')
@@ -108,8 +112,11 @@ def history(db, user, order_id, limit=20):
 
 def assignment(db, actor, order, candidate):
     """The assignment command body for a stored candidate, against the Route as it is now."""
-    route = record(db, Route, actor, candidate['route_id']) if candidate['route_id'] else None
-    return Assignment(version=order.version, driver_id=candidate['driver_id'], vehicle_id=candidate['vehicle_id'],
+    from app.operations.models import Driver, Vehicle
+    driver = record(db, Driver, actor, candidate['driver_id'])
+    vehicle = record(db, Vehicle, actor, candidate['vehicle_id'])
+    route = dispatch.mergeable_route(db, actor, driver, vehicle, allow_live=True)
+    return Assignment(version=order.version, allow_live=bool(route and route.status == 'IN_PROGRESS'), driver_id=candidate['driver_id'], vehicle_id=candidate['vehicle_id'],
         route_id=route.id if route else None, route_version=route.version if route else None,
         planned_at=route.planned_at if route else candidate['planned_at'])
 
@@ -151,10 +158,10 @@ def no_driver(db, organization_id, orders):
 def auto_companies():
     with Session(engine) as db, db.begin():
         context(db, platform=True)
-        return db.scalars(select(Settings.organization_id).where(Settings.data['dispatch_mode'].astext == 'AUTO')).all()
+        return db.scalars(select(Settings.organization_id).join(Organization, Organization.id == Settings.organization_id).where(Organization.active.is_(True), Settings.data['dispatch_mode'].astext == 'AUTO')).all()
 
 
-def due(organization_id, limit=20):
+def due(organization_id, limit=100):
     """Priced, unassigned Orders inside the horizon whose current version was not evaluated in the last few minutes."""
     with Session(engine) as db, db.begin():
         context(db, organization_id)
@@ -163,17 +170,19 @@ def due(organization_id, limit=20):
         result = []
         for order in orders:
             previous = latest(db, organization_id, order.id)
-            if previous and previous.order_version == order.version and (previous.status == 'ASSIGNED' or now() - previous.created_at < RETRY): continue
+            if previous and previous.order_version == order.version:
+                if previous.status == 'ASSIGNED': continue
+                if now()-previous.created_at < RETRY and not resource_changed(db,organization_id,previous.created_at): continue
             result.append(order.id)
         return result[:limit]
 
 
-def dispatch_order(organization_id, order_id):
+def dispatch_order(organization_id, order_id, planned_driver=None):
     """Evaluate, rank and assign one Order. Returns the decision status, or None when nothing was recorded."""
     agent = AgentDispatcher(organization_id)
     with Session(engine) as db, db.begin():
         context(db, organization_id)
-        if settings(db, agent)[1].dispatch_mode != 'AUTO': return None
+        if not db.get(Organization, organization_id).active or settings(db, agent)[1].dispatch_mode != 'AUTO': return None
         order = db.scalar(select(Order).where(Order.organization_id == organization_id, Order.id == order_id))
         if order is None or blocker(order): return None
         previous = latest(db, organization_id, order.id)
@@ -181,16 +190,22 @@ def dispatch_order(organization_id, order_id):
         version, candidates, excluded = order.version, *evaluate(db, agent, order)
         order_brief = brief(order)
     ordered, ranked_by, summary, error = ranked(order_brief, candidates, organization_id)
+    if planned_driver and ordered:
+        # Keep geographic proposals only among similarly efficient current road choices.
+        threshold = min(c['score'] for c in ordered) + 5
+        first = ordered[0]['driver_id']
+        ordered.sort(key=lambda c:not(c['driver_id']==planned_driver and c['score']<=threshold))
+        if ordered[0]['driver_id'] != first: summary = RULES_SUMMARY
     with Session(engine) as db, db.begin():
         context(db, organization_id)
         # Ranking runs outside the transaction. Serialize with settings writes so
         # switching to MANUAL takes effect before an automatic assignment saves.
         company_lock(db, agent)
-        if settings(db, agent)[1].dispatch_mode != 'AUTO': return None
+        if not db.get(Organization, organization_id).active or settings(db, agent)[1].dispatch_mode != 'AUTO': return None
         order = db.scalar(select(Order).where(Order.organization_id == organization_id, Order.id == order_id))
         if order is None or order.status != 'NEW' or order.version != version: return None
         refused = []
-        for candidate in ordered[:ATTEMPTS]:
+        for candidate in ordered:
             queued = dict(db.info.get(publish.PENDING, {}))
             try:
                 with db.begin_nested():
@@ -211,9 +226,52 @@ def dispatch_order(organization_id, order_id):
         return 'NO_CANDIDATE'
 
 
-def dispatch_pending(organization_id, limit=20):
+def dispatch_pending(organization_id, limit=100):
     results = Counter()
-    for order_id in due(organization_id, limit):
-        step('Evaluating the next due order through normal dispatch checks.', organization_id)
-        results[dispatch_order(organization_id, order_id)] += 1
+    from .fleet import plan
+    identities = due(organization_id, limit)
+    with Session(engine) as db, db.begin():
+        context(db, organization_id)
+        actor = AgentDispatcher(organization_id)
+        orders = list(db.scalars(select(Order).where(Order.organization_id == organization_id, Order.id.in_(identities))))
+        proposals = [(o.id, c[0]['driver_id'] if c else None, bool(c and c[0]['metrics'].get('awaiting_duty'))) for o,c,_ in plan(db,actor,orders)]
+    for order_id, driver_id, awaiting_duty in proposals:
+        if awaiting_duty:
+            # Tentative roster allocations stay NEW; duty confirmation wakes normal eligibility.
+            with Session(engine) as db, db.begin():
+                context(db, organization_id)
+                actor = AgentDispatcher(organization_id)
+                company_lock(db, actor)
+                order = db.get(Order,order_id)
+                if not order or blocker(order) or not db.get(Organization,organization_id).active or settings(db,actor)[1].dispatch_mode!='AUTO': continue
+                save(db,organization_id,order_id,order.version,'AUTO','NO_CANDIDATE',[],
+                    [{'driver_id':driver_id,'driver_name':'Expected driver','driver_number':'',
+                      'reason':'Morning allocation is waiting for the scheduled driver to confirm On Duty.'}], 'RULES',RULES_SUMMARY,None)
+            results['NO_CANDIDATE'] += 1
+            continue
+        step('Committing a geographic fleet allocation through normal dispatch checks.', organization_id)
+        results[dispatch_order(organization_id, order_id, driver_id)] += 1
     return results
+
+
+def suggest_fleet(db, user):
+    from .fleet import plan
+    orders = list(db.scalars(select(Order).where(Order.organization_id==user.organization_id, Order.status=='NEW',
+        Order.scheduled_at<=now()+HORIZON).order_by(Order.scheduled_at,Order.id).limit(100)))
+    results = []
+    with monitor_run('DISPATCH') as progress:
+        progress.step('Planning delivery areas and balanced fleet workloads.', 15, user.organization_id)
+        for order,candidates,excluded in plan(db,user,orders):
+            for candidate in candidates: candidate['reason'] = candidate['facts'][0]
+            results.append(view(save(db,user.organization_id,order.id,order.version,'MANUAL',
+                'SUGGESTED' if candidates else 'NO_CANDIDATE',candidates,excluded,'RULES',RULES_SUMMARY,None,decided_by=user.id)))
+        progress.step('Fleet proposal ready for dispatcher approval.',95,user.organization_id)
+    return results
+
+
+def resource_changed(db, organization_id, since):
+    from app.events.models import Event
+    return db.scalar(select(Event.id).where(Event.organization_id==organization_id, Event.created_at>since,
+        Event.type.in_(['driver.updated','vehicle.updated','driver.location_updated','duty.started','duty.started_by_dispatcher',
+            'route.progress','route.completed','route.acknowledged','issue.resolved','watch.detected',
+            'watch.escalated','watch.resolved','watch.driver_replied','settings.updated'])).limit(1)) is not None

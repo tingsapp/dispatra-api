@@ -79,6 +79,8 @@ def notes(db, action, entity_id, audience, actor, recipients):
             + to(shipper(), 'INFO', 'Driver assigned', f'{number} has been assigned to a driver.'))
     if action == 'order.unassigned' and order:
         return to(shipper(), 'INFO', 'Assignment changed', f'{number} is waiting for a new driver.')
+    if action == 'route.updated':
+        return to(driver(), 'WARNING', 'Route updated', 'New work was added. When safely stopped, review the latest route before continuing.')
     if action == 'route.released':
         return to(driver(), 'INFO', 'Assignment changed', 'A planned route was removed. Refresh Orders before starting your next stop.')
     if action == 'order.started' and order:

@@ -23,7 +23,7 @@ def update_overview(db, actor, organization_id, data, key):
                 service.touched(db, actor, account, 'dispatcher.updated' if details_changed else 'dispatcher.password_changed')
                 if details_changed and password_changed:
                     audit(db, actor, 'dispatcher.password_changed', account.id, org.id)
-        if service.apply_company_details(db, org, data):
+        if service.apply_company_details(db, actor, org, data):
             audit(db, actor, 'organization.updated', org.id, org.id)
         if org._active != data.active:
             service.apply_company_access(db, actor, org, data.active)

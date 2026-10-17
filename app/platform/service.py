@@ -8,7 +8,7 @@ from sqlalchemy import select, delete, func
 from app.models import Organization, User, LoginSession, now
 from app.security import hash_password, rate_limit
 from app.services import audit, once
-from app.schemas import OrganizationView
+from app.schemas import OrganizationView, OrganizationCreate
 from app.operations.common import company_lock
 from . import queries
 
@@ -36,7 +36,7 @@ def update_company(db, actor, organization_id, data, key):
     def run():
         serialize_lock(db, organization_id)
         org = company(db, organization_id, True); expect(org, data.version, 'Company')
-        apply_company_details(db, org, data)
+        apply_company_details(db, actor, org, data)
         org.version += 1; org.updated_at = now()
         audit(db, actor, 'organization.updated', org.id, org.id)
         db.flush()
@@ -48,19 +48,20 @@ def update_company(db, actor, organization_id, data, key):
 def company_payload(data):
     # Preserve pre-contact request hashes on idempotent replays.
     payload = data.model_dump(mode='json')
-    for field in ('phone', 'address', 'settings_version'):
+    for field in ('phone', 'address', 'settings_version', 'tms_workspace'):
         if field not in data.model_fields_set: payload.pop(field, None)
-    if payload.get('tms_workspace') is False: payload.pop('tms_workspace')
+    if isinstance(data, OrganizationCreate) and payload.get('tms_workspace') is False: payload.pop('tms_workspace')
     return payload
 
 
-def apply_company_details(db, org, data):
+def apply_company_details(db, actor, org, data):
     from app.operations.models import Settings
     settings = db.scalar(select(Settings).where(Settings.organization_id == org.id).with_for_update())
     contact = {field: getattr(data, field) for field in ('phone', 'address') if getattr(data, field) is not None}
-    if contact:
+    plan_requested = 'tms_workspace' in data.model_fields_set
+    if contact or plan_requested:
         if not settings: raise HTTPException(409, 'Company settings have not been initialized. Run the pricing seeder.')
-        if data.settings_version is None: raise HTTPException(422, 'Company settings version is required when editing phone or address.')
+        if data.settings_version is None: raise HTTPException(422, 'Company settings version is required when editing contact details or the plan.')
         expect(settings, data.settings_version, 'Company settings')
     changed = org.name != data.name
     org.name = data.name
@@ -72,6 +73,10 @@ def apply_company_details(db, org, data):
             current = settings.data.get('address')
             text = current.get('text', '') if isinstance(current, dict) else current or ''
             if text != contact['address']: changes['address'] = contact['address'] or None
+        if plan_requested and (settings.data.get('tms_workspace') is True) != data.tms_workspace:
+            from app.operations.tms_pricing import apply_workspace_rate
+            apply_workspace_rate(db, actor, settings, data.tms_workspace)
+            changes['tms_workspace'] = data.tms_workspace
         if changes:
             settings.data = {**settings.data, **changes}
             settings.version += 1

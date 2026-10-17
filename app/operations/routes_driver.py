@@ -10,6 +10,8 @@ from .common import record, version, command, changed
 from .models import Route, Driver, Evidence, OrderStop, Order, DutySession, Vehicle, Catalog
 from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, RouteView, ProofEvidence
 
+from .schemas import RouteStartCommand
+
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Driver execution'])
 
 
@@ -79,7 +81,7 @@ def get_route(slug: str, identity: UUID, db: DB, user: User = Depends(auth.drive
 
 
 @router.post('/driver/routes/{identity}/start', response_model=RouteView)
-def start(slug: str, identity: UUID, data: RouteCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
+def start(slug: str, identity: UUID, data: RouteStartCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return execution.start_route(db,user,identity,data,idempotency_key)
 
 
@@ -149,3 +151,8 @@ def notifications(slug: str, db: DB, limit: int = Query(100, ge=1, le=200), user
 @router.post('/driver/notifications/{identity}/read', response_model=DriverNotificationView)
 def read_notification(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return mark_read(db, user, identity, data, idempotency_key, DriverNotificationView)
+
+
+@router.post('/driver/routes/{identity}/acknowledge', response_model=RouteView)
+def acknowledge(slug: str, identity: UUID, data: RouteCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
+    return execution.acknowledge_route(db, user, identity, data, idempotency_key)

@@ -23,6 +23,22 @@ class Connection(TenantRecord, Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     event_cursor: Mapped[str | None] = mapped_column(String(42))
+    paused: Mapped[bool] = mapped_column(default=False)
+
+class ProviderControl(Base):
+    __tablename__ = 'connector_providers'
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), unique=True)
+    enabled: Mapped[bool]
+    version: Mapped[int] = mapped_column(default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+# Historical requests are retained privately after the request workflow was removed.
+class SetupRequest(TenantRecord, Base):
+    __tablename__ = 'connector_setup_requests'
+    __table_args__ = (UniqueConstraint('organization_id', 'id'), UniqueConstraint('organization_id', 'provider'))
+    provider: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20), default='REQUESTED')
 
 class Authorization(TenantRecord, Base):
     __tablename__ = 'connector_authorizations'
