@@ -34,3 +34,15 @@ def messages(slug: str, conversation_id: UUID, db: DB, after: int | None = Query
 @router.post('/chats/{conversation_id}/read', response_model=ReadView)
 def read(slug: str, conversation_id: UUID, data: ReadMark, db: DB, user: User = Depends(auth.company_user)):
     return service.read(db, user, conversation_id, data)
+
+
+@router.get('/drivers/{driver_id}/chat', response_model=ChannelView)
+def company_chat(slug: str, driver_id: UUID, db: DB, user: User = Depends(auth.company_user)):
+    from . import company
+    return company.channel(db, user, driver_id)
+
+
+@router.post('/drivers/{driver_id}/chat/messages', response_model=MessageView, status_code=201)
+def company_message(slug: str, driver_id: UUID, data: MessageCreate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.company_user)):
+    from . import company
+    return company.send(db, user, driver_id, data, idempotency_key)

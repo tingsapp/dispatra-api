@@ -10,7 +10,7 @@ class Conversation(Base):
     __tablename__ = 'conversations'
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     organization_id: Mapped[UUID] = mapped_column(ForeignKey('organizations.id'))
-    order_id: Mapped[UUID]
+    order_id: Mapped[UUID | None]
     kind: Mapped[str] = mapped_column(String(20))
     shipper_id: Mapped[UUID | None]
     driver_id: Mapped[UUID | None]

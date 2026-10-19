@@ -57,8 +57,8 @@ def for_chat_message(db, organization_id, message_id):
     if message is None or message.sender_role == 'DRIVER': return
     conversation = db.get(Conversation, message.conversation_id)
     if conversation is None or conversation.driver_id is None: return
-    order = db.get(Order, conversation.order_id)
+    order = db.get(Order, conversation.order_id) if conversation.order_id else None
     driver = db.scalar(select(User).where(User.organization_id == organization_id, User.driver_id == conversation.driver_id, User.active.is_(True)))
     title = 'Message from Dispatch' if message.sender_role == 'DISPATCHER' else f'Message from {message.sender_name}'
-    queue(db, organization_id, driver, 'message.created', title, f'{order.number if order else "Your order"}: new message',
-        {'type': 'chat', 'order_id': conversation.order_id, 'conversation_id': conversation.id})
+    queue(db, organization_id, driver, 'message.created', title, f'{order.number}: new message' if order else 'New message from your company',
+        {'type': 'chat' if order else 'company_chat', 'order_id': conversation.order_id, 'conversation_id': conversation.id})

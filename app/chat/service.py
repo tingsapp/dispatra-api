@@ -55,12 +55,12 @@ def order_for(db, user, identity):
 
 def visible(user, *columns):
     current = select(Route.driver_id).where(Route.organization_id == Order.organization_id, Route.id == Order.route_id).scalar_subquery()
-    query = select(*columns).select_from(Conversation).join(Order, and_(Order.organization_id == Conversation.organization_id,
+    query = select(*columns).select_from(Conversation).outerjoin(Order, and_(Order.organization_id == Conversation.organization_id,
         Order.id == Conversation.order_id)).where(Conversation.organization_id == user.organization_id)
     if user.role == 'SHIPPER':
         return query.where(Order.shipper_id == user.shipper_id, Conversation.shipper_id == user.shipper_id,
             or_(Conversation.kind == 'DISPATCH_SHIPPER', Conversation.driver_id == current))
-    if user.role == 'DRIVER': return query.where(Conversation.driver_id == user.driver_id, current == user.driver_id)
+    if user.role == 'DRIVER': return query.where(Conversation.driver_id == user.driver_id, or_(and_(Conversation.order_id.is_(None), Conversation.kind == 'DISPATCH_DRIVER'), current == user.driver_id))
     return query
 
 
@@ -97,6 +97,7 @@ def shipper_name(order):
 
 
 def title(user, kind, order, driver):
+    if order is None: return driver or 'Driver' if user.role == 'DISPATCHER' else 'Company'
     driver, shipper = driver or 'Driver', shipper_name(order)
     if user.role == 'DISPATCHER': return {'DISPATCH_SHIPPER': shipper, 'DISPATCH_DRIVER': driver, 'DRIVER_SHIPPER': f'{driver} ↔ {shipper}'}[kind]
     if user.role == 'SHIPPER': return DISPATCH if kind == 'DISPATCH_SHIPPER' else driver
@@ -222,15 +223,19 @@ def inbox(db, user, limit=100):
     counts = unread(db, user, ids)
     last = {row.conversation_id: row for row in db.scalars(select(Message).where(Message.organization_id == user.organization_id,
         Message.conversation_id.in_(ids)).distinct(Message.conversation_id).order_by(Message.conversation_id, Message.seq.desc()))}
-    route_ids = {order.route_id for _, order in rows if order.route_id}
+    route_ids = {order.route_id for _, order in rows if order is not None and order.route_id}
     with company_scope(db, user):
         currents = dict(db.execute(select(Route.id, Route.driver_id).where(Route.organization_id == user.organization_id, Route.id.in_(route_ids))).all()) if route_ids else {}
     names = driver_names(db, user, [conversation.driver_id for conversation, _ in rows])
     result = []
     for conversation, order in rows:
-        reason = closed_reason(user, conversation.kind, order, conversation.driver_id, currents.get(order.route_id))
+        if order is None:
+            from .company import closed_reason as company_closed_reason
+            reason = company_closed_reason(db, user, conversation.driver_id)
+        else:
+            reason = closed_reason(user, conversation.kind, order, conversation.driver_id, currents.get(order.route_id))
         message = last.get(conversation.id)
-        result.append(dict(conversation_id=conversation.id, order_id=order.id, order_number=order.number, order_status=order.status,
+        result.append(dict(conversation_id=conversation.id, order_id=order.id if order else None, order_number=order.number if order else None, order_status=order.status if order else None, driver_id=conversation.driver_id if order is None else None,
             kind=conversation.kind, title=title(user, conversation.kind, order, names.get(conversation.driver_id)), can_send=reason is None,
             unread=counts.get(conversation.id, 0), last_message=message_view(message, user) if message else None,
             last_message_at=conversation.last_message_at))

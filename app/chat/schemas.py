@@ -46,15 +46,16 @@ class ChannelView(BaseModel):
 
 class InboxItem(BaseModel):
     conversation_id: UUID
-    order_id: UUID
-    order_number: str
-    order_status: str
+    order_id: UUID | None
+    order_number: str | None
+    order_status: str | None
     kind: ChatKind
     title: str
     can_send: bool
     unread: int
     last_message: MessageView | None
     last_message_at: datetime | None
+    driver_id: UUID | None = None
 
 
 class ReadView(BaseModel):

@@ -186,7 +186,7 @@ One external TMS per company connects with no TMS development: the TMS owner cre
 
 ## 15. Order chat (2026-10-10)
 
-Every chat belongs to one Order. Migration `0033_order_chat` adds `conversations` (one per Order, kind and driver: `DISPATCH_SHIPPER`, `DISPATCH_DRIVER`, `DRIVER_SHIPPER`), immutable `conversation_messages` (plain text, 1–2000 characters, sender role and name snapshot, global `seq`) and per-account `conversation_reads`. `shipper_id`/`driver_id` hold only the participants, so the shared Shipper/driver forced-RLS predicate admits exactly that party's rows; composite tenant foreign keys bind each row to its Order, Shipper and driver.
+Every order chat belongs to one Order. Migration `0033_order_chat` adds `conversations` (one per Order, kind and driver: `DISPATCH_SHIPPER`, `DISPATCH_DRIVER`, `DRIVER_SHIPPER`), immutable `conversation_messages` (plain text, 1–2000 characters, sender role and name snapshot, global `seq`) and per-account `conversation_reads`. `shipper_id`/`driver_id` hold only the participants, so the shared Shipper/driver forced-RLS predicate admits exactly that party's rows; composite tenant foreign keys bind each row to its Order, Shipper and driver.
 
 Rules (`app/chat/service.py`): Dispatcher ↔ Shipper is open while the Order is New, Assigned or In progress; Dispatcher ↔ Driver and Driver ↔ Shipper are open while it is Assigned or In progress and only for the Order's current route driver. Completed and Cancelled Orders keep read-only history. A released/reassigned driver gets 404 for the Order's chats and messages; a new driver gets new conversations, and the Shipper sees only the current driver's. Dispatchers read every conversation of the company, including previous drivers' and Driver ↔ Shipper chats, but cannot send in Driver ↔ Shipper. API keys and other system principals cannot use chat.
 
@@ -336,3 +336,10 @@ The owner-only GET `/api/v1/platform/integrations/providers` returns connector i
 ## Public integration guide (2026-10-17)
 
 Public product chat refers to `/docs/integrations` and states that Rose Rocket/CartonCloud are in preparation and Truckbase/Tailwind TMS/AscendTMS are planned, with none of the five yet available. This is curated public release information, not a readiness endpoint or tenant projection. Keep the guide and public chat facts aligned when connector availability changes. Custom company API keys and signed webhooks retain their existing resource allowlist and company boundary. No new route, schema, activation, migration or vendor registration is added.
+
+
+## Ongoing company/driver chat (2026-10-19)
+
+Each company and driver has one persistent `DISPATCH_DRIVER` conversation with `order_id = null`, independent of assignments, route completion and duty. Existing order conversations keep their original history and authorization. `GET /companies/{slug}/drivers/{driver_id}/chat` returns a channel without creating data; `POST .../chat/messages` creates it on first send with the normal payload-bound Idempotency-Key, audit, participant-scoped messages/read positions and event audience. Only the company's dispatchers and that driver may access it; Shippers, unrelated drivers, other tenants and API/system principals cannot. Inactive/archived driver accounts are read-only for dispatchers. Driver/account edits serialize with sends.
+
+The shared inbox includes company threads with nullable order ID/number/status and the participating driver ID; thread/read endpoints and unread totals include them. The database retains forced participant RLS, composite tenant foreign keys, one-thread uniqueness, and restricts null Order IDs to DISPATCH_DRIVER. Downgrade refuses if company history exists. Dispatcher-to-driver push uses `type=company_chat` and conversation ID without an Order or message content. Shipper chat remains tied to its original Order and assignment.
