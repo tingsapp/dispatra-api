@@ -27,6 +27,7 @@ def test_native_session_delivery_and_browser_boundary(setup):
         assert check(native.get('/api/v1/auth/me'))['id'] == issued['account']['id']
         profile = check(native.get(BASE + '/driver/profile'))
         assert profile['id'] == w['driver']['id']
+        assert profile['time_zone'] == 'America/Vancouver'
         assert native.get('/api/v1/companies/other/driver/profile').status_code == 404
         assert native.get(BASE + '/invoices').status_code == 404
         assert native.post('/api/v1/auth/logout', headers={'Origin':'https://untrusted.example'}).status_code == 403
@@ -39,6 +40,25 @@ def test_native_session_delivery_and_browser_boundary(setup):
         assert w['client'].get(BASE + '/invoices').status_code == 404
         assert native.post('/api/v1/auth/logout').status_code == 204
         assert native.get('/api/v1/auth/me').status_code == 401
+
+
+def test_driver_timezone_is_company_owned_and_updates_with_settings(setup):
+    w = setup
+    with TestClient(app, headers={'X-Requested-With': 'Dispatra'}) as native:
+        native_login(native, w)
+        profile = check(native.get(BASE + '/driver/profile'))
+        assert profile['time_zone'] == 'America/Vancouver'
+        config = check(w['client'].get(BASE + '/settings'))
+        config['data']['time_zone'] = 'Asia/Tokyo'
+        response = w['client'].put(BASE + '/settings', json={'version': config['version'], 'data': config['data']}, headers={'Idempotency-Key': str(uuid4())})
+        check(response)
+        assert check(native.get(BASE + '/driver/profile'))['time_zone'] == 'Asia/Tokyo'
+        # A profile edit cannot change company settings; the response still resolves them.
+        assert native.patch(BASE + '/driver/profile', json={'version': profile['version'], 'phone': profile['phone'], 'time_zone': 'UTC'}, headers={'Idempotency-Key': str(uuid4())}).status_code == 422
+        edited = check(native.patch(BASE + '/driver/profile', json={'version': profile['version'], 'phone': profile['phone']}, headers={'Idempotency-Key': str(uuid4())}))
+        assert edited['time_zone'] == 'Asia/Tokyo'
+        assert native.get(BASE + '/settings').status_code == 403
+        assert native.get('/api/v1/companies/other/driver/profile').status_code == 404
 
 
 def test_notification_ownership_replay_and_release(setup):

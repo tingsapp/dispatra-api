@@ -15,6 +15,11 @@ def provider():
     return os.environ.get('ROUTING_PROVIDER','disabled')
 
 
+def dispatch_provider():
+    """Operational routing can change without changing saved commercial pricing."""
+    return os.environ.get('DISPATCH_ROUTING_PROVIDER', '').strip() or provider()
+
+
 def waypoint(address):
     if address.get('latitude') is None or address.get('longitude') is None:
         raise HTTPException(409,'Verified stop coordinates are required for road routing.')
@@ -36,8 +41,12 @@ def google(db, actor, method, payload, mask):
     return result
 
 
-def matrix(db, actor, stops):
-    if provider() == 'demo': return None
+def matrix(db, actor, stops, *, vehicle=None, departure=None, hazardous=False):
+    if dispatch_provider() == 'tomtom':
+        from . import tomtom
+        return tomtom.matrix(db, stops, vehicle, departure=departure, hazardous=hazardous)
+    if dispatch_provider() == 'demo': return None
+    if dispatch_provider() != 'google': raise HTTPException(409, 'Dispatch road routing is not configured.')
     if len(stops) > 501: raise HTTPException(409, 'Route planning supports at most 500 stops plus the driver origin.')
     # Bounded matrices remove the old 25-stop route limit while preserving provider request limits.
     cache = db.info.setdefault('dispatch_road_matrices', {}) if db is not None else {}

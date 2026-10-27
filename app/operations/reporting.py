@@ -137,6 +137,8 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
         DutySession.organization_id == user.organization_id,
         DutySession.ended_at.is_(None))))
     observed_at = now()
+    from app.order_watch.estimates import collect as collect_estimates
+    estimates = collect_estimates(db, user.organization_id, routes, observed_at)
     attention = {order.id: attention_flags(order, visits_by_stop, observed_at) for order in orders}
     from app.order_watch.models import Incident as OperationalIncident
     watched = db.scalars(select(OperationalIncident).where(OperationalIncident.organization_id == user.organization_id,
@@ -149,7 +151,8 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
         'location':points[d.id].data if d.id in points else None,
         'gps_status':'UNKNOWN' if d.id not in points else 'FRESH' if observed_at-points[d.id].captured_at < timedelta(minutes=2) else 'STALE',
         'app_last_seen':d.last_seen_at,'location_permission':d.location_permission} for d in drivers],
-        'routes':[{'id':str(r.id),'driver_id':str(r.driver_id),'vehicle_id':str(r.vehicle_id),'status':r.status,'plan':r.plan} for r in routes],
+        'routes':[{'id':str(r.id),'driver_id':str(r.driver_id),'vehicle_id':str(r.vehicle_id),'status':r.status,'plan':r.plan,
+                   'estimate':estimates.get(r.id)} for r in routes],
         'orders':[{'id':str(o.id),'number':o.number,'status':o.status,'route_id':str(o.route_id) if o.route_id else None,
                    'pricing_status':o.pricing.get('status'),'review_reason':o.pricing.get('review_reason'),
                    'attention_flags':[flag for flag,_ in attention[o.id]]} for o in orders],

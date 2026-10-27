@@ -3,8 +3,9 @@ import math
 from datetime import timedelta
 from fastapi import HTTPException
 from sqlalchemy import select
-from app.operations.models import Route,RouteStop,OrderStop,DutySession,Location
+from app.operations.models import Route,RouteStop,OrderStop,DutySession,Location,Vehicle,Order
 from app.operations import travel
+from app.operations.road_profiles import vehicle_data
 from .evidence import location_usable,separation
 
 
@@ -23,8 +24,11 @@ def route_input(db,actor,route,current):
     targets=[dict(stop_id=str(v.stop_id),address=stops[v.stop_id].data['address'],
         service_minutes=stops[v.stop_id].data.get('service_minutes')) for v in visits]
     if len(targets)>25 or any(t['address'].get('latitude') is None or t['address'].get('longitude') is None for t in targets):return None
+    vehicle=db.scalar(select(Vehicle).where(Vehicle.organization_id==actor.organization_id,Vehicle.id==route.vehicle_id))
+    orders=db.scalars(select(Order).where(Order.organization_id==actor.organization_id,Order.route_id==route.id)).all()
     return dict(route_id=str(route.id),route_version=route.version,generation=route.generation,next_stop_id=str(visits[0].stop_id),
         captured_at=location.captured_at,duty_id=str(duty.id),origin=location.data,targets=targets,
+        vehicle=vehicle_data(db,actor.organization_id,vehicle) if vehicle else None,hazardous=any(i.get('dangerous_goods') for o in orders for i in o.facts['items']),
         straight_line_metres=separation(location,targets[0]['address']),accuracy_metres=float(location.data['accuracy_m']))
 
 
@@ -35,6 +39,9 @@ def seconds(value):
 
 
 def obtain(actor,snapshot,current):
+    if travel.dispatch_provider()=='tomtom':
+        return tomtom_estimate(snapshot,current)
+    if travel.dispatch_provider()!='google':return None
     if travel.provider()!='google':return None
     targets=snapshot['targets']
     result=travel.google(None,actor,'directions/v2:computeRoutes',dict(
@@ -61,3 +68,22 @@ def obtain(actor,snapshot,current):
             straight_line_metres=snapshot.get('straight_line_metres'),accuracy_metres=snapshot.get('accuracy_metres'),duty_id=snapshot.get('duty_id'))
     except (KeyError,IndexError,ValueError,TypeError,AttributeError):
         raise HTTPException(503,'Traffic estimate could not be verified.') from None
+
+
+def tomtom_estimate(snapshot,current):
+    from app.operations import tomtom
+    targets=snapshot['targets']
+    result=tomtom.route([snapshot['origin']]+[t['address'] for t in targets],snapshot.get('vehicle'),
+        departure=current,hazardous=snapshot.get('hazardous',False))
+    elapsed=added=distance=0
+    rows=[]
+    for target,leg in zip(targets,result['legs']):
+        elapsed+=leg['seconds'];added+=leg['delay_seconds'];distance+=leg['metres']
+        rows.append(dict(stop_id=target['stop_id'],eta=(current+timedelta(seconds=elapsed)).isoformat(),
+            traffic_added_seconds=round(added),road_distance_metres=round(distance)))
+        service=target['service_minutes']
+        if service is None:break
+        elapsed+=service*60
+    return dict(source='TomTom truck route with traffic',provider='TOMTOM',truck_profile_applied=True,
+        vehicle_access_verified=False,stops=rows,straight_line_metres=snapshot.get('straight_line_metres'),
+        accuracy_metres=snapshot.get('accuracy_metres'),duty_id=snapshot.get('duty_id'))

@@ -51,11 +51,11 @@ def seed_pricing(db, actor, organization=None):
                 equipment = [item.upper().replace(' ', '_') for item in source.get('equipment', [])] or (['LIFTGATE'] if source.get('hasLiftgate') else [])
                 payload.update(payload_kg=source['payloadCapacityKg'], volume_m3=source.get('cargoVolumeCbm'),
                     length_cm=source.get('cargoLengthCm'), width_cm=source.get('cargoWidthCm'), height_cm=source.get('cargoHeightCm'),
-                    pallet_capacity=source['palletCapacity'], equipment=equipment)
+                    pallet_capacity=source['palletCapacity'], equipment=equipment, road_profile=source['roadProfile'])
             if code == 'LIFTGATE': payload['required_equipment'] = ['LIFTGATE']
             if code == 'HELPER': payload['required_crew'] = 2
             db.add(Catalog(id=identity, organization_id=org_id, kind=kind, code=code,
-                active=source['active'], data=CatalogData(**payload).model_dump(mode='json')))
+                active=source['active'], data=CatalogData(**payload).model_dump(mode='json', exclude=set() if kind == 'VEHICLE_TYPE' else {'road_profile'})))
             created += 1
     for source in SEED['pricing']['rateCards']:
         if db.scalar(select(RateCard.id).where(RateCard.organization_id == org_id, RateCard.code == source['code'])): continue

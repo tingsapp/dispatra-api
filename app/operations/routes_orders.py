@@ -94,10 +94,10 @@ def order_tracking_map(slug: str, identity: UUID, db: DB, user: User = Depends(b
 
 @router.get('/orders/{identity}/road-path', response_model=RoadPathView)
 def order_road_path(slug: str, identity: UUID, db: DB, user: User = Depends(booking_actor)):
-    """Map geometry through the Order's own stops from one Google Routes request per call; clients cache it per Order version."""
-    from .travel import order_road_path as road_path
+    """Own-Order road preview before assignment; assigned truck geometry requires its explicit road profile."""
+    from .road_display import path
     row = orders.visible_order(db, user, identity)
-    return {'points': road_path(db, user, Booking.model_validate(row.facts))}
+    return path(db, user, row)
 
 
 @router.put('/orders/{identity}', response_model=OrderView)

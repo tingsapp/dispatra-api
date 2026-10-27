@@ -1,5 +1,6 @@
 """Pure, contextual signals from authoritative milestones and qualified provider estimates."""
 from datetime import timedelta
+from app.dispatch.explanations import no_candidate_description, exclusion_lines
 from .evidence import deadline,fact,instant
 from .playbooks import suggestions
 
@@ -17,9 +18,17 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
         due=deadline(order,first) if first else order.scheduled_at
         if due<=current or no_candidate:
             evidence=[fact('Pickup commitment',due.isoformat(),'Booked pickup window'),fact('Assignment','Unassigned','Order record',current)]
-            if no_candidate:evidence.append(fact('Dispatch result','No candidate in the recorded dispatch screening; road feasibility requires validation','Dispatch agent decision',no_candidate.created_at))
+            description = 'Pickup commitment has passed without an assignment.' if due<=current else 'The Dispatch agent recorded no feasible candidate. Review the assignment before pickup.'
+            if no_candidate:
+                excluded = no_candidate.excluded
+                evidence.append(fact('Dispatch result','No candidate in the recorded dispatch screening; road feasibility requires validation','Dispatch agent decision',no_candidate.created_at))
+                for line in exclusion_lines(excluded):
+                    evidence.append(fact('Driver eligibility check',line,'Dispatch agent decision',no_candidate.created_at))
+                description += '\n' + no_candidate_description(excluded)
+                # Incidents have a 1000-character description; full driver checks remain in JSON evidence.
+                if len(description)>1000: description = description[:944] + '… See all driver eligibility checks in the evidence.'
             result.append(signal(f'unassigned:{order.id}:{order.version}','UNASSIGNED','Order needs an assignment',
-                'Pickup commitment has passed without an assignment.' if due<=current else 'The Dispatch agent recorded no feasible candidate. Review the assignment before pickup.',
+                description,
                 evidence,severity='CRITICAL' if due<=current else 'WARNING',due=due))
         return result
     if not route:return result
@@ -60,7 +69,7 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
                     'The traffic-aware road estimate and booked remaining service times exceed the arrival window. This is a prediction; vehicle-specific access is not verified.',
                     [fact('Predicted arrival',eta.isoformat(),estimate.data['source'],estimate.observed_at),
                      fact('Arrival deadline',due.isoformat(),'Booked stop window'),
-                     fact('Extra travel against provider baseline',f'{round(traffic/60,1)} minutes','Traffic-aware duration minus provider static duration',estimate.observed_at),
+                     fact('Extra travel against provider baseline',f'{round(traffic/60,1)} minutes','Traffic delay reported or derived from provider baseline',estimate.observed_at),
                      fact('Remaining road distance',f'{round(prediction["road_distance_metres"]/1000,1)} km','Routing provider',estimate.observed_at),
                      fact('Position captured',estimate.captured_at.isoformat(),'Driver location',estimate.captured_at),
                      fact('Distance from next stop',f"{estimate.data.get('straight_line_metres')} metres straight-line; reported accuracy {estimate.data.get('accuracy_metres')} metres. Proximity does not confirm arrival.",'Qualified location calculation',estimate.captured_at)],stop.id,certainty='PREDICTED',due=due))

@@ -1,4 +1,5 @@
-"""Safe planning from confirmed custody. No change to completed/current visits or cargo ownership."""
+from .road_profiles import vehicle_data
+"""Safe planning from confirmed custody. Completed/arrived visits and cargo ownership remain protected."""
 from datetime import datetime, timedelta
 from decimal import Decimal
 from fastapi import HTTPException
@@ -92,7 +93,8 @@ def plan(db, actor, route, orders, driver, vehicle, *, road=True):
     table = None
     origins = None
     if road:
-        table = matrix(db, actor, [{'id': '__driver__', 'address': origin}] + stops)
+        table = matrix(db, actor, [{'id': '__driver__', 'address': origin}] + stops,
+            vehicle=vehicle_data(db, actor.organization_id, vehicle), departure=start, hazardous=any(i['dangerous_goods'] for o in orders for i in o.facts['items']))
         if table is not None: origins = {s['id']: table.get(('__driver__', s['id'])) for s in stops}
     deadline = route.started_at + timedelta(minutes=driver.data['maximum_work_minutes'])
     if shift_end: deadline = min(deadline, shift_end)
@@ -100,7 +102,10 @@ def plan(db, actor, route, orders, driver, vehicle, *, road=True):
         raise HTTPException(409, 'Route exceeds vehicle Maximum stops.')
     items = [i for o in orders for i in o.facts['items'] if i['delivery_id'] not in done]
     result = optimize(stops, items, vehicle.data, start, deadline, driver.data['maximum_work_minutes'], table,
-        initial_load=load, visited=done, first_stop=first['id'], origin=origin, origin_minutes=origins)
+        initial_load=load, visited=done, first_stop=first['id'] if pending[0].arrived_at else None,
+        origin=origin, origin_minutes=origins)
+    from .travel import dispatch_provider
+    if road and dispatch_provider() == 'tomtom': result['travel_basis'] = 'TOMTOM_TRUCK_TRAFFIC'
     # No new promise may postpone an existing visit beyond its previous feasible promise/window.
     result['planned_at'] = route.planned_at.isoformat()
     result['live_origin_at'] = points[0].captured_at.isoformat()

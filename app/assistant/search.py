@@ -2,7 +2,7 @@
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import select, func, or_, exists
-from app.operations.models import Order, OrderStop, Driver, Vehicle, Shipper, Settings
+from app.operations.models import Order, OrderStop, Driver, Vehicle, Shipper, Settings, Route
 from .schemas import AssistantReference
 
 LIMIT = 8
@@ -31,6 +31,25 @@ def collect(db, org, plan):
     like = pattern(term)
     zone = company_zone(db, org)
     references, counts = [], {}
+    routes = None
+    estimates = None
+    def current_estimates():
+        nonlocal routes, estimates
+        if estimates is None:
+            from app.order_watch.estimates import collect as collect_estimates
+            from app.models import now
+            routes = list(db.scalars(select(Route).where(Route.organization_id == org, Route.status == 'IN_PROGRESS')))
+            estimates = collect_estimates(db, org, routes, now())
+        return estimates
+
+    def timing(estimate, stop_ids=None):
+        predictions = [p for p in estimate['stops'] if stop_ids is None or p['stop_id'] in stop_ids] if estimate else []
+        if not predictions: return ' · No current qualified traffic ETA is available.'
+        text = ''.join(f' · Stop {p["stop_id"]} ETA {p["eta"]}; traffic delay {round(p["traffic_added_seconds"] / 60, 1)} min' for p in predictions[:3])
+        text += f'; {estimate["source"]}, observed {estimate["observed_at"]}'
+        if len(predictions) > 3: text += ' · Additional stop estimates omitted; open Monitor.'
+        return text
+
     kinds = set(plan.kinds) or {'ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER'}
     queries = []
     if 'ORDER' in kinds:
@@ -69,11 +88,16 @@ def collect(db, org, plan):
                 stops = db.scalars(select(OrderStop).where(OrderStop.organization_id == org, OrderStop.order_id == row.id).order_by(OrderStop.created_at, OrderStop.id)).all()
                 addresses = [f'{"Pickup" if stop.kind == "PICKUP" else "Drop-off"}: {stop.data.get("address", {}).get("text", "")}' + (f' (Contact: {stop.data["contact_name"]})' if stop.data.get('contact_name') else '') for stop in stops]
                 ref.detail = f'{STATUS_LABELS[row.status]} · {row.booking.get("shipper", {}).get("name", "")} · {row.scheduled_at.astimezone(zone).strftime("%b %d, %Y %H:%M %Z")} · ' + (' → '.join(addresses)[:1000] + (' [Additional stop details omitted; open the order.]' if len(' → '.join(addresses)) > 1000 else ''))
+                if row.route_id and row.status == 'IN_PROGRESS':
+                    ref.detail += timing(current_estimates().get(row.route_id), {str(stop.id) for stop in stops})
             elif kind == 'DRIVER':
                 ref.label, ref.driver_id = row.name, identity
                 ref.detail = f'{row.number} · {row.phone} · {row.email} · {"Profile active" if row.active else "Profile inactive"}'
                 vehicle = db.scalar(select(Vehicle).where(Vehicle.organization_id == org, Vehicle.id == row.vehicle_id, Vehicle.archived_at.is_(None))) if row.vehicle_id else None
                 ref.detail += f' · Vehicle: {vehicle.number} ({vehicle.plate})' if vehicle else ' · No registered vehicle'
+                values = current_estimates()
+                active_route = next((route for route in routes if route.driver_id == row.id), None)
+                if active_route: ref.detail += timing(values.get(active_route.id))
             elif kind == 'VEHICLE':
                 ref.label, ref.detail = row.number, f'{row.plate} · {"Profile active" if row.active else "Profile inactive"}'
                 driver = db.execute(select(Driver.id, Driver.name).where(Driver.organization_id == org, Driver.vehicle_id == row.id, Driver.archived_at.is_(None)).order_by(Driver.id).limit(1)).first()

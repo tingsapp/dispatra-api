@@ -521,7 +521,14 @@
         "hasLiftgate": false,
         "requiresCommercialLicense": false,
         "description": "Enclosed van (Ford Transit, Mercedes-Benz Sprinter, Ram ProMaster) for parcels, courier work and small moves.",
-        "active": true
+        "active": true,
+        "roadProfile": {
+          "length_m": "6.7056",
+          "width_m": "2.1336",
+          "height_m": "2.8194",
+          "gross_weight_kg": 4990,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_reefer_van",
@@ -542,7 +549,14 @@
         "equipment": [
           "Refrigeration"
         ],
-        "code": "REFRIGERATED_VAN"
+        "code": "REFRIGERATED_VAN",
+        "roadProfile": {
+          "length_m": "6.7056",
+          "width_m": "2.1336",
+          "height_m": "3.048",
+          "gross_weight_kg": 4990,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_2_ton",
@@ -559,7 +573,14 @@
         "hasLiftgate": false,
         "requiresCommercialLicense": false,
         "description": "Box body on a van cutaway chassis; the common local delivery and apartment moving truck.",
-        "active": true
+        "active": true,
+        "roadProfile": {
+          "length_m": "7.62",
+          "width_m": "2.4384",
+          "height_m": "3.2004",
+          "gross_weight_kg": 6578,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_3_ton",
@@ -579,7 +600,14 @@
         "active": true,
         "equipment": [
           "Liftgate"
-        ]
+        ],
+        "roadProfile": {
+          "length_m": "10.9728",
+          "width_m": "2.5908",
+          "height_m": "4.2",
+          "gross_weight_kg": 11794,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_reefer_truck",
@@ -600,7 +628,14 @@
         "equipment": [
           "Refrigeration"
         ],
-        "code": "REFRIGERATED_TRUCK"
+        "code": "REFRIGERATED_TRUCK",
+        "roadProfile": {
+          "length_m": "8.2296",
+          "width_m": "2.4384",
+          "height_m": "3.6576",
+          "gross_weight_kg": 7938,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_flatbed_truck",
@@ -621,7 +656,14 @@
         "equipment": [
           "Open deck"
         ],
-        "code": "FLATBED_TRUCK"
+        "code": "FLATBED_TRUCK",
+        "roadProfile": {
+          "length_m": "10.9728",
+          "width_m": "2.5908",
+          "height_m": "4.2",
+          "gross_weight_kg": 11794,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_53_trailer",
@@ -639,7 +681,14 @@
         "requiresCommercialLicense": true,
         "description": "Enclosed semi-trailer pulled by a tractor for full truckload freight; Class 1 / AZ licence.",
         "active": true,
-        "code": "DRY_VAN_53FT"
+        "code": "DRY_VAN_53FT",
+        "roadProfile": {
+          "length_m": "22.86",
+          "width_m": "2.5908",
+          "height_m": "4.1148",
+          "gross_weight_kg": 36288,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_reefer_trailer",
@@ -660,7 +709,14 @@
         "equipment": [
           "Refrigeration"
         ],
-        "code": "REFRIGERATED_TRAILER"
+        "code": "REFRIGERATED_TRAILER",
+        "roadProfile": {
+          "length_m": "22.86",
+          "width_m": "2.5908",
+          "height_m": "4.1148",
+          "gross_weight_kg": 36288,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_flatbed_trailer",
@@ -681,7 +737,14 @@
         "equipment": [
           "Open deck"
         ],
-        "code": "FLATBED_TRAILER"
+        "code": "FLATBED_TRAILER",
+        "roadProfile": {
+          "length_m": "22.86",
+          "width_m": "2.5908",
+          "height_m": "4.1148",
+          "gross_weight_kg": 36288,
+          "axle_weight_kg": null
+        }
       },
       {
         "id": "veh_5_ton",
@@ -701,7 +764,14 @@
         "active": false,
         "equipment": [
           "Liftgate"
-        ]
+        ],
+        "roadProfile": {
+          "length_m": "10.9728",
+          "width_m": "2.5908",
+          "height_m": "4.2",
+          "gross_weight_kg": 11794,
+          "axle_weight_kg": null
+        }
       }
     ],
     "accessorials": [
@@ -993,7 +1063,7 @@
               "accessorials"
             ],
             "active": false,
-            "note": "BC provincial tax. Freight transportation is generally exempt \u2014 enable only if you sell taxable goods or equipment rental."
+            "note": "BC provincial tax. Freight transportation is generally exempt. Enable only if you sell taxable goods or equipment rental."
           }
         ]
       },

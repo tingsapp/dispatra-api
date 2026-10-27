@@ -1,3 +1,4 @@
+from .road_profiles import vehicle_data
 from datetime import datetime
 from uuid import UUID
 from fastapi import HTTPException
@@ -85,10 +86,13 @@ def plan_route(db, actor, orders, driver, vehicle, planned_at, road=True, origin
                 stop['window_start'] = max(requested, order.scheduled_at).isoformat()
             stops.append(stop)
     items = [i for order in orders for i in order.facts['items']]
-    from .travel import matrix
-    travel_table = matrix(db, actor, ([{'id': '__driver__', 'address': origin}] if origin else []) + stops) if road else None
+    from .travel import matrix, dispatch_provider
+    travel_table = matrix(db, actor, ([{'id': '__driver__', 'address': origin}] if origin else []) + stops,
+        vehicle=vehicle_data(db, actor.organization_id, vehicle), departure=planned_at, hazardous=any(i['dangerous_goods'] for i in items)) if road else None
     origins = {s['id']: travel_table.get(('__driver__',s['id'])) for s in stops} if origin and travel_table is not None else None
-    return optimize(stops, items, vehicle.data, planned_at, end, driver.data['maximum_work_minutes'], travel_table, origin=origin, origin_minutes=origins)
+    result = optimize(stops, items, vehicle.data, planned_at, end, driver.data['maximum_work_minutes'], travel_table, origin=origin, origin_minutes=origins)
+    if road and dispatch_provider() == 'tomtom': result['travel_basis'] = 'TOMTOM_TRUCK_TRAFFIC'
+    return result
 
 
 def rebuild(db, actor, route, orders, driver, vehicle, planned_at):

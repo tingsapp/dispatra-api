@@ -62,7 +62,9 @@ def test_live_insert_preserves_custody_visits_prices_and_requires_review(fleet):
     assert updated['stops'][0]['id']==completed['id']
     assert updated['stops'][0]['movements']==completed['movements']
     assert datetime.fromisoformat(updated['stops'][0]['completed_at'])==datetime.fromisoformat(completed['completed_at'])
-    assert updated['stops'][1]['stop_id']==next_id
+    second_pickup=next(s['id'] for s in second['facts']['stops'] if s['kind']=='PICKUP')
+    assert updated['stops'][1]['stop_id']==second_pickup
+    assert next(v['id'] for v in updated['stops'] if v['stop_id']==next_id)==route['stops'][1]['id']
     assert len(updated['stops'])==4
     for order in (first,second):
         assert check(w['client'].get(BASE+f'/orders/{order["id"]}'))['pricing']==order['pricing']
@@ -172,12 +174,12 @@ def test_movement_handles_approaching_departing_stationary_and_unknown():
     assert movement([point(49.26,0)],target)==('UNKNOWN',None)
 
 
-def test_routing_uses_confirmed_load_and_protects_next_stop():
+def test_routing_uses_confirmed_load_and_rejects_overload_before_dropoff():
     current=now();vehicle=dict(payload_kg=100,volume_m3=10,pallet_capacity=2,length_cm=300,width_cm=200,height_cm=200)
     stops=[dict(id='new',kind='PICKUP',address=address()),dict(id='old-delivery',kind='DROPOFF',address=address()),dict(id='new-delivery',kind='DROPOFF',address=address())]
     items=[dict(id='old',quantity=1,weight_kg=90,length_cm=20,width_cm=20,height_cm=20,pickup_id='done',delivery_id='old-delivery'),
            dict(id='new-item',quantity=1,weight_kg=20,length_cm=20,width_cm=20,height_cm=20,pickup_id='new',delivery_id='new-delivery')]
-    result=optimize(stops,items,vehicle,current,None,480,initial_load=[90,.008,0],visited={'done'},first_stop='old-delivery')
+    result=optimize(stops,items,vehicle,current,None,480,initial_load=[90,.008,0],visited={'done'})
     assert result['stops'][0]['stop_id']=='old-delivery' and result['stops'][-1]['load_kg']=='0'
     from fastapi import HTTPException
     with pytest.raises(HTTPException):optimize(stops,items,vehicle,current,None,480,initial_load=[90,.008,0],visited={'done'},first_stop='new')
@@ -252,3 +254,61 @@ def test_legacy_driver_app_keeps_existing_work_but_cannot_receive_live_changes(f
     reviewed=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/acknowledge',dict(version=route['version'],generation=route['generation'])))
     assert reviewed['plan']['live_updates_supported'] and reviewed['generation']==route['generation']
     assert check(suggest(w['client'],second,True))['candidates']
+
+
+@pytest.mark.parametrize('constraint,expected_pickup_first',[
+    ('available',True),('capacity',False),('deadline',False),('arrived',False),
+])
+def test_live_insertion_can_collect_nearer_pickup_before_old_delivery(fleet,monkeypatch,constraint,expected_pickup_first):
+    """Actual assignment replans from GPS, preserving custody, arrival and deadlines."""
+    from app.operations import travel
+    w=fleet
+    raw=booking(w['shipper']['id'],w['service'],w['type_id'])
+    for stop in raw['stops']:stop['service_minutes']=0
+    raw['stops'][1]['address']=address(lat=49.28)
+    raw['items'][0]['weight_kg']='900' if constraint=='capacity' else '10'
+    if constraint=='deadline':raw['stops'][1]['window_end']=(now()+timedelta(minutes=6)).isoformat()
+    first=new_order(w,**raw);route=assign(w,first)
+    route=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'],supports_live_updates=True)))
+    route=complete_pickup(w,route);gps(w)
+    old_delivery=route['stops'][1]
+    if constraint=='arrived':route=arrive(w,route,old_delivery)
+    raw=booking(w['shipper']['id'],w['service'],w['type_id'])
+    for stop in raw['stops']:stop['service_minutes']=0
+    raw['stops'][0]['address']=address(lat=49.265)
+    raw['stops'][1]['address']=address(lat=49.29)
+    raw['items'][0]['weight_kg']='200' if constraint=='capacity' else '10'
+    second=new_order(w,**raw)
+    pickup,delivery=[stop['id'] for stop in second['facts']['stops']]
+    old=old_delivery['stop_id']
+    costs={('__driver__',pickup):1,('__driver__',old):5,('__driver__',delivery):8,
+        (pickup,old):10 if constraint=='deadline' else 2,(pickup,delivery):5,
+        (old,pickup):4,(old,delivery):3,(delivery,old):10,(delivery,pickup):10}
+    def roads(db,actor,stops,**kwargs):
+        return {(a['id'],b['id']):0 if a['id']==b['id'] else costs.get((a['id'],b['id']),20)
+            for a in stops for b in stops}
+    monkeypatch.setattr(travel,'matrix',roads)
+    decision=check(suggest(w['client'],second))
+    assert decision['candidates'][0]['metrics']['live_insertion']
+    updated=check(approve(w,decision))['route']
+    ids=[visit['stop_id'] for visit in updated['stops']]
+    assert (ids[1]==pickup) is expected_pickup_first
+    assert ids.index(pickup)<ids.index(delivery)
+    assert updated['stops'][0]['id']==route['stops'][0]['id']
+    assert updated['stops'][0]['movements']==route['stops'][0]['movements']
+    old_after=next(v for v in updated['stops'] if v['stop_id']==old)
+    assert old_after['id']==old_delivery['id']
+    if constraint=='arrived':assert datetime.fromisoformat(old_after['arrived_at'])==datetime.fromisoformat(route['stops'][1]['arrived_at'])
+    if constraint=='deadline':assert datetime.fromisoformat(old_after['planned_at'])<=datetime.fromisoformat(first['facts']['stops'][1]['window_end'])
+    assert updated['generation']==route['generation']
+    assert updated['plan']['requires_acknowledgement']
+    assert all(float(v['load_kg'])<=1000 for v in updated['plan']['stops'])
+    for order in (first,second):assert check(w['client'].get(BASE+f'/orders/{order["id"]}'))['pricing']==order['pricing']
+    # A delayed command for the old instructions cannot mark the new current stop arrived.
+    stale=dict(version=route['version'],generation=route['generation'],captured_at=now().isoformat())
+    assert post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/stops/{old_delivery["id"]}/arrive',stale).status_code==409
+    ack=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/acknowledge',dict(version=updated['version'],generation=updated['generation'])))
+    if expected_pickup_first:
+        wrong=dict(version=ack['version'],generation=ack['generation'],captured_at=now().isoformat())
+        assert post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/stops/{old_delivery["id"]}/arrive',wrong).status_code==409
+        assert arrive(w,ack,ack['stops'][1])['stops'][1]['arrived_at']

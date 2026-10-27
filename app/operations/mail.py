@@ -69,6 +69,6 @@ def send_quote(db, actor, identity, data, key):
         title = f'Quote {str(row.id)[:8].upper()}'
         body_text, body_html = _message(company.company_name, title, str(data.recipient), row.pricing, details)
         return _queue(db, actor, recipient=str(data.recipient).lower(),
-            subject=f'{company.company_name} — {title}', body_text=body_text,
+            subject=f'{company.company_name}, {title}', body_text=body_text,
             body_html=body_html, quote_id=row.id)
     return command(db, actor, key, 'quote-send:' + str(identity), data.model_dump(mode='json'), run)

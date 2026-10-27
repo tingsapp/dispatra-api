@@ -6,7 +6,7 @@ from app import auth
 from app.models import User
 from app.routes import DB, OperationKey
 from . import execution, dispatch
-from .common import record, version, command, changed
+from .common import record, version, command, changed, settings
 from .models import Route, Driver, Evidence, OrderStop, Order, DutySession, Vehicle, Catalog
 from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, RouteView, ProofEvidence
 
@@ -20,9 +20,10 @@ from .schemas import DriverProfileView, DriverProfileUpdate, DriverOrderView
 @router.get('/driver/profile', response_model=DriverProfileView)
 def profile(slug: str, db: DB, user: User = Depends(auth.driver)):
     row = record(db,Driver,user,user.driver_id)
+    _, config = settings(db, user)
     duty = db.scalar(select(DutySession).where(DutySession.organization_id == user.organization_id, DutySession.driver_id == row.id, DutySession.ended_at.is_(None)))
     vehicle = record(db,Vehicle,user,row.vehicle_id) if row.vehicle_id else None
-    return {'id': row.id, 'version': row.version, 'number': row.number, 'name': row.name, 'email': row.email, 'phone': row.phone,
+    return {'time_zone': config.time_zone, 'id': row.id, 'version': row.version, 'number': row.number, 'name': row.name, 'email': row.email, 'phone': row.phone,
         'address': row.address, 'service_city': row.service_city, 'vehicle_id': row.vehicle_id,
         'duty': DutyView.model_validate(duty).model_dump(mode='json') if duty else None,
         'location_permission': row.location_permission,

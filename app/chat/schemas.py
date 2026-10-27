@@ -33,6 +33,7 @@ class MessagePage(BaseModel):
 
 
 class ChannelView(BaseModel):
+    shipper_id: UUID | None = None
     """One chat the caller can open on an Order. `conversation_id` is null until the first message."""
     kind: ChatKind
     conversation_id: UUID | None
@@ -45,6 +46,7 @@ class ChannelView(BaseModel):
 
 
 class InboxItem(BaseModel):
+    shipper_id: UUID | None = None
     conversation_id: UUID
     order_id: UUID | None
     order_number: str | None

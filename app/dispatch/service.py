@@ -22,6 +22,7 @@ from app.operations.models import Order, Route, Settings
 from app.operations.schemas import Assignment
 from . import rank
 from .candidates import blocker, evaluate
+from .explanations import no_candidate_description
 from .models import DispatchDecision
 from .schemas import DecisionView
 from app.agents.telemetry import monitor_run, step
@@ -148,8 +149,7 @@ def no_driver(db, organization_id, orders):
     result = {}
     for row in rows:
         if row.status != 'NO_CANDIDATE' or row.mode != 'AUTO' or row.order_version != waiting[row.order_id].version: continue
-        reasons = Counter(item['reason'] for item in row.excluded)
-        result[row.order_id] = f'Auto dispatch found no driver: {reasons.most_common(1)[0][0]}' if reasons else 'Auto dispatch found no active driver.'
+        result[row.order_id] = no_candidate_description(row.excluded)
     return result
 
 

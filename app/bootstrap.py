@@ -3,6 +3,7 @@
     python -m app.bootstrap                   create the single ADMIN
     python -m app.bootstrap --status          report whether an owner exists
     python -m app.bootstrap --reset-password  set a new owner password and revoke owner sessions
+    python -m app.bootstrap --change-login    change owner login ID without changing its password
 
 There is no public platform-owner signup. Credentials are read from the terminal only and are never printed or stored in plaintext.
 """
@@ -74,6 +75,26 @@ def reset_owner_password(db, password):
     return account
 
 
+
+def change_owner_login(db, login_id, expected_version):
+    login_id = TypeAdapter(LoginID).validate_python(login_id.strip().lower())
+    db.execute(text('SELECT pg_advisory_xact_lock(:lock)'), {'lock': LOCK})
+    context(db, platform=True)
+    account = owner(db)
+    if not account: raise SystemExit('No platform owner exists; nothing was changed.')
+    if account.version != expected_version: raise SystemExit('Owner account changed. Read the current version and retry.')
+    if account.login_id == login_id: return account
+    old_login = account.login_id
+    account.login_id = login_id
+    account.version += 1; account.updated_at = now()
+    db.execute(delete(LoginSession).where(LoginSession.user_id == account.id))
+    buckets = [digest(f'login:{role}:{login}') for role in ('ADMIN', 'None') for login in (old_login, login_id)]
+    db.execute(delete(LoginBucket).where(LoginBucket.key.in_(buckets)))
+    audit(db, account, 'platform_owner.login_changed', account.id, None)
+    db.flush()
+    return account
+
+
 def prompt_login():
     while True:
         try: return TypeAdapter(LoginID).validate_python(input('Platform owner login ID: ').strip().lower())
@@ -94,6 +115,7 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--status', action='store_true', help='report whether a platform owner exists')
     mode.add_argument('--reset-password', action='store_true', help='set a new owner password and revoke its sessions')
+    mode.add_argument('--change-login', action='store_true', help='change the owner login ID, preserving its password and revoking owner sessions')
     args = parser.parse_args(argv)
     url = os.environ.get('MIGRATION_DATABASE_URL')
     if not url: raise SystemExit('Load the private .env first: MIGRATION_DATABASE_URL is not set.')
@@ -104,10 +126,18 @@ def main(argv=None):
         context(db, platform=True)
         existing = db.scalar(select(User).where(User.role == 'ADMIN'))
         login_id = existing.login_id if existing else None
+        version = existing.version if existing else None
         if args.status:
             print(f'Platform owner exists: {login_id} ({"active" if existing.active else "inactive"}).' if existing else 'No platform owner exists.')
             return
     if not sys.stdin.isatty(): raise SystemExit('Run this command in an interactive terminal; credentials are not accepted from pipes or files.')
+    if args.change_login:
+        if not existing: raise SystemExit('No platform owner exists; nothing was changed.')
+        print(f'Changing the login ID for platform owner {login_id}; the password stays the same.')
+        new_login = prompt_login()
+        with Session(engine) as db, db.begin(): change_owner_login(db, new_login, version)
+        print(f'Platform owner login is {new_login}. Sign in again at /admin with the existing password.')
+        return
     if args.reset_password:
         if not existing: raise SystemExit('No platform owner exists. Run without --reset-password to create one.')
         print(f'Resetting the password for platform owner {login_id}.')

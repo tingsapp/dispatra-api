@@ -63,3 +63,12 @@ def test_public_chat_rate_limits_and_origin_boundary(client, monkeypatch):
 def test_new_public_path_cannot_be_registered_as_company():
     with pytest.raises(ValueError):
         OrganizationCreate(name='Collision', slug='how-it-works', admin_login='test', password='Initial-password-123!')
+
+
+def test_public_identity_uses_dispatra_and_keeps_ai_disclosure():
+    assert public.INSTRUCTIONS.startswith('You are Dispatra.')
+    assert 'When asked your name, say "I am Dispatra."' in public.INSTRUCTIONS
+    assert 'Never call yourself Dispatra Chat, Dispatra AI' in public.INSTRUCTIONS
+    assert 'even if earlier conversation history does' in public.INSTRUCTIONS
+    assert 'Do not claim to be human' in public.INSTRUCTIONS
+    assert 'Do not use em dashes in replies' in public.INSTRUCTIONS

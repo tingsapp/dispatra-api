@@ -46,3 +46,15 @@ def company_chat(slug: str, driver_id: UUID, db: DB, user: User = Depends(auth.c
 def company_message(slug: str, driver_id: UUID, data: MessageCreate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.company_user)):
     from . import company
     return company.send(db, user, driver_id, data, idempotency_key)
+
+
+@router.get('/shippers/{shipper_id}/chat', response_model=ChannelView)
+def shipper_company_chat(slug: str, shipper_id: UUID, db: DB, user: User = Depends(auth.company_user)):
+    from . import company
+    return company.channel(db, user, shipper_id, kind='shipper')
+
+
+@router.post('/shippers/{shipper_id}/chat/messages', response_model=MessageView, status_code=201)
+def shipper_company_message(slug: str, shipper_id: UUID, data: MessageCreate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.company_user)):
+    from . import company
+    return company.send(db, user, shipper_id, data, idempotency_key, kind='shipper')

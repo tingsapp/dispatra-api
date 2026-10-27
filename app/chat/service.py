@@ -10,7 +10,7 @@ RLS admits only a participant's rows; these checks add the current-driver and st
 from contextlib import nullcontext
 from uuid import uuid4
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from app.models import now
 from app.services import audit
@@ -58,8 +58,9 @@ def visible(user, *columns):
     query = select(*columns).select_from(Conversation).outerjoin(Order, and_(Order.organization_id == Conversation.organization_id,
         Order.id == Conversation.order_id)).where(Conversation.organization_id == user.organization_id)
     if user.role == 'SHIPPER':
-        return query.where(Order.shipper_id == user.shipper_id, Conversation.shipper_id == user.shipper_id,
-            or_(Conversation.kind == 'DISPATCH_SHIPPER', Conversation.driver_id == current))
+        return query.where(Conversation.shipper_id == user.shipper_id, or_(
+            and_(Conversation.order_id.is_(None), Conversation.kind == 'DISPATCH_SHIPPER'),
+            and_(Order.shipper_id == user.shipper_id, or_(Conversation.kind == 'DISPATCH_SHIPPER', Conversation.driver_id == current))))
     if user.role == 'DRIVER': return query.where(Conversation.driver_id == user.driver_id, or_(and_(Conversation.order_id.is_(None), Conversation.kind == 'DISPATCH_DRIVER'), current == user.driver_id))
     return query
 
@@ -136,6 +137,12 @@ def channels(db, user, order_id):
     for kind, driver_id in wanted:
         row = existing.get((kind, driver_id))
         reason = closed_reason(user, kind, order, driver_id, current)
+        if kind == 'DISPATCH_SHIPPER':
+            from .company import channel
+            company_view = channel(db, user, order.shipper_id, 'shipper')
+            result.append({**company_view, 'title': title(user, kind, order, None),
+                'can_send': reason is None and company_view['can_send'], 'closed_reason': reason or company_view['closed_reason']})
+            continue
         result.append(dict(kind=kind, conversation_id=row.id if row else None, title=title(user, kind, order, names.get(driver_id)),
             driver_id=driver_id if user.role == 'DISPATCHER' else None, can_send=reason is None, closed_reason=reason,
             unread=counts.get(row.id, 0) if row else 0, last_message_at=row.last_message_at if row else None))
@@ -149,9 +156,16 @@ def conversation_for(db, user, identity):
     return row
 
 
+def history_ids(db, user, conversation):
+    if conversation.kind != 'DISPATCH_SHIPPER': return [conversation.id]
+    from .company import conversations
+    return [row.id for row in conversations(db, user, conversation.shipper_id, 'shipper')]
+
+
 def messages(db, user, identity, after=None, before=None, limit=50):
     conversation, _ = conversation_for(db, user, identity)
-    query = select(Message).where(Message.organization_id == user.organization_id, Message.conversation_id == conversation.id)
+    ids = history_ids(db, user, conversation)
+    query = select(Message).where(Message.organization_id == user.organization_id, Message.conversation_id.in_(ids))
     if after is not None:
         rows = db.scalars(query.where(Message.seq > after).order_by(Message.seq).limit(limit + 1)).all()
         page = rows[:limit]
@@ -172,8 +186,11 @@ def mark(db, user, conversation, seq):
 def read(db, user, identity, data):
     """Monotonic, so retries are naturally idempotent; never moves past the newest message."""
     conversation, _ = conversation_for(db, user, identity)
-    top = db.scalar(select(func.max(Message.seq)).where(Message.organization_id == user.organization_id, Message.conversation_id == conversation.id))
-    if top: mark(db, user, conversation, min(data.seq, top))
+    ids = history_ids(db, user, conversation)
+    top = db.scalar(select(func.max(Message.seq)).where(Message.organization_id == user.organization_id, Message.conversation_id.in_(ids)))
+    if top:
+        for row in db.scalars(select(Conversation).where(Conversation.organization_id == user.organization_id, Conversation.id.in_(ids))):
+            mark(db, user, row, min(data.seq, top))
     return {'unread': total_unread(db, user)}
 
 
@@ -201,6 +218,10 @@ def send(db, user, order_id, kind, data, key):
         reason = closed_reason(user, kind, order, driver_id, current)
         if reason: raise HTTPException(409, reason)
         conversation = open_conversation(db, user, order, kind, driver_id)
+        if kind == 'DRIVER_SHIPPER':
+            # Serialize first sends through commit so simultaneous messages cannot both notify.
+            db.scalar(select(Conversation).where(Conversation.organization_id == user.organization_id,
+                Conversation.id == conversation.id).with_for_update())
         row = Message(id=uuid4(), organization_id=user.organization_id, conversation_id=conversation.id, shipper_id=conversation.shipper_id,
             driver_id=conversation.driver_id, sender_user_id=user.id, sender_role=user.role, sender_name=sender_name(db, user, order),
             body=data.body, created_at=now())
@@ -216,7 +237,10 @@ def inbox(db, user, limit=100):
     """Conversations with messages, newest first, for the Messages page and per-order badges."""
     person(user)
     with scope(db, user):
-        rows = db.execute(visible(user, Conversation, Order).where(Conversation.last_message_at.is_not(None))
+        group = case((Conversation.kind == 'DISPATCH_SHIPPER', Conversation.shipper_id), else_=Conversation.id)
+        latest = (visible(user, Conversation.id).where(Conversation.last_message_at.is_not(None))
+            .distinct(group).order_by(group, Conversation.last_message_at.desc(), Conversation.id).subquery())
+        rows = db.execute(visible(user, Conversation, Order).where(Conversation.id.in_(select(latest.c.id)))
             .order_by(Conversation.last_message_at.desc(), Conversation.id).limit(limit)).all()
     if not rows: return []
     ids = [conversation.id for conversation, _ in rows]
@@ -228,7 +252,14 @@ def inbox(db, user, limit=100):
         currents = dict(db.execute(select(Route.id, Route.driver_id).where(Route.organization_id == user.organization_id, Route.id.in_(route_ids))).all()) if route_ids else {}
     names = driver_names(db, user, [conversation.driver_id for conversation, _ in rows])
     result = []
+    seen_shippers = set()
     for conversation, order in rows:
+        if conversation.kind == 'DISPATCH_SHIPPER':
+            if conversation.shipper_id not in seen_shippers:
+                from .company import shipper_inbox_item
+                result.append(shipper_inbox_item(db, user, conversation.shipper_id))
+                seen_shippers.add(conversation.shipper_id)
+            continue
         if order is None:
             from .company import closed_reason as company_closed_reason
             reason = company_closed_reason(db, user, conversation.driver_id)

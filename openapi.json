@@ -8122,7 +8122,7 @@
           "Orders, quotes and delivery"
         ],
         "summary": "Order Road Path",
-        "description": "Map geometry through the Order's own stops from one Google Routes request per call; clients cache it per Order version.",
+        "description": "Own-Order road preview before assignment; assigned truck geometry requires its explicit road profile.",
         "operationId": "order_road_path_api_v1_companies__slug__orders__identity__road_path_get",
         "parameters": [
           {
@@ -20482,6 +20482,272 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/shippers/{shipper_id}/chat": {
+      "get": {
+        "tags": [
+          "Order chat"
+        ],
+        "summary": "Shipper Company Chat",
+        "operationId": "shipper_company_chat_api_v1_companies__slug__shippers__shipper_id__chat_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "shipper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipper Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/shippers/{shipper_id}/chat/messages": {
+      "post": {
+        "tags": [
+          "Order chat"
+        ],
+        "summary": "Shipper Company Message",
+        "operationId": "shipper_company_message_api_v1_companies__slug__shippers__shipper_id__chat_messages_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "shipper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipper Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/driver/push-device": {
       "put": {
         "tags": [
@@ -25790,6 +26056,221 @@
           }
         }
       }
+    },
+    "/api/v1/public/assistant/voice": {
+      "post": {
+        "tags": [
+          "Public Dispatra Chat"
+        ],
+        "summary": "Public Voice",
+        "operationId": "public_voice_api_v1_public_assistant_voice_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceOffer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/assistant/voice/end": {
+      "post": {
+        "tags": [
+          "Public Dispatra Chat"
+        ],
+        "summary": "End Public Voice",
+        "operationId": "end_public_voice_api_v1_public_assistant_voice_end_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceEnd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -27896,6 +28377,17 @@
             "title": "Exclusive Vehicle",
             "default": false
           },
+          "road_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruckRoutingProfile-Input"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required when creating or saving a Vehicle Type. Nullable only for legacy reads and other catalogue kinds."
+          },
           "payload_kg": {
             "anyOf": [
               {
@@ -28057,6 +28549,17 @@
             "type": "boolean",
             "title": "Exclusive Vehicle",
             "default": false
+          },
+          "road_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruckRoutingProfile-Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required when creating or saving a Vehicle Type. Nullable only for legacy reads and other catalogue kinds."
           },
           "payload_kg": {
             "anyOf": [
@@ -28225,6 +28728,18 @@
       },
       "ChannelView": {
         "properties": {
+          "shipper_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipper Id"
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -28305,8 +28820,7 @@
           "unread",
           "last_message_at"
         ],
-        "title": "ChannelView",
-        "description": "One chat the caller can open on an Order. `conversation_id` is null until the first message."
+        "title": "ChannelView"
       },
       "ChargeLine": {
         "properties": {
@@ -30962,6 +31476,10 @@
       },
       "DriverProfileView": {
         "properties": {
+          "time_zone": {
+            "type": "string",
+            "title": "Time Zone"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -31034,6 +31552,7 @@
         },
         "type": "object",
         "required": [
+          "time_zone",
           "id",
           "version",
           "number",
@@ -31670,6 +32189,18 @@
       },
       "InboxItem": {
         "properties": {
+          "shipper_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipper Id"
+          },
           "conversation_id": {
             "type": "string",
             "format": "uuid",
@@ -33651,6 +34182,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Plan"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrafficEstimateView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -35487,6 +36028,31 @@
             },
             "type": "array",
             "title": "Points"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "description": "Unassigned map preview only; not truck feasibility or dispatch evidence.",
+            "default": false
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "GOOGLE",
+              "TOMTOM"
+            ],
+            "title": "Provider",
+            "default": "GOOGLE"
+          },
+          "truck_profile_applied": {
+            "type": "boolean",
+            "title": "Truck Profile Applied",
+            "default": false
+          },
+          "attribution": {
+            "type": "string",
+            "title": "Attribution",
+            "default": ""
           }
         },
         "type": "object",
@@ -37894,6 +38460,78 @@
         "title": "TrackingView",
         "description": "Order tracking for its Shipper or a dispatcher; `location` is present only while `live` and fresh."
       },
+      "TrafficEstimateView": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Source"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "truck_profile_applied": {
+            "type": "boolean",
+            "title": "Truck Profile Applied",
+            "default": false
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/TrafficStopEstimate"
+            },
+            "type": "array",
+            "maxItems": 25,
+            "title": "Stops"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "observed_at",
+          "captured_at",
+          "stops"
+        ],
+        "title": "TrafficEstimateView"
+      },
+      "TrafficStopEstimate": {
+        "properties": {
+          "stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Stop Id"
+          },
+          "eta": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Eta"
+          },
+          "traffic_added_seconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Traffic Added Seconds"
+          },
+          "road_distance_metres": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Road Distance Metres"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stop_id",
+          "eta",
+          "traffic_added_seconds",
+          "road_distance_metres"
+        ],
+        "title": "TrafficStopEstimate"
+      },
       "TrialSignup": {
         "properties": {
           "slug": {
@@ -37954,6 +38592,129 @@
           "password"
         ],
         "title": "TrialSignup"
+      },
+      "TruckRoutingProfile-Input": {
+        "properties": {
+          "length_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 50.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Length M"
+          },
+          "width_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Width M"
+          },
+          "height_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Height M"
+          },
+          "gross_weight_kg": {
+            "type": "integer",
+            "maximum": 200000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Gross Weight Kg"
+          },
+          "axle_weight_kg": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axle Weight Kg"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "length_m",
+          "width_m",
+          "height_m",
+          "gross_weight_kg"
+        ],
+        "title": "TruckRoutingProfile",
+        "description": "Exterior envelope and conservative loaded weight, separate from cargo capacity."
+      },
+      "TruckRoutingProfile-Output": {
+        "properties": {
+          "length_m": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Length M"
+          },
+          "width_m": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Width M"
+          },
+          "height_m": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Height M"
+          },
+          "gross_weight_kg": {
+            "type": "integer",
+            "maximum": 200000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Gross Weight Kg"
+          },
+          "axle_weight_kg": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axle Weight Kg"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "length_m",
+          "width_m",
+          "height_m",
+          "gross_weight_kg"
+        ],
+        "title": "TruckRoutingProfile",
+        "description": "Exterior envelope and conservative loaded weight, separate from cargo capacity."
       },
       "VehicleData-Input": {
         "properties": {
@@ -38122,6 +38883,16 @@
               }
             ],
             "title": "Height Cm"
+          },
+          "road_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruckRoutingProfile-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "pallet_capacity": {
             "type": "integer",
@@ -38305,6 +39076,16 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Height Cm"
+          },
+          "road_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruckRoutingProfile-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "pallet_capacity": {
             "type": "integer",
@@ -38535,6 +39316,62 @@
           "version"
         ],
         "title": "VersionCommand"
+      },
+      "VoiceEnd": {
+        "properties": {
+          "end_token": {
+            "type": "string",
+            "maxLength": 400,
+            "minLength": 10,
+            "title": "End Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "end_token"
+        ],
+        "title": "VoiceEnd"
+      },
+      "VoiceOffer": {
+        "properties": {
+          "sdp": {
+            "type": "string",
+            "maxLength": 64000,
+            "minLength": 10,
+            "pattern": "^v=0\\r?\\n",
+            "title": "Sdp"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sdp"
+        ],
+        "title": "VoiceOffer"
+      },
+      "VoiceSession": {
+        "properties": {
+          "sdp": {
+            "type": "string",
+            "title": "Sdp"
+          },
+          "max_seconds": {
+            "type": "integer",
+            "title": "Max Seconds"
+          },
+          "end_token": {
+            "type": "string",
+            "title": "End Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sdp",
+          "max_seconds",
+          "end_token"
+        ],
+        "title": "VoiceSession"
       },
       "WebhookReceipt": {
         "properties": {

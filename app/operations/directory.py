@@ -46,18 +46,56 @@ def save_settings(db, actor, data, key):
 def save_catalog(db, actor, data, key, identity=None):
     def run():
         company_lock(db, actor)
-        if identity:
-            row = record(db, Catalog, actor, identity, True)
+        row = record(db, Catalog, actor, identity, True) if identity else None
+        if row:
             version(row, data.version)
             if not row.active: raise HTTPException(409, 'Deleted catalogue entry cannot be edited.')
-            row.data = data.data.model_dump(mode='json')
+        kind = row.kind if row else data.kind
+        values = data.data.model_dump(mode='json')
+        if 'road_profile' not in data.data.model_fields_set:
+            values.pop('road_profile', None)
+            if row and 'road_profile' in row.data: values['road_profile'] = row.data['road_profile']
+        if kind == 'VEHICLE_TYPE' and not values.get('road_profile'):
+            raise HTTPException(422, 'Outside length, width, height and loaded gross weight are required for a Vehicle Type.')
+        if values.get('road_profile') and kind != 'VEHICLE_TYPE':
+            raise HTTPException(422, 'Truck routing measurements belong to a Vehicle Type.')
+        if values.get('road_profile'):
+            gross = values['road_profile']['gross_weight_kg']
+            payloads = db.scalars(select(Vehicle.data['payload_kg'].astext).where(
+                Vehicle.organization_id == actor.organization_id, Vehicle.type_id == identity,
+                Vehicle.archived_at.is_(None))).all() if identity else []
+            from decimal import Decimal
+            if any(Decimal(payload) > gross for payload in payloads) or (values.get('payload_kg') and Decimal(values['payload_kg']) > gross):
+                raise HTTPException(422, 'Loaded gross weight must cover this type and its registered vehicles’ payload capacities.')
+        if row:
+            profile_changed = values.get('road_profile') != row.data.get('road_profile')
+            legacy_disabled = 'road_profile' in values and 'road_profile' not in row.data
+            if profile_changed or legacy_disabled:
+                active = select(Route.id).join(Vehicle, (Vehicle.id == Route.vehicle_id) &
+                    (Vehicle.organization_id == Route.organization_id)).where(Route.organization_id == actor.organization_id,
+                    Vehicle.organization_id == actor.organization_id, Vehicle.type_id == row.id,
+                    Route.status.in_(['PLANNED', 'IN_PROGRESS']))
+                if not profile_changed:
+                    active = active.where(Vehicle.data['road_profile'].astext.is_not(None))
+                if db.scalar(active.limit(1)):
+                    from .travel import dispatch_provider
+                    # Initial setup does not replace an existing truck profile or rebuild a Google-planned trip.
+                    first_setup = (not row.data.get('road_profile') and bool(values.get('road_profile'))
+                        and dispatch_provider() != 'tomtom'
+                        and not db.scalar(active.where(Vehicle.data['road_profile'].astext.is_not(None)).limit(1)))
+                    if not first_setup:
+                        raise HTTPException(409, 'Vehicles of this type have active Routes; finish them before changing existing truck routing measurements.')
+        if row:
+            row.data = values
             changed(db, actor, row, 'catalog.updated')
         else:
-            row = Catalog(organization_id=actor.organization_id, kind=data.kind, code=data.code, data=data.data.model_dump(mode='json'))
+            row = Catalog(organization_id=actor.organization_id, kind=kind, code=data.code, data=values)
             db.add(row); db.flush()
             audit(db, actor, 'catalog.created', row.id, actor.organization_id)
         return CatalogView.model_validate(row).model_dump(mode='json')
-    return command(db, actor, key, 'catalog:' + str(identity or 'new'), data.model_dump(mode='json'), run)
+    payload = data.model_dump(mode='json')
+    if 'road_profile' not in data.data.model_fields_set: payload['data'].pop('road_profile', None)
+    return command(db, actor, key, 'catalog:' + str(identity or 'new'), payload, run)
 
 
 def save_rate(db, actor, data, key, identity=None):
@@ -193,8 +231,16 @@ def save_vehicle(db, actor, data, key, identity=None):
         company = db.get(Organization, actor.organization_id)
         row.number = vehicle_number(payload.unit_number, company.name, company.slug, row.number if identity else None)
         if not identity: db.add(row)
+        type_changed = identity and row.type_id != payload.type_id
         row.type_id, row.plate, row.province = payload.type_id, payload.plate.upper(), payload.province.upper()
-        row.active, row.data = payload.active, payload.model_dump(mode='json')
+        values = payload.model_dump(mode='json')
+        if identity and 'road_profile' not in payload.model_fields_set:
+            values['road_profile'] = None if type_changed else row.data.get('road_profile')
+            if values['road_profile'] and values['road_profile']['gross_weight_kg'] < payload.payload_kg:
+                raise HTTPException(422, 'Update loaded gross weight before increasing payload capacity.')
+        if vehicle_type.data.get('road_profile') and vehicle_type.data['road_profile']['gross_weight_kg'] < payload.payload_kg:
+            raise HTTPException(422, 'Update loaded gross weight in Vehicle Types before increasing this vehicle’s payload capacity.')
+        row.active, row.data = payload.active, values
         if identity: changed(db, actor, row, 'vehicle.updated')
         else:
             db.flush(); audit(db, actor, 'vehicle.created', row.id, actor.organization_id)
@@ -203,7 +249,11 @@ def save_vehicle(db, actor, data, key, identity=None):
         billing = db.get(CompanyBilling, actor.organization_id)
         if billing: request_sync(billing)
         return jsonable_encoder(dump(row))
-    return command(db, actor, key, 'vehicle:' + str(identity or 'new'), data.model_dump(mode='json'), run)
+    values = data.model_dump(mode='json')
+    payload = data.data if identity else data
+    if 'road_profile' not in payload.model_fields_set:
+        (values['data'] if identity else values).pop('road_profile', None)
+    return command(db, actor, key, 'vehicle:' + str(identity or 'new'), values, run)
 
 
 def driver_view(db, actor, row):

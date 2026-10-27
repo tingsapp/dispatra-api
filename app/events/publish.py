@@ -137,8 +137,10 @@ def _write(db, organization_id, items):
                 actor_id=actor.id, entity='notification', entity_id=row.id, entity_version=1, order_id=row.order_id,
                 route_id=row.route_id, dispatchers=False, shipper_id=row.shipper_id, driver_id=row.driver_id,
                 user_id=row.recipient_user_id, correlation_id=correlation, causation_id=event.id))
-            mail.queue(row, note.user)
-            push.for_notification(db, row, note.user)
+            # Chat already has its own phone push and never sends order-update email.
+            if action != 'message.created':
+                mail.queue(row, note.user)
+                push.for_notification(db, row, note.user)
         db.flush()
 
 

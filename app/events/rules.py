@@ -51,6 +51,20 @@ def notes(db, action, entity_id, audience, actor, recipients):
 
     def to(users, severity, title, body): return [Note(user, severity, title, body) for user in users]
 
+    if action == 'message.created':
+        from app.chat.models import Conversation, Message
+        message = db.get(Message, entity_id)
+        conversation = db.get(Conversation, message.conversation_id) if message else None
+        if not order or not conversation or conversation.kind != 'DRIVER_SHIPPER': return []
+        if message.sender_role not in {'SHIPPER', 'DRIVER'}: return []
+        previous = db.scalar(select(Message.id).where(Message.organization_id == recipients.organization_id,
+            Message.conversation_id == conversation.id, Message.sender_role == message.sender_role,
+            Message.seq < message.seq).limit(1))
+        if previous: return []
+        sender = 'Shipper' if message.sender_role == 'SHIPPER' else 'driver'
+        return to(driver() if message.sender_role == 'SHIPPER' else shipper(), 'INFO',
+            f'New message from {sender}', f'{number}: your {sender} sent you a message. Open the order to reply.')
+
     if action in {'watch.detected','watch.escalated','watch.driver_replied','watch.update_requested'}:
         from app.order_watch.models import Incident
         incident = db.get(Incident, entity_id)

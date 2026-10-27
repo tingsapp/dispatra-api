@@ -115,6 +115,21 @@ class SettingsUpdate(Version):
     data: SettingsData
 
 
+class TruckRoutingProfile(Input):
+    """Exterior envelope and conservative loaded weight, separate from cargo capacity."""
+    length_m: Annotated[Decimal, Field(gt=0, le=50, allow_inf_nan=False)]
+    width_m: Annotated[Decimal, Field(gt=0, le=10, allow_inf_nan=False)]
+    height_m: Annotated[Decimal, Field(gt=0, le=10, allow_inf_nan=False)]
+    gross_weight_kg: int = Field(strict=True, gt=0, le=200000)
+    axle_weight_kg: int | None = Field(default=None, strict=True, gt=0, le=100000)
+
+    @model_validator(mode='after')
+    def axle_valid(self):
+        if self.axle_weight_kg and self.axle_weight_kg > self.gross_weight_kg:
+            raise ValueError('Axle weight cannot exceed loaded gross weight')
+        return self
+
+
 class CatalogData(Input):
     name: Name
     description: Text = ''
@@ -122,6 +137,7 @@ class CatalogData(Input):
     taxable: bool = True
     fuel_eligible: bool = False
     exclusive_vehicle: bool = False
+    road_profile: TruckRoutingProfile | None = Field(default=None, description='Required when creating or saving a Vehicle Type. Nullable only for legacy reads and other catalogue kinds.')
     payload_kg: Positive | None = None
     volume_m3: Positive | None = None
     length_cm: Positive | None = None
@@ -131,6 +147,12 @@ class CatalogData(Input):
     equipment: list[Name] = Field(default_factory=list, max_length=30)
     required_equipment: list[Name] = Field(default_factory=list, max_length=30)
     required_crew: int = Field(default=1, ge=1, le=10)
+
+    @model_validator(mode='after')
+    def road_weight_valid(self):
+        if self.road_profile and self.payload_kg is not None and self.road_profile.gross_weight_kg < self.payload_kg:
+            raise ValueError('Loaded gross weight must include at least the vehicle type payload capacity')
+        return self
 
 
 class CatalogCreate(Input):
@@ -261,6 +283,7 @@ class VehicleData(Input):
     length_cm: Positive
     width_cm: Positive
     height_cm: Positive
+    road_profile: TruckRoutingProfile | None = None
     pallet_capacity: int = Field(default=0, ge=0, le=100)
     maximum_stops: int | None = Field(default=None, ge=1, le=500)
     equipment: list[Name] = Field(default_factory=list, max_length=30)
@@ -273,6 +296,8 @@ class VehicleData(Input):
         if self.availability == 'UNAVAILABLE' and not self.unavailable_reason: raise ValueError('Unavailable reason is required')
         if self.unavailable_from and self.unavailable_until and self.unavailable_until <= self.unavailable_from: raise ValueError('Unavailable interval is invalid')
         physical_volume = self.length_cm * self.width_cm * self.height_cm / Decimal(1000000)
+        if self.road_profile and self.road_profile.gross_weight_kg < self.payload_kg:
+            raise ValueError('Loaded gross weight must include at least the vehicle payload capacity')
         self.volume_m3 = min(self.volume_m3,physical_volume) if self.volume_m3 is not None else physical_volume
         self.unit_number = (self.unit_number.strip() or self.name.strip()).upper()
         if not self.unit_number or len(self.unit_number) > 50:
@@ -663,6 +688,7 @@ class ShipperProfileUpdate(Version):
     warehouse: Address
 
 class DriverProfileView(BaseModel):
+    time_zone: str
     id: UUID
     version: int
     number: str
@@ -746,12 +772,28 @@ class MonitorOrder(BaseModel):
     attention_flags: list[str] = Field(default_factory=list)
 
 
+class TrafficStopEstimate(BaseModel):
+    stop_id: UUID
+    eta: AwareDatetime
+    traffic_added_seconds: int = Field(ge=0)
+    road_distance_metres: int = Field(ge=0)
+
+
+class TrafficEstimateView(BaseModel):
+    source: str = Field(max_length=100)
+    observed_at: AwareDatetime
+    captured_at: AwareDatetime
+    truck_profile_applied: bool = False
+    stops: list[TrafficStopEstimate] = Field(max_length=25)
+
+
 class MonitorRoute(BaseModel):
     id: UUID
     driver_id: UUID
     vehicle_id: UUID
     status: str
     plan: dict
+    estimate: TrafficEstimateView | None = None
 
 
 class MonitorIssue(BaseModel):
@@ -883,6 +925,10 @@ class TrackingView(BaseModel):
 class RoadPathView(BaseModel):
     """Driving path through an Order's stops as [latitude, longitude] points, for map display only."""
     points: list[tuple[float, float]]
+    preview: bool = Field(default=False, description='Unassigned map preview only; not truck feasibility or dispatch evidence.')
+    provider: Literal['GOOGLE', 'TOMTOM'] = 'GOOGLE'
+    truck_profile_applied: bool = False
+    attribution: str = ''
 
 
 class BookingDriverView(BaseModel):

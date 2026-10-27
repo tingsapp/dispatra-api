@@ -32,14 +32,14 @@ class Sender:
         base = os.environ.get('PUBLIC_WEB_URL', '').strip().rstrip('/')
         link = f'{base}/{company.slug}/shipper' if base else ''
         text = '\n'.join([f'Hello {shipper.name},', '', notification.body, *([f'', f'View your orders: {link}'] if link else []), '',
-            f'— {company.name}', '', f'You receive order updates from {company.name}. Ask them to turn these emails off.']) + '\n'
+            f'{company.name}', '', f'You receive order updates from {company.name}. Ask them to turn these emails off.']) + '\n'
         html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
             f'<p>Hello {escape(shipper.name)},</p><p>{escape(notification.body)}</p>'
             + (f'<p><a href="{escape(link)}">View your orders</a></p>' if link else '')
-            + f'<p>— {escape(company.name)}</p><p style="color:#64748b;font-size:12px">You receive order updates from {escape(company.name)}. Ask them to turn these emails off.</p></html>')
+            + f'<p>{escape(company.name)}</p><p style="color:#64748b;font-size:12px">You receive order updates from {escape(company.name)}. Ask them to turn these emails off.</p></html>')
         identity = uuid4()
         self.db.flush()  # the delivery references the notification row
         self.db.add(EmailDelivery(id=identity, organization_id=self.organization_id, notification_id=notification.id, requested_by=user.id,
-            recipient=shipper.email.lower(), subject=f'{company.name} — {notification.title}', body_text=text, body_html=html,
+            recipient=shipper.email.lower(), subject=f'{company.name}, {notification.title}', body_text=text, body_html=html,
             message_id=f'<dispatra-{identity.hex}@dispatra.com>'))
         self.db.add(OutboxEvent(organization_id=self.organization_id, event_type='email.requested', entity_id=identity))
