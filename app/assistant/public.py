@@ -8,10 +8,13 @@ from .schemas import AssistantQuestion
 
 router = APIRouter(prefix='/api/v1/public/assistant', tags=['Public Dispatra Chat'], lifespan=voice.lifespan)
 
-PUBLIC_FACTS = '''Dispatra is delivery and dispatch software, a product of Tingsapp Inc. in British Columbia, Canada.
+PUBLIC_FACTS = '''Dispatra is an AI-powered automated dispatcher, a product of Tingsapp Inc. in British Columbia, Canada.
+Its public headline is "AI that runs your dispatch while keeping you in control". It automates eligible-driver assignment in AUTO
+mode and optimizes routes after assignment, with dispatchers overseeing progress and exceptions.
 It connects order intake, dispatch, routes, driver delivery tracking and proof of delivery.
-The full TMS + Smart Dispatching plan includes the Dispatra workspace for orders, shippers, drivers,
-vehicles, rate cards, pricing, dispatch and delivery. Smart Dispatching is for teams using an external TMS;
+Full Workspace (previously AI Dispatch + Workspace and TMS + Smart Dispatching) includes the Dispatra workspace for orders,
+shippers, drivers, vehicles, rate cards, pricing, dispatch and delivery. AI Dispatch (formerly Smart
+Dispatching) is for teams using an external TMS;
 supported integrations depend on the provider and configuration. The public Integrations & API guide
 is at /docs/integrations. Rose Rocket and CartonCloud are in preparation; Truckbase, Tailwind TMS and
 AscendTMS are planned. None of these five named connectors is available to connect yet. Do not claim
