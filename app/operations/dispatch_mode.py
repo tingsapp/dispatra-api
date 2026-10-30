@@ -9,6 +9,7 @@ from app.connectors.availability import enabled
 def require_connected_tms(db, actor):
     providers = db.scalars(select(Connection.provider).where(
         Connection.organization_id == actor.organization_id,
+        Connection.provider != 'samsara',
         Connection.credentials.is_not(None),
         Connection.paused.is_(False),
         or_(Connection.status == 'CONNECTED', and_(Connection.status == 'SYNCING', Connection.last_sync_at.is_not(None))),

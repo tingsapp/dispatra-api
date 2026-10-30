@@ -3,6 +3,7 @@
 An Order is created only through `orders.create_order`, acting as the matched Shipper's own account with the
 `AGENT` actor type, so Shipper permissions, pricing, idempotency, audit and events all apply unchanged.
 """
+import json
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 from fastapi import HTTPException
@@ -16,7 +17,7 @@ from app.operations import orders
 from app.operations.common import settings
 from app.operations.models import Catalog, Shipper
 from app.operations.schemas import Booking
-from . import booking, extract, geocode, mailbox, vault
+from . import booking, extract, geocode, mailbox, vault, batch
 from .models import EmailIntake, MailboxConnection
 from app.agents.telemetry import step
 
@@ -88,6 +89,7 @@ def poll_mailbox(organization_id: UUID):
             values = dict(organization_id=organization_id, message_id=parsed.message_id, mailbox_uid=message.uid,
                 received_at=parsed.received_at, from_address=parsed.from_address, from_name=parsed.from_name, subject=parsed.subject,
                 body='' if message.too_large else parsed.body, sender_verified=parsed.sender_verified,
+                attachment_secret=vault.seal(json.dumps(parsed.attachments)) if parsed.attachments and not message.too_large else None,
                 status='FAILED' if message.too_large or not parsed.from_address else 'RECEIVED', missing=[], summary='',
                 error_code='MESSAGE_TOO_LARGE' if message.too_large else None if parsed.from_address else 'NO_SENDER', attempts=0)
             identity = db.scalar(insert(EmailIntake).values(id=uuid4(), version=1, created_at=now(), updated_at=now(), **values)
@@ -126,7 +128,10 @@ def _claim(organization_id, intake_id):
         _, config = settings(db, actor)
         services = _choices(db, organization_id, 'SERVICE')
         default = str(config.default_service_id) if config.default_service_id else None
-        return {'email': {'subject': intake.subject, 'body': intake.body, 'received_at': intake.received_at.isoformat()},
+        try: files=json.loads(vault.unseal(intake.attachment_secret,'email attachments')) if intake.attachment_secret else []
+        except (HTTPException, ValueError): files=[{'error':'Saved email attachments could not be read and require review.'}]
+        return {'email': {'subject': intake.subject, 'body': intake.body, 'received_at': intake.received_at.isoformat(), 'attachments': files},
+            'saved_booking': intake.extraction if intake.extraction and intake.extraction.get('_email_batch') else None,
             'verified': intake.sender_verified,
             'context': {'time_zone': config.time_zone, 'services': services, 'vehicle_types': _choices(db, organization_id, 'VEHICLE_TYPE'),
                 'default_service_id': default if any(s['id'] == default for s in services) else None,
@@ -167,37 +172,60 @@ def process(organization_id: UUID, intake_id: UUID):
     step('Claiming the next queued email.', organization_id)
     claimed = _claim(organization_id, intake_id)
     if claimed is None: return
+    issues=[file['error'] for file in claimed['email'].get('attachments',[]) if file.get('error')]
+    if issues: return _finish(organization_id, intake_id, lambda db,intake: _review(db,intake,None,list(dict.fromkeys(issues))))
     ctx = claimed['context']
     prompt_shipper = {'name': ctx['shipper']['name'], 'warehouse_city': (ctx['shipper']['warehouse'] or {}).get('city')} if ctx['shipper'] else None
     step('Extracting booking facts with the Order agent.', organization_id)
-    try: result = extract.extract(claimed['email'], {**ctx, 'shipper': prompt_shipper})
+    try: result = extract.Extraction.model_validate(claimed['saved_booking']) if claimed.get('saved_booking') else extract.extract(claimed['email'], {**ctx, 'shipper': prompt_shipper})
     except extract.Unavailable as error:
         step('Order agent extraction unavailable; retry policy applied.', organization_id, 'WARNING')
         def failed(db, intake):
+            if error.code == 'ATTACHMENT_UNREADABLE':
+                return _review(db,intake,None,['The attachments could not be read reliably. Review the email or request a clearer file.'])
             intake.error_code = error.code
             if not error.retry or intake.attempts >= MAX_ATTEMPTS:
                 intake.status = 'FAILED'
                 signal(db, 'intake.failed', intake)
         return _finish(organization_id, intake_id, failed)
-    facts = result.model_dump(mode='json')
-    def described(db, intake): intake.extraction, intake.summary, intake.error_code = facts, result.summary[:500], None
+    step('Validating booking facts and addresses.',organization_id)
+    if isinstance(result,extract.ExtractionBatch):
+        if result.review_reasons:
+            def unclear(db,row):
+                row.extraction=result.model_dump(mode='json');row.summary=result.summary[:500]
+                _review(db,row,None,result.review_reasons)
+            return _finish(organization_id,intake_id,unclear)
+        prepared=[_prepare(booking_result,ctx) for booking_result in result.orders]
+        def split(db,parent):
+            batch.save(db,parent,prepared,lambda db,row,item,draft,missing:_settle(db,row,item,draft,missing,ctx,claimed['verified']))
+        _finish(organization_id,intake_id,split)
+    else:
+        item,draft,missing=_prepare(result,ctx)
+        _finish(organization_id,intake_id,lambda db,row:_settle(db,row,item,draft,missing,ctx,claimed['verified']))
+    step('Booking validation finished; result saved.',organization_id)
+
+
+def _prepare(result,ctx):
+    if result.review_reasons or not result.is_order_request: return result,None,[]
+    draft,missing=booking.build(result,ctx,geocode.verify)
+    return result,draft,missing
+
+
+def _settle(db,intake,result,draft,missing,ctx,verified):
+    metadata=(intake.extraction or {}).get('_email_batch')
+    intake.extraction=result.model_dump(mode='json')
+    if metadata: intake.extraction['_email_batch']=metadata
+    intake.summary=result.summary[:500];intake.error_code=None
+    if metadata: intake.summary=f"Order {metadata['index']} of {metadata['total']}: {intake.summary}"[:500]
+    if result.review_reasons: return _review(db,intake,draft,result.review_reasons)
     if not result.is_order_request:
-        return _finish(organization_id, intake_id, lambda db, intake: (described(db, intake), setattr(intake, 'status', 'NOT_AN_ORDER')))
-    step('Validating booking facts and addresses.', organization_id)
-    draft, missing = booking.build(result, ctx, geocode.verify)
+        intake.status='NOT_AN_ORDER';return
     if ctx['shipper'] is None:
-        def unknown(db, intake):
-            described(db, intake)
-            intake.status, intake.draft, intake.missing = 'UNKNOWN_SENDER', draft, ['Shipper', *missing]
-            signal(db, 'intake.unknown_sender', intake)
-        return _finish(organization_id, intake_id, unknown)
-    if not claimed['verified']: missing = [UNVERIFIED, *missing]
-    def settle(db, intake):
-        described(db, intake)
-        if missing: _review(db, intake, draft, missing)
-        else: _create(db, intake, draft)
-    _finish(organization_id, intake_id, settle)
-    step('Booking validation finished; result saved.', organization_id)
+        intake.status,intake.draft,intake.missing='UNKNOWN_SENDER',draft,['Shipper',*missing]
+        signal(db,'intake.unknown_sender',intake);return
+    if not verified: missing=[UNVERIFIED,*missing]
+    if missing: _review(db,intake,draft,missing)
+    else: _create(db,intake,draft)
 
 
 def process_pending(organization_id: UUID, limit=25):

@@ -138,6 +138,8 @@ scripts/local-db start
 .venv/bin/uvicorn app.main:app --env-file .env --host 127.0.0.1 --port 8000
 ```
 
+On this machine the database is managed by `dispatra-local-db.service` in the user systemd session; use `systemctl --user start dispatra-local-db.service` and `systemctl --user status dispatra-local-db.service`. Its local PostgreSQL configuration uses `recovery_init_sync_method=syncfs` to avoid slow per-file synchronization during crash recovery. A user-service override requests PostgreSQL fast shutdown (`SIGINT`) and allows ten minutes for a safe stop.
+
 Use `scripts/local-db status` or `scripts/local-db stop` to manage it. This script controls the local installation prepared in this workspace; a fresh clone can use the PostgreSQL/Compose setup above, then run `app.demo`. Keep `.local/` and `.env` out of Git and retain the database directory for persistent data. Never point test commands at `dispatra_demo`.
 
 ### Connected TMS and Dispatra API
@@ -310,3 +312,16 @@ The dispatcher launch list is Rose Rocket, CartonCloud, Truckbase, Tailwind TMS 
 
 
 Owner connector administration is available at `/admin/integrations` after migration `0055_connector_management`. Apply the migration before restarting the API and named-connector worker. Admin Integrations is now a read-only connector card overview with connected-dispatcher counts and no tabs or control/request workflow. See [TMS connectors](docs/tms-connectors.md) for visibility, counts, Rose Rocket progress and vendor activation requirements.
+
+### Samsara account connection
+
+The dispatcher Samsara connector supports Test connection, then Connect using an API token with **Read Org Information** under **Setup & Administration**. Requests go server-side to the fixed `https://api.samsara.com/me` endpoint. Test does not save the token; Connect verifies again and encrypts it with `MAILBOX_ENCRYPTION_KEY`. Reconnecting cannot replace a different account until disconnect; disconnect clears stored credentials. The connected card can recheck saved account access. This is account verification only: no fleet imports, status writes, worker synchronization or External TMS AUTO eligibility are enabled. An explicit provider pause remains enforced. No provider profile or registered OAuth app is needed for this direct token flow.
+
+### Order-email attachments
+
+The Order agent reads new email bodies together with supported attachments: PDF (including scans), JPEG/PNG/WEBP photos, DOCX, XLSX, CSV/TSV and TXT. Attachments are encrypted at rest and submitted inline to the configured OpenAI Responses extractor with store=False; no public file URLs or downloadable attachment endpoints are created. The existing whole-message limit is 5 MB, with at most five attachments and 4 MB decoded file content. Legacy DOC/XLS, unsupported/corrupt files, Office documents containing embedded images, sheets exceeding 1,000 rows and ambiguous bookings go to Needs review. Valid extracted bookings still use the same sender/shipper checks, address validation, pricing and idempotent Order creation. Previously imported emails cannot recover files that were never stored; resend a new booking email to exercise the new path. Run the existing `python -m app.intake.worker` continuously alongside the API.
+
+On this local workspace, the order-email agent is managed by `dispatra-local-intake.service` in the user systemd session. It loads the existing API `.env` and polls enabled mailboxes without sending test emails.
+
+
+Multiple email bookings are extracted separately, with independent references, stops, cargo, validation, pricing and Order records. Each booking has its own intake/review result. Missing data on one booking does not block valid siblings. Split booking facts and source-message/index metadata are retained; retries validate only that booking and do not re-extract or duplicate already-created siblings. Attachments are stored once on the original intake.

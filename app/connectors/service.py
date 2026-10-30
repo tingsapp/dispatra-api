@@ -16,7 +16,7 @@ from . import profiles
 from .catalog import BY_ID
 from .models import Authorization, Connection, Inbox
 from .schemas import ConnectorView
-from . import availability
+from . import availability, verification, samsara
 
 MESSAGES = {
  'ACTIVATION_REQUIRED':'This connector needs activation by Dispatra before it can connect.',
@@ -47,7 +47,7 @@ def view(db,provider,row=None):
         ready=ready,status=status,paused=paused,account=row.account_label if row else None,version=row.version if row else None,
         last_sync_at=row.last_sync_at if row else None,
         imported=(row.summary or {}).get('imported',0) if row else 0,review_count=(row.summary or {}).get('review',0) if row else 0,
-        message='Synchronization is paused by the administrator.' if paused else MESSAGES['ACTIVATION_REQUIRED'] if not ready else MESSAGES.get(row.last_error,'Synchronization could not finish. Try again later.') if row and row.last_error else None,
+        message='Synchronization is paused by the administrator.' if paused else 'Account access verified. Fleet data imports are not enabled.' if provider == 'samsara' and status == 'CONNECTED' else MESSAGES['ACTIVATION_REQUIRED'] if not ready else MESSAGES.get(row.last_error,'Synchronization could not finish. Try again later.') if row and row.last_error else None,
         credential_fields=[{'key':key,'label':label,'secret':secret} for key,label,secret in info.credential_fields])
 
 def require_profile(db,provider):
@@ -70,7 +70,11 @@ def guard(row,version):
     if row and row.lease:raise HTTPException(409,'Synchronization is running. Try again after it finishes.')
 
 def begin(db,user,slug,provider,data,key):
-    info=require_provider(provider);profile=require_profile(db,provider)
+    info=require_provider(provider)
+    if provider == 'samsara':
+        if not availability.enabled(db,provider,lock=True): raise HTTPException(409, 'This connector is paused.')
+        profile=None
+    else: profile=require_profile(db,provider)
     credentials={name:value.get_secret_value() for name,value in data.credentials.items()}
     expected={field[0] for field in info.credential_fields}
     if info.auth=='oauth' and credentials:raise HTTPException(422,'Use the TMS authorization screen for this connection.')
@@ -93,11 +97,18 @@ def begin(db,user,slug,provider,data,key):
             if profile.audience:params['audience']=profile.audience
             audit(db,user,'connector.authorization_started',challenge.id,user.organization_id)
             return {'connector':view(db,provider,row).model_dump(mode='json'),'authorization_url':profile.authorize_url+'?'+urlencode(params)}
+        if provider == 'samsara':
+            account,label=samsara.identity(credentials);verified=credentials
+            if row and row.status != 'DISCONNECTED' and row.account_id and row.account_id != account:
+                raise HTTPException(409, 'This token belongs to a different Samsara account. Disconnect before changing accounts.')
+        else:
+            verified, account, label = verification.verify(provider, profile, credentials, row.account_id if row else None)
         if row is None:
             row=Connection(organization_id=user.organization_id,provider=provider,summary={},version=0)
             db.add(row)
-        row.credentials=vault.seal(json.dumps(credentials));row.profile_revision=profile.revision
-        row.status='CONNECTING';row.last_error=None;row.next_attempt_at=now();row.version+=1
+        row.credentials=vault.seal(json.dumps(verified));row.profile_revision=samsara.REVISION if provider == 'samsara' else profile.revision
+        row.account_id=account;row.account_label=label
+        row.status='CONNECTED';row.last_error=None;row.next_attempt_at=None if provider == 'samsara' else now();row.version+=1
         db.flush()
         audit(db,user,'connector.connection_requested',row.id,user.organization_id);db.flush()
         return {'connector':view(db,provider,row).model_dump(mode='json'),'authorization_url':None}
@@ -135,6 +146,16 @@ def action(db,user,provider,data,key,disconnect=False):
         if row.version!=data.version:raise HTTPException(409,'Connection changed. Reload before continuing.')
         if disconnect:
             row.status='DISCONNECTED';row.credentials=None;row.lease=None;row.lease_until=None;row.next_attempt_at=None;row.last_error=None
+        elif provider == 'samsara':
+            if row.paused or not availability.enabled(db,provider,lock=True): raise HTTPException(409, 'This connector is paused.')
+            if not row.credentials: raise HTTPException(409, 'Reconnect before testing.')
+            try:
+                account,label=samsara.identity(json.loads(vault.unseal(row.credentials,'connector credentials')))
+                if account != row.account_id: raise HTTPException(409, 'The Samsara account changed. Reconnect to continue.')
+                row.account_label=label;row.status='CONNECTED';row.last_error=None
+            except HTTPException:
+                row.status='RECONNECT_REQUIRED';row.last_error='UNAUTHORIZED'
+            row.next_attempt_at=None
         else:
             require_profile(db,provider)
             if row.paused:raise HTTPException(409,'Synchronization is paused by the administrator.')

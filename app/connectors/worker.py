@@ -26,6 +26,7 @@ def claim(org,identity):
     with Session(engine) as db,db.begin():
         context(db,org)
         row=db.scalar(select(Connection).where(Connection.organization_id==org,Connection.id==identity).with_for_update(skip_locked=True))
+        if row is not None and row.provider == 'samsara': return None
         if row is None or not row.credentials or row.paused or not enabled(db,row.provider) or row.status in ['DISCONNECTED','RECONNECT_REQUIRED']:return None
         if row.lease and row.lease_until and row.lease_until>now():return None
         if row.next_attempt_at and row.next_attempt_at>now():return None
@@ -148,7 +149,7 @@ def cycle():
     with Session(engine) as db,db.begin():
         context(db,platform=True)
         due=list(db.execute(select(Connection.organization_id,Connection.id).join(Organization,Organization.id==Connection.organization_id).where(
-            Connection.credentials.is_not(None),Connection.paused.is_(False),Connection.status.not_in(['DISCONNECTED','RECONNECT_REQUIRED']),Organization.active,
+            Connection.provider != 'samsara',Connection.credentials.is_not(None),Connection.paused.is_(False),Connection.status.not_in(['DISCONNECTED','RECONNECT_REQUIRED']),Organization.active,
             (Connection.next_attempt_at<=now()) | Connection.next_attempt_at.is_(None))).all())
     for org,identity in due:
         try:sync(org,identity)

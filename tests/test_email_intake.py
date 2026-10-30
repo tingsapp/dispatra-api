@@ -284,3 +284,76 @@ def test_intakes_are_isolated_between_companies(agent):
     assert check(client.get(other + '/messages')) == []
     assert client.get(other + f'/messages/{item["id"]}').status_code == 404
     assert client.get(INTAKE + f'/messages/{item["id"]}').status_code == 404
+
+
+def test_attachment_orders_use_encrypted_storage_shared_booking_and_review(agent,monkeypatch):
+    import email
+    import email.policy
+    import io
+    import zipfile
+    from app.intake import attachments
+    captured=[]
+    def attached_facts(email,context):
+        files=email.get('attachments',[]);assert files
+        captured.append(files)
+        if files[0]['filename']=='conflict.txt':return facts(review_reasons=['Email and attachment specify different destinations.'])
+        return facts(reference=files[0]['filename'])
+    monkeypatch.setattr(extract,'extract',attached_facts)
+    formats=[('order.pdf','application/pdf',b'%PDF-1.7\nbooking'),('photo.png','image/png',b'\x89PNG\r\n\x1a\nbooking'),('order.csv','text/csv',b'quantity,weight\n2,22'),('conflict.txt','text/plain',b'different address'),('unsupported.zip','application/zip',b'archive')]
+    for suffix,path in [('.docx','word/document.xml'),('.xlsx','xl/workbook.xml')]:
+        output=io.BytesIO()
+        with zipfile.ZipFile(output,'w') as archive:
+            archive.writestr('[Content_Types].xml','<Types/>');archive.writestr(path,'<document>Booking facts</document>')
+        formats.append(('order'+suffix,attachments.TYPES[suffix],output.getvalue()))
+    for filename,mime,data in formats:
+        message=email.message_from_bytes(raw_email(body='Please book the attached delivery.'),policy=email.policy.default)
+        major,minor=mime.split('/');message.add_attachment(data,maintype=major,subtype=minor,filename=filename)
+        agent['inbox'].add(message.as_bytes())
+    worker.cycle()
+    items=queue(agent['client'])
+    assert sum(item['status']=='ORDER_CREATED' for item in items)==5
+    assert sum(item['status']=='NEEDS_REVIEW' for item in items)==2
+    assert len(captured)==6  # Unsupported files do not reach AI.
+    with owner_engine.connect() as db:
+        saved=db.execute(text('SELECT attachment_secret FROM email_intakes')).scalars().all()
+        assert len(saved)==7 and all(value and 'Booking facts' not in value and 'application/pdf' not in value for value in saved)
+        assert db.scalar(text('SELECT count(*) FROM orders'))==5
+    # Polling or processing again cannot duplicate the imported messages or Orders.
+    worker.cycle()
+    with owner_engine.connect() as db:assert db.scalar(text('SELECT count(*) FROM orders'))==5
+    detail=check(agent['client'].get(INTAKE+f'/messages/{items[0]["id"]}'))
+    assert 'attachment_secret' not in detail
+
+
+def test_multiple_orders_split_independently_and_retry_never_duplicates_siblings(agent,monkeypatch):
+    calls=[]
+    results=[facts(reference='BATCH-A',items=[dict(facts().items[0].model_dump(),weight_each=None)]),facts(reference='BATCH-B'),facts(reference='BATCH-C')]
+    def batch_extract(email,context):
+        calls.append(email)
+        return extract.ExtractionBatch(summary='Three delivery requests',orders=results)
+    monkeypatch.setattr(extract,'extract',batch_extract)
+    import email
+    import email.policy
+    message=email.message_from_bytes(raw_email(body='Please book each delivery in the attached file.'),policy=email.policy.default)
+    message.add_attachment(b'Three separate bookings A, B and C',maintype='text',subtype='plain',filename='orders.txt')
+    agent['inbox'].add(message.as_bytes());worker.cycle()
+    rows=queue(agent['client']);assert len(rows)==3
+    assert sum(row['status']=='ORDER_CREATED' for row in rows)==2
+    [review]=[row for row in rows if row['status']=='NEEDS_REVIEW']
+    assert review['missing']==['Item 1: weight']
+    with owner_engine.connect() as db:
+        references=set(db.scalars(text("SELECT facts->>'external_reference' FROM orders")))
+        assert references=={'BATCH-B','BATCH-C'}
+        assert db.scalar(text('SELECT count(*) FROM email_intakes WHERE attachment_secret IS NOT NULL'))==1
+    response=post(agent['client'],INTAKE+f'/messages/{review["id"]}/retry',{'version':review['version']})
+    assert response.status_code==202,response.text
+    worker.cycle();assert len(calls)==1
+    with owner_engine.connect() as db:
+        assert db.scalar(text('SELECT count(*) FROM orders'))==2
+        assert db.scalar(text('SELECT count(*) FROM email_intakes'))==3
+    # Dispatcher can complete just the incomplete booking through the existing shared form.
+    [review]=queue(agent['client'],'NEEDS_REVIEW')
+    detail=check(agent['client'].get(INTAKE+f'/messages/{review["id"]}'));draft=detail['draft'];draft['items'][0]['weight_kg']='10'
+    assert post(agent['client'],INTAKE+f'/messages/{review["id"]}/order',{'version':detail['version'],'booking':draft}).status_code==201
+    worker.cycle()
+    with owner_engine.connect() as db:assert db.scalar(text('SELECT count(*) FROM orders'))==3

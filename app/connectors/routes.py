@@ -9,7 +9,7 @@ from app.security import rate_limit
 from . import service
 from .catalog import PROVIDERS, LEGACY_PROVIDERS
 from .models import Inbox
-from .schemas import ConnectInput, ConnectResult, ConnectorAction, ConnectorView, ReviewItem
+from .schemas import ConnectorTestResult, ConnectInput, ConnectResult, ConnectorAction, ConnectorView, ReviewItem
 
 router=APIRouter(prefix='/api/v1/companies/{slug}/integrations/connectors',tags=['Connectors'])
 Dispatcher=Annotated[User,Depends(auth.dispatcher)]
@@ -24,6 +24,22 @@ def list_connectors(slug:str,db:DB,user:Dispatcher):
         row = service.view(db,info.id,saved)
         rows.append(row)
     return rows
+
+@router.post('/{provider}/test',response_model=ConnectorTestResult)
+def test_connection(slug:str,provider:str,data:ConnectInput,db:DB,user:Dispatcher):
+    from fastapi import HTTPException
+    from . import availability, samsara
+    rate_limit(f'connector-test:{user.id}',20)
+    service.require_provider(provider)
+    if provider != 'samsara': raise HTTPException(409,'Separate connection testing is not available for this provider.')
+    if not availability.enabled(db,provider,lock=True): raise HTTPException(409,'This connector is paused.')
+    row=service.get(db,user,provider)
+    if row and row.paused: raise HTTPException(409,'This connector is paused.')
+    service.guard(row,data.version)
+    account,label=samsara.identity({name:value.get_secret_value() for name,value in data.credentials.items()})
+    if row and row.status != 'DISCONNECTED' and row.account_id and row.account_id != account:
+        raise HTTPException(409,'This token belongs to a different Samsara account. Disconnect before changing accounts.')
+    return {'account_id':account,'account':label}
 
 @router.post('/{provider}/connect',response_model=ConnectResult)
 def connect(slug:str,provider:str,data:ConnectInput,db:DB,key:OperationKey,user:Dispatcher):

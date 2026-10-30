@@ -41,6 +41,7 @@ class EmailIntake(TenantRecord, Base):
     from_name: Mapped[str] = mapped_column(String(160), default='')
     subject: Mapped[str] = mapped_column(String(500), default='')
     body: Mapped[str] = mapped_column(Text)
+    attachment_secret: Mapped[str | None] = mapped_column(Text)
     sender_verified: Mapped[bool] = mapped_column(default=False)
     shipper_id: Mapped[UUID | None]
     status: Mapped[str] = mapped_column(String(20), default='RECEIVED')

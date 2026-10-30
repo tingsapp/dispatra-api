@@ -14,7 +14,7 @@ import os
 import re
 import socket
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
@@ -45,6 +45,7 @@ class Parsed:
     received_at: datetime
     body: str
     sender_verified: bool
+    attachments: list = field(default_factory=list)
 
 
 def _public(host, port):
@@ -189,7 +190,7 @@ def parse(raw: bytes) -> Parsed:
     except (KeyError, LookupError, ValueError, AttributeError): body = ''
     address = address.strip().lower()[:254]
     return Parsed(message_id, address, name.strip()[:160], header('Subject')[:500], received, body,
-        authenticated(str(results[0]) if results else '', address))
+        authenticated(str(results[0]) if results else '', address), _attachments(message))
 
 
 def check_smtp(host, port, username, password):
@@ -199,3 +200,10 @@ def check_smtp(host, port, username, password):
     except smtp_transport.PermanentFailure as error:
         raise MailboxError('SMTP_AUTHENTICATION_FAILED' if error.code == 'SMTP_AUTHENTICATION' else error.code) from None
     except smtp_transport.TemporaryFailure: raise MailboxError('SMTP_CONNECTION_FAILED') from None
+
+
+def _attachments(message):
+    from .attachments import collect
+    try: return collect(message)
+    except (ValueError, KeyError, LookupError, TypeError):
+        return [{'error':'An email attachment could not be read and requires review.'}]

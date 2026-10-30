@@ -95,7 +95,7 @@ def create_session(sdp: str, instructions: str, identity: str):
     config = {
         'type': 'realtime', 'model': MODEL,
         'instructions': instructions + '\nYou are speaking aloud. Keep answers short and conversational. '
-        'Begin by saying: Hello, I am Dispatra, an AI voice assistant. How can I help you?',
+        'Begin by saying: Hello, I am Dispatra. How can I help you?',
         'max_output_tokens': 512,
         'audio': {
             'input': {'turn_detection': {'type': 'server_vad', 'create_response': True, 'interrupt_response': True}},

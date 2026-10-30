@@ -17,6 +17,7 @@ def ready(provider: str) -> bool:
     from . import profiles
     from .service import origin
     from fastapi import HTTPException
+    if provider == 'samsara': return True
     if profiles.installed(provider) is None: return False
     if BY_ID[provider].auth == 'oauth':
         try: origin()

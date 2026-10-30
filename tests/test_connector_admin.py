@@ -18,7 +18,7 @@ def count(client,provider='rose-rocket'):
 def test_owner_cards_are_read_only_secret_free_and_dispatcher_scoped(client,configured):
  connect_truckmate(client);org,identity=connection();assert worker.sync(org,identity)
  login(client);rows=check(client.get(ADMIN+'/providers'))
- assert [p['id'] for p in rows[:5]]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms']
+ assert [p['id'] for p in rows[:6]]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms','samsara']
  assert all(set(p)=={'id','name','initials','connected_dispatchers'} for p in rows)
  assert count(client,'truckmate')==1
  check(client.patch(ADMIN+'/providers/rose-rocket',json={'version':1,'enabled':False},headers={'Idempotency-Key':str(uuid4())}),404)
@@ -49,7 +49,7 @@ def test_counts_require_verified_active_connections_and_active_dispatchers(clien
  assert count(client)==1
 
 def test_catalogue_shows_configuration_status_and_preserves_saved_account_disconnection(client,configured,monkeypatch):
- initial=check(client.get(BASE));assert [r['id'] for r in initial]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms']
+ initial=check(client.get(BASE));assert [r['id'] for r in initial]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms','samsara']
  assert [r['ready'] for r in initial]==[True,True,False,False,False]
  connect_truckmate(client);monkeypatch.delenv('TMS_CONNECTOR_PROFILES_FILE')
  rows=check(client.get(BASE));assert len(rows)==6 and all(not r['ready'] for r in rows)

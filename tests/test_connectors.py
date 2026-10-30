@@ -60,8 +60,9 @@ def connect_truckmate(client,key=None):
 
 def test_unavailable_catalogue_is_visible_and_connections_remain_gated(client,configured,monkeypatch):
  monkeypatch.delenv('TMS_CONNECTOR_PROFILES_FILE')
- rows=check(client.get(BASE));assert [r['id'] for r in rows]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms']
- assert all(not r['ready'] and r['status']=='ACTIVATION_REQUIRED' for r in rows)
+ rows=check(client.get(BASE));assert [r['id'] for r in rows]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms','samsara']
+ assert all(not r['ready'] and r['status']=='ACTIVATION_REQUIRED' for r in rows if r['id'] != 'samsara')
+ assert next(r for r in rows if r['id']=='samsara')['ready']
  check(post(client,BASE+'/truckmate/connect',{'credentials':{'api_key':'not-stored'}}),503)
  with owner_engine.connect() as db:assert db.scalar(text('SELECT count(*) FROM connector_connections'))==0
 
@@ -80,7 +81,7 @@ def test_existing_legacy_connection_remains_visible_until_disconnected(client,co
   assert db.scalar(text("SELECT count(*) FROM connector_connections WHERE provider='truckmate'"))==1
 
 def test_credentials_are_encrypted_and_retries_are_payload_bound(client,configured):
- key=str(uuid4());first=connect_truckmate(client,key);assert first['connector']['status']=='CONNECTING'
+ key=str(uuid4());first=connect_truckmate(client,key);assert first['connector']['status']=='CONNECTED'
  assert 'private-test-key' not in json.dumps(first)
  assert connect_truckmate(client,key)==first
  check(post(client,BASE+'/truckmate/connect',{'credentials':{'base_url':'https://provider.example','api_key':'changed'}},key),409)

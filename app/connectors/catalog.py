@@ -11,11 +11,12 @@ class Provider:
     credential_fields: tuple[tuple[str, str, bool], ...] = ()
 
 PROVIDERS = (
-    Provider('rose-rocket', 'Rose Rocket', 'RR', 'Connect freight orders and manage your transport operations.', 'oauth'),
-    Provider('cartoncloud', 'CartonCloud', 'CC', 'Connect transport jobs from your CartonCloud logistics workspace.', 'oauth'),
-    Provider('truckbase', 'Truckbase', 'TB', 'Connect trucking orders and daily carrier operations.', 'request_setup'),
-    Provider('tailwind', 'Tailwind TMS', 'TW', 'Connect orders across your carrier and brokerage operations.', 'request_setup'),
-    Provider('ascendtms', 'AscendTMS', 'AT', 'Connect transport orders and coordinate your fleet operations.', 'request_setup'),
+    Provider('rose-rocket', 'Rose Rocket', 'RR', 'Connect freight orders and manage your transport operations.', 'oauth', (('base_url', 'Rose Rocket API URL', False), ('client_id', 'Rose Rocket Client ID', False), ('client_secret', 'Rose Rocket Client Secret', True))),
+    Provider('cartoncloud', 'CartonCloud', 'CC', 'Connect transport jobs from your CartonCloud logistics workspace.', 'oauth', (('base_url', 'CartonCloud API URL', False), ('tenant', 'CartonCloud Tenant ID', False), ('client_id', 'CartonCloud Client ID', False), ('client_secret', 'CartonCloud Client Secret', True))),
+    Provider('truckbase', 'Truckbase', 'TB', 'Connect trucking orders and daily carrier operations.', 'request_setup', (('base_url', 'Truckbase API URL', False), ('api_key', 'Truckbase API token', True))),
+    Provider('tailwind', 'Tailwind TMS', 'TW', 'Connect orders across your carrier and brokerage operations.', 'request_setup', (('base_url', 'Tailwind TMS API URL', False), ('api_key', 'Tailwind TMS API token', True))),
+    Provider('ascendtms', 'AscendTMS', 'AT', 'Connect transport orders and coordinate your fleet operations.', 'request_setup', (('base_url', 'AscendTMS API URL', False), ('api_key', 'AscendTMS API token', True))),
+    Provider('samsara', 'Samsara', 'SA', 'Verify and connect your Samsara account. Fleet data imports are not enabled.', 'bearer', (('api_key', 'Samsara API token', True),)),
 )
 # Retain saved connections and worker support when a provider leaves the launch catalogue.
 LEGACY_PROVIDERS = (

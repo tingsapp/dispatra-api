@@ -50,3 +50,8 @@ class ProviderView(BaseModel):
     name: str
     initials: str
     connected_dispatchers: int
+
+
+class ConnectorTestResult(BaseModel):
+    account_id: str
+    account: str
