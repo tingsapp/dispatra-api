@@ -20,6 +20,7 @@ from app.operations.common import command, company_lock, record, settings
 from app.operations.models import Order, Route, Settings
 from app.operations.schemas import Assignment
 from . import rank
+from .policy import priority, prefer_proposal, ordered as policy_ordered
 from .candidates import blocker, evaluate
 from .explanations import no_candidate_description
 from .models import DispatchDecision
@@ -29,7 +30,7 @@ from app.agents.telemetry import monitor_run, step
 SYSTEM = SimpleNamespace(id=None, role=None)
 RETRY = timedelta(minutes=5)
 REUSE = timedelta(minutes=2)
-RULES_SUMMARY = 'Ranked by feasible route detour, delivery area and work completed or committed today.'
+RULES_SUMMARY = 'Prioritizes feasible route consolidation, then route detour, delivery area and workload.'
 
 
 class AgentDispatcher:
@@ -59,12 +60,13 @@ def ranked(order_brief, candidates, organization_id=None):
         # AI explains and resolves close choices; it cannot overturn a materially better operational score.
         first = ordered[0]['driver_id']
         order_index = {c['driver_id']:i for i,c in enumerate(ordered)}
-        ordered.sort(key=lambda c:(int(c['score']//5),order_index[c['driver_id']]))
+        policy_candidates = list(candidates)
+        ordered.sort(key=lambda c:(priority(c, policy_candidates), int(c['score']//5),order_index[c['driver_id']]))
         if ordered[0]['driver_id'] != first: summary = RULES_SUMMARY
         return ordered, 'AI', summary, None
     except rank.Unavailable as error:
         step('AI ranking unavailable; validated rule ranking used.', organization_id, 'WARNING')
-        return [{**c, 'reason': c['facts'][0]} for c in candidates], 'RULES', RULES_SUMMARY, error.code
+        return [{**c, 'reason': c['facts'][0]} for c in policy_ordered(candidates)], 'RULES', RULES_SUMMARY, error.code
 
 
 def latest(db, organization_id, order_id):
@@ -189,10 +191,8 @@ def dispatch_order(organization_id, order_id, planned_driver=None):
         order_brief = brief(order)
     ordered, ranked_by, summary, error = ranked(order_brief, candidates, organization_id)
     if planned_driver and ordered:
-        # Keep geographic proposals only among similarly efficient current road choices.
-        threshold = min(c['score'] for c in ordered) + 5
         first = ordered[0]['driver_id']
-        ordered.sort(key=lambda c:not(c['driver_id']==planned_driver and c['score']<=threshold))
+        ordered = prefer_proposal(ordered, planned_driver)
         if ordered[0]['driver_id'] != first: summary = RULES_SUMMARY
     with Session(engine) as db, db.begin():
         context(db, organization_id)

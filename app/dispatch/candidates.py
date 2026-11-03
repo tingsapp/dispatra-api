@@ -10,6 +10,7 @@ from app.operations.live_dispatch import fixes
 from app.operations.models import Driver, Order, Vehicle, DutySession
 from .geography import km, movement, delivery_zone
 from .workload import measure
+from .policy import ordered
 
 
 def position(db, actor, driver):
@@ -106,5 +107,4 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
                     'workload_ratio':utilization, 'live_insertion':live, 'road_verified':plan['is_road_eta'], 'awaiting_duty':expected}})
         except HTTPException as error:
             excluded.append({**base,'reason':str(error.detail)})
-    candidates.sort(key=lambda c:(c['score'],c['driver_number']))
-    return candidates, excluded
+    return ordered(candidates), excluded

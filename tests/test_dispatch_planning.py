@@ -312,3 +312,23 @@ def test_live_insertion_can_collect_nearer_pickup_before_old_delivery(fleet,monk
         wrong=dict(version=ack['version'],generation=ack['generation'],captured_at=now().isoformat())
         assert post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/stops/{old_delivery["id"]}/arrive',wrong).status_code==409
         assert arrive(w,ack,ack['stops'][1])['stops'][1]['arrived_at']
+
+
+def test_auto_keeps_same_path_orders_together_even_when_fleet_proposes_idle_driver(fleet,monkeypatch):
+    from app.dispatch import fleet as planner,worker
+    w=fleet;client=w['client'];other=w['omar']
+    body={k:other[k] for k in ('name','email','phone','address','vehicle_id')}
+    check(client.put(BASE+f'/drivers/{other["id"]}',json={'version':other['version'],'data':body,'duty_status':'ON_DUTY','expected_on_duty':False},headers={'Idempotency-Key':str(uuid4())}))
+    first=new_order(w);route=assign(w,first);second=new_order(w)
+    original=planner.plan
+    def idle_proposal(*args):
+        rows=original(*args)
+        return [(o,sorted(c,key=lambda item:item['driver_id']!=other['id']),e) for o,c,e in rows]
+    monkeypatch.setattr(planner,'plan',idle_proposal)
+    mode(client,'AUTO')
+    assert worker.cycle()['ASSIGNED']==1
+    saved=check(client.get(BASE+f'/orders/{second["id"]}'))
+    assert saved['route_id']==route['id']
+    assert saved['pricing']==second['pricing']
+    assert len(next(r for r in check(client.get(BASE+'/routes')) if r['id']==route['id'])['stops'])==4
+    assert check(client.get(BASE+f'/orders/{first["id"]}'))['pricing']==first['pricing']

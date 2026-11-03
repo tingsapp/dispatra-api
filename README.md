@@ -231,6 +231,8 @@ For an unassigned, priced Order the agent lists every active driver: drivers tha
 
 - `POST /companies/{slug}/orders/{id}/dispatch-suggestions` (dispatcher; `?refresh=true` re-evaluates, otherwise a suggestion under two minutes old is reused) and `GET .../dispatch-decisions` (history).
 - `POST /companies/{slug}/dispatch-decisions/{id}/approve` (`version`, `driver_id`, Idempotency-Key) assigns a recommended driver through the shared `assign` command, joining that driver's planned Route when there is one.
+- Feasible existing-route consolidation is preferred when adding the order requires no more driving than starting the best feasible new route. AI and estimated fleet proposals cannot override this preference; capacity, timing, duty and route safety checks still apply. Existing assigned orders are not moved automatically.
+
 - Company settings `dispatch_mode` is `MANUAL` (default) or `AUTO`. In AUTO the worker assigns priced `NEW` Orders immediately after booking, including future-scheduled Orders to the best candidate as a system dispatcher; the audit row has no user and the event actor type is `AGENT`. When the command refuses a candidate, the next one is tried (up to three). With no driver the decision is `NO_CANDIDATE`, Monitor shows a `NO_DRIVER` Needs Attention item with the most common reason, dispatchers are notified once per Order version, and the Order is evaluated again every five minutes. Dispatchers are notified of each automatic assignment.
 
 ```sh
