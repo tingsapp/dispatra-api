@@ -181,11 +181,13 @@ def test_auto_mode_without_a_driver_flags_once_then_assigns(fleet):
     assert not [item for item in check(client.get(BASE + '/monitor'))['needs_attention'] if item['kind'] == 'NO_DRIVER']
 
 
-def test_auto_mode_skips_orders_outside_the_horizon(fleet):
+def test_auto_mode_evaluates_future_orders_immediately(fleet):
     w = fleet; mode(w['client'], 'AUTO')
-    later = new_order(w, scheduled_at=(service.now() + service.HORIZON + timedelta(hours=2)).isoformat())
-    assert worker.cycle() == {}
-    assert check(w['client'].get(BASE + f'/orders/{later["id"]}'))['status'] == 'NEW'
+    later = new_order(w, scheduled_at=(service.now() + timedelta(days=2)).isoformat())
+    result = worker.cycle()
+    assert sum(result.values()) == 1
+    with owner_engine.connect() as db:
+        assert db.scalar(text('SELECT count(*) FROM dispatch_decisions WHERE order_id=:id'), {'id':later['id']}) == 1
 
 
 def test_dispatch_mode_values_and_access(fleet):

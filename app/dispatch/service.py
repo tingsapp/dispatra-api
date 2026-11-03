@@ -5,7 +5,6 @@ candidate through `operations.dispatch.assign` as a system dispatcher audited as
 hard rule with road travel and the next candidate is tried when it refuses. Worker AI calls run between short
 transactions, and any provider failure falls back to the rule ranking instead of blocking dispatch.
 """
-import os
 from collections import Counter
 from datetime import timedelta
 from types import SimpleNamespace
@@ -28,7 +27,6 @@ from .schemas import DecisionView
 from app.agents.telemetry import monitor_run, step
 
 SYSTEM = SimpleNamespace(id=None, role=None)
-HORIZON = timedelta(hours=float(os.environ.get('DISPATCH_AGENT_HORIZON_HOURS') or '12'))
 RETRY = timedelta(minutes=5)
 REUSE = timedelta(minutes=2)
 RULES_SUMMARY = 'Ranked by feasible route detour, delivery area and work completed or committed today.'
@@ -162,11 +160,11 @@ def auto_companies():
 
 
 def due(organization_id, limit=100):
-    """Priced, unassigned Orders inside the horizon whose current version was not evaluated in the last few minutes."""
+    """Priced, unassigned Orders eligible immediately after booking, with bounded retry cooldown."""
     with Session(engine) as db, db.begin():
         context(db, organization_id)
         orders = db.scalars(select(Order).where(Order.organization_id == organization_id, Order.status == 'NEW',
-            Order.pricing['status'].astext == 'PRICED', Order.scheduled_at <= now() + HORIZON).order_by(Order.scheduled_at).limit(limit * 3)).all()
+            Order.pricing['status'].astext == 'PRICED').order_by(Order.scheduled_at).limit(limit * 3)).all()
         result = []
         for order in orders:
             previous = latest(db, organization_id, order.id)
@@ -256,8 +254,7 @@ def dispatch_pending(organization_id, limit=100):
 
 def suggest_fleet(db, user):
     from .fleet import plan
-    orders = list(db.scalars(select(Order).where(Order.organization_id==user.organization_id, Order.status=='NEW',
-        Order.scheduled_at<=now()+HORIZON).order_by(Order.scheduled_at,Order.id).limit(100)))
+    orders = list(db.scalars(select(Order).where(Order.organization_id==user.organization_id, Order.status=='NEW').order_by(Order.scheduled_at,Order.id).limit(100)))
     results = []
     with monitor_run('DISPATCH') as progress:
         progress.step('Planning delivery areas and balanced fleet workloads.', 15, user.organization_id)
