@@ -81,7 +81,7 @@ def save_catalog(db, actor, data, key, identity=None):
                     from .travel import dispatch_provider
                     # Initial setup does not replace an existing truck profile or rebuild a Google-planned trip.
                     first_setup = (not row.data.get('road_profile') and bool(values.get('road_profile'))
-                        and dispatch_provider() != 'tomtom'
+                        and dispatch_provider() not in {'tomtom', 'openrouteservice'}
                         and not db.scalar(active.where(Vehicle.data['road_profile'].astext.is_not(None)).limit(1)))
                     if not first_setup:
                         raise HTTPException(409, 'Vehicles of this type have active Routes; finish them before changing existing truck routing measurements.')

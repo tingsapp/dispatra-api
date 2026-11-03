@@ -2,6 +2,8 @@
 
 Updated: 2026-10-14. This is the target FastAPI/PostgreSQL contract. [Implementation state](state.md) records verified manual functionality and remaining automation work. `MUST` and `MUST NOT` are requirements.
 
+Development-only operational routing may explicitly select openrouteservice HGV. Apply verified vehicle restrictions through Directions requests, bound planning to six locations including the origin, identify the provider/attribution and absence of live traffic, and preserve all shared assignment constraints. Never silently substitute unrestricted car or Matrix routing.
+
 ## 1. Authority and scope
 
 The API is the system of record for organizations, accounts, Shippers, Drivers, Vehicles, Orders, pricing, dispatch, Routes, POD, audit, and events. The client may preview but cannot authorize or finalize these decisions. Use FastAPI, Pydantic, SQLAlchemy/Alembic, PostgreSQL, Decimal money, and versioned OpenAPI. V1 is English-first Canadian local delivery. Payment collection, payroll, marketplace, warehouse, maintenance, and branch administration are outside the initial operational scope.

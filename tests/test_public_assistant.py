@@ -18,7 +18,8 @@ def test_anonymous_public_chat_uses_only_static_product_facts(client, monkeypatc
         assert 'do not assume a 30-day trial' in instructions
         assert 'configured by Dispatra' in instructions
         assert '/docs/integrations' in instructions
-        assert 'None of these five named connectors is available to connect yet' in instructions
+        assert 'The other five named connectors are not available to connect yet' in instructions
+        assert 'Samsara supports token testing and account connection only; fleet data imports are not enabled' in instructions
         return schema(message='See /plans for current trial availability and duration.')
     monkeypatch.setattr(provider, 'generate', generate)
     reply = client.post(ROOT, json={'message': 'How long is the trial?', 'history': [{'role': 'user', 'content': 'I have a fleet.'}]})

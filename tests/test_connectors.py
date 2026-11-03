@@ -131,7 +131,9 @@ def test_oauth_state_is_pkce_bound_single_use_and_redirects_without_tokens(clien
   assert db.scalar(text('SELECT state_hash FROM connector_authorizations'))==hashlib.sha256(state.encode()).hexdigest()
   assert 'auth-code' not in db.scalar(text("SELECT credentials FROM connector_connections WHERE provider='rose-rocket'"))
 
-def test_each_provider_uses_internal_complete_profile_without_public_mapping(client,configured):
+def test_each_provider_uses_internal_complete_profile_without_public_mapping(client,configured,monkeypatch):
+ from app.connectors import samsara
+ monkeypatch.setattr(samsara,'identity',lambda credentials:('account-1','Test Transport'))
  for provider, info in BY_ID.items():
   if info.auth=='request_setup':
    assert profiles.installed(provider) is None
@@ -140,7 +142,14 @@ def test_each_provider_uses_internal_complete_profile_without_public_mapping(cli
   assert profiles.installed(provider) is not None
   creds={name:'test-credential' for name,_,_ in BY_ID[provider].credential_fields}
   if 'base_url' in creds:creds['base_url']='https://provider.example'
-  check(post(client,BASE+f'/{provider}/connect',{'credentials':creds}))
+  if info.auth == 'oauth':
+   check(post(client,BASE+f'/{provider}/connect',{'credentials':creds}),422)
+   authorization=check(post(client,BASE+f'/{provider}/connect',{'credentials':{}}))
+   state=parse_qs(urlsplit(authorization['authorization_url']).query)['state'][0]
+   response=client.get(BASE+f'/{provider}/callback',params={'state':state,'code':'test-code'},follow_redirects=False)
+   assert response.status_code==303
+  else:
+   check(post(client,BASE+f'/{provider}/connect',{'credentials':creds}))
   assert all('maps' not in row and 'resources' not in row for row in check(client.get(BASE)))
 
 def test_connections_remain_company_scoped_and_wrong_company_callback_is_refused(client,configured):

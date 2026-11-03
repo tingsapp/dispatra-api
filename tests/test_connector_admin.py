@@ -50,10 +50,10 @@ def test_counts_require_verified_active_connections_and_active_dispatchers(clien
 
 def test_catalogue_shows_configuration_status_and_preserves_saved_account_disconnection(client,configured,monkeypatch):
  initial=check(client.get(BASE));assert [r['id'] for r in initial]==['rose-rocket','cartoncloud','truckbase','tailwind','ascendtms','samsara']
- assert [r['ready'] for r in initial]==[True,True,False,False,False]
+ assert [r['ready'] for r in initial]==[True,True,False,False,False,True]
  connect_truckmate(client);monkeypatch.delenv('TMS_CONNECTOR_PROFILES_FILE')
- rows=check(client.get(BASE));assert len(rows)==6 and all(not r['ready'] for r in rows)
+ rows=check(client.get(BASE));assert len(rows)==7 and all(not r['ready'] for r in rows if r['id'] != 'samsara')
  saved=next(r for r in rows if r['id']=='truckmate')
  check(post(client,BASE+'/truckmate/disconnect',{'version':saved['version']}))
- assert len(check(client.get(BASE)))==5
+ assert len(check(client.get(BASE)))==6
  login(client);assert all(p['connected_dispatchers']==0 for p in check(client.get(ADMIN+'/providers')))

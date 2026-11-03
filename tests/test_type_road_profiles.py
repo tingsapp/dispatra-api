@@ -83,7 +83,7 @@ def test_type_clear_and_type_change_do_not_reuse_wrong_vehicle_measurements(setu
  with Session(owner_engine) as db,db.begin():
   row=db.get(Vehicle,UUID(w['vehicle']['id']));row.data={**row.data,'road_profile':PROFILE}
   assert vehicle_data(db,row.organization_id,row)['road_profile']==PROFILE
- other=next(c for c in w['catalog'] if c['kind']=='VEHICLE_TYPE' and c['id']!=w['type_id'])
+ other=next(c for c in w['catalog'] if c['kind']=='VEHICLE_TYPE' and c['active'] and c['id']!=w['type_id'])
  v=check(w['client'].get(BASE+f'/vehicles/{w["vehicle"]["id"]}'));data={k:val for k,val in v['data'].items() if k!='road_profile'};data['type_id']=other['id']
  changed=check(w['client'].put(BASE+f'/vehicles/{v["id"]}',json=dict(data=data,version=v['version']),headers={'Idempotency-Key':str(uuid4())}))
  assert changed['data']['road_profile'] is None

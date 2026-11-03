@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 # Tests require a disposable migrated PostgreSQL database, never SQLite or production.
 owner_url = os.environ['TEST_OWNER_DATABASE_URL']
 assert owner_url.rsplit('/',1)[-1].endswith('_test'), 'Use a database named *_test'
+# Migration regressions must use the same disposable database as their fixtures.
+os.environ['MIGRATION_DATABASE_URL'] = owner_url
 os.environ['DATABASE_URL'] = os.environ['TEST_DATABASE_URL']
 os.environ['COOKIE_SECURE'] = 'false'
 os.environ['ROUTING_PROVIDER'] = 'demo'
@@ -35,6 +37,7 @@ def confirm_trial(client, email):
 def reset_database():
     with owner_engine.begin() as c:
         c.execute(text('UPDATE subscription_plans SET trial_enabled=true, trial_days=30'))
+        c.execute(text('TRUNCATE archived_invoice_email_deliveries, archived_invoice_notifications, archived_invoices, archived_shipper_payment_terms CASCADE'))
         c.execute(text('TRUNCATE organizations, shippers, users, login_sessions, audit_events, operations, login_buckets CASCADE'))
     with Session(owner_engine) as db, db.begin():
         db.add(User(scope='platform',login_id='owner',role='ADMIN',password_hash=hash_password(PASSWORD)))

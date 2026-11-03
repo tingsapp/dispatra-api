@@ -36188,7 +36188,8 @@
             "type": "string",
             "enum": [
               "GOOGLE",
-              "TOMTOM"
+              "TOMTOM",
+              "OPENROUTESERVICE"
             ],
             "title": "Provider",
             "default": "GOOGLE"

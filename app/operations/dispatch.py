@@ -92,6 +92,7 @@ def plan_route(db, actor, orders, driver, vehicle, planned_at, road=True, origin
     origins = {s['id']: travel_table.get(('__driver__',s['id'])) for s in stops} if origin and travel_table is not None else None
     result = optimize(stops, items, vehicle.data, planned_at, end, driver.data['maximum_work_minutes'], travel_table, origin=origin, origin_minutes=origins)
     if road and dispatch_provider() == 'tomtom': result['travel_basis'] = 'TOMTOM_TRUCK_TRAFFIC'
+    if road and dispatch_provider() == 'openrouteservice': result['travel_basis'] = 'ORS_TRUCK_NO_LIVE_TRAFFIC'
     return result
 
 

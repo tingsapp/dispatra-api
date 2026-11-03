@@ -93,7 +93,7 @@ def test_company_mailbox_sends_order_updates_to_shippers(setup, monkeypatch):
     monkeypatch.setattr(email_worker.smtp_transport, 'send', lambda message, account=None: sent.append((message, account)))
     assert email_worker.poll_once('smtp-test') == 1
     message, account = sent[0]
-    assert message.recipient == 'alice@example.com' and message.subject.endswith('— Driver assigned')
+    assert message.recipient == 'alice@example.com' and message.subject == 'Acme, Driver assigned'
     assert order['number'] in message.body_text and 'Alice Shipper' in message.body_text
     assert (account.host, account.port, account.username, account.password, account.company) == ('smtp.example.com', 465, 'orders@acme.test', 'app-password', True)
     assert account.sender_name

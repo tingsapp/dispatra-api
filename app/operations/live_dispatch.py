@@ -106,6 +106,7 @@ def plan(db, actor, route, orders, driver, vehicle, *, road=True):
         origin=origin, origin_minutes=origins)
     from .travel import dispatch_provider
     if road and dispatch_provider() == 'tomtom': result['travel_basis'] = 'TOMTOM_TRUCK_TRAFFIC'
+    if road and dispatch_provider() == 'openrouteservice': result['travel_basis'] = 'ORS_TRUCK_NO_LIVE_TRAFFIC'
     # No new promise may postpone an existing visit beyond its previous feasible promise/window.
     result['planned_at'] = route.planned_at.isoformat()
     result['live_origin_at'] = points[0].captured_at.isoformat()

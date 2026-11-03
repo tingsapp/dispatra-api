@@ -926,7 +926,7 @@ class RoadPathView(BaseModel):
     """Driving path through an Order's stops as [latitude, longitude] points, for map display only."""
     points: list[tuple[float, float]]
     preview: bool = Field(default=False, description='Unassigned map preview only; not truck feasibility or dispatch evidence.')
-    provider: Literal['GOOGLE', 'TOMTOM'] = 'GOOGLE'
+    provider: Literal['GOOGLE', 'TOMTOM', 'OPENROUTESERVICE'] = 'GOOGLE'
     truck_profile_applied: bool = False
     attribution: str = ''
 

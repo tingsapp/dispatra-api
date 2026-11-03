@@ -5,47 +5,21 @@ facts, never inferred from cargo-space size or payload capacity.
 """
 import json
 from datetime import datetime, timezone
-import math
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from fastapi import HTTPException
-from pydantic import ValidationError
 
-from .schemas import TruckRoutingProfile
+from .truck_profile import number, point
 
 BASE = 'https://api.tomtom.com'
 MAX_BYTES = 4_000_000
 
 
-def number(value):
-    if isinstance(value, bool): raise ValueError('Invalid routing number')
-    result = float(value)
-    if not math.isfinite(result) or result < 0: raise ValueError('Invalid routing number')
-    return result
-
-
-def point(address):
-    try:
-        if isinstance(address['latitude'], bool) or isinstance(address['longitude'], bool): raise ValueError()
-        lat, lng = float(address['latitude']), float(address['longitude'])
-        if not math.isfinite(lat) or not math.isfinite(lng) or not -90 <= lat <= 90 or not -180 <= lng <= 180:
-            raise ValueError()
-        return {'latitude': lat, 'longitude': lng}
-    except (KeyError, ValueError, TypeError):
-        raise HTTPException(409, 'Verified stop coordinates are required for truck routing.') from None
-
-
 def options(vehicle, *, hazardous=False):
-    if hazardous:
-        raise HTTPException(409, 'Dangerous goods need a classified routing profile; dispatcher review is required.')
-    try:
-        profile = TruckRoutingProfile.model_validate((vehicle or {}).get('road_profile'))
-    except (ValidationError, TypeError):
-        raise HTTPException(409, 'Save exterior dimensions and loaded gross weight in the vehicle’s selected Vehicle Type for truck routing.') from None
-    if (vehicle or {}).get('payload_kg') is not None and profile.gross_weight_kg < number(vehicle['payload_kg']):
-        raise HTTPException(409, 'Loaded gross weight must cover the vehicle payload capacity.')
+    from .truck_profile import profile as validated_profile
+    profile = validated_profile(vehicle, hazardous=hazardous)
     result = dict(travelMode='truck', vehicleCommercial=True, vehicleLength=float(profile.length_m),
         vehicleWidth=float(profile.width_m), vehicleHeight=float(profile.height_m), vehicleWeight=profile.gross_weight_kg)
     if profile.axle_weight_kg is not None: result['vehicleAxleWeight'] = profile.axle_weight_kg
@@ -68,6 +42,16 @@ def request(path, params, payload=None):
         result = json.loads(raw)
         if not isinstance(result, dict): raise ValueError()
         return result
+    except urllib.error.HTTPError as error:
+        # Read only a bounded error code; never expose provider text or credentials.
+        try:
+            detail = json.loads(error.read(4096)).get('detailedError', {})
+            code = detail.get('code') if isinstance(detail, dict) else None
+        except (OSError, ValueError, AttributeError):
+            code = None
+        if error.code == 403 and code == 'InsufficientFunds':
+            raise HTTPException(503, 'TomTom routing credits are exhausted. Ask your administrator to add credits to the TomTom account before assigning this order.') from None
+        raise HTTPException(503, 'TomTom routing is unavailable. Retry or request dispatcher review.') from None
     except (OSError, ValueError):
         # Never propagate URLs, credentials, coordinates, provider bodies or quota text.
         raise HTTPException(503, 'TomTom routing is unavailable. Retry or request dispatcher review.') from None

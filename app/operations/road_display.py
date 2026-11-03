@@ -7,13 +7,15 @@ def path(db, actor, order):
     booking = Booking.model_validate(order.facts)
     # Unassigned Orders retain the existing commercial road preview. This is not
     # truck feasibility evidence; assigned truck routing still fails closed.
-    if not order.route_id or travel.dispatch_provider() != 'tomtom':
+    if not order.route_id or travel.dispatch_provider() not in {'tomtom', 'openrouteservice'}:
         return {'points': travel.order_road_path(db, actor, booking), 'provider': 'GOOGLE',
                 'truck_profile_applied': False, 'attribution': '', 'preview': not bool(order.route_id)}
     from .orders import company_scope
     from .common import record
     from .models import Route, Vehicle
-    from . import tomtom
+    from . import tomtom, openrouteservice
+    using_ors = travel.dispatch_provider() == 'openrouteservice'
+    router = openrouteservice if using_ors else tomtom
     # Caller has already checked the Order visibility. No other Order's stops leave this projection.
     with company_scope(db, actor):
         route = record(db, Route, actor, order.route_id)
@@ -22,6 +24,7 @@ def path(db, actor, order):
         vehicle_data = routing_vehicle_data(db, actor.organization_id, vehicle)
         positions = {item['stop_id']: i for i, item in enumerate(route.plan.get('stops', []))}
     stops = sorted(booking.stops, key=lambda stop: positions.get(str(stop.id), len(positions)))
-    result = tomtom.route([stop.address.model_dump() for stop in stops], vehicle_data,
-        hazardous=any(item.dangerous_goods for item in booking.items), geometry=True)
-    return {'points': result['points'], 'provider': 'TOMTOM', 'truck_profile_applied': True, 'attribution': '© TomTom'}
+    cache_options = {'cache_scope': str(actor.organization_id)} if using_ors else {}
+    result = router.route([stop.address.model_dump() for stop in stops], vehicle_data,
+        hazardous=any(item.dangerous_goods for item in booking.items), geometry=True, **cache_options)
+    return {'points': result['points'], 'provider': 'OPENROUTESERVICE' if using_ors else 'TOMTOM', 'truck_profile_applied': True, 'attribution': openrouteservice.ATTRIBUTION if using_ors else '© TomTom'}

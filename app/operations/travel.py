@@ -45,6 +45,9 @@ def matrix(db, actor, stops, *, vehicle=None, departure=None, hazardous=False):
     if dispatch_provider() == 'tomtom':
         from . import tomtom
         return tomtom.matrix(db, stops, vehicle, departure=departure, hazardous=hazardous)
+    if dispatch_provider() == 'openrouteservice':
+        from . import openrouteservice
+        return openrouteservice.matrix(db, stops, vehicle, departure=departure, hazardous=hazardous, cache_scope=str(actor.organization_id) if actor is not None else None)
     if dispatch_provider() == 'demo': return None
     if dispatch_provider() != 'google': raise HTTPException(409, 'Dispatch road routing is not configured.')
     if len(stops) > 501: raise HTTPException(409, 'Route planning supports at most 500 stops plus the driver origin.')
