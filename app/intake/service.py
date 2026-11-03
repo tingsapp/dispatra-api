@@ -111,8 +111,7 @@ def _choices(db, organization_id, kind):
 
 def _match(db, intake):
     if intake.shipper_id: return db.get(Shipper, intake.shipper_id)
-    return db.scalar(select(Shipper).where(Shipper.organization_id == intake.organization_id, func.lower(Shipper.email) == intake.from_address,
-        Shipper.warehouse.is_not(None), Shipper.status == 'ACTIVE').order_by(Shipper.created_at).limit(1))
+    return db.scalar(select(Shipper).where(Shipper.organization_id == intake.organization_id, func.lower(func.trim(Shipper.email)) == intake.from_address.strip().lower()).order_by(Shipper.created_at).limit(1))
 
 
 def _claim(organization_id, intake_id):
@@ -135,7 +134,7 @@ def _claim(organization_id, intake_id):
             'verified': intake.sender_verified,
             'context': {'time_zone': config.time_zone, 'services': services, 'vehicle_types': _choices(db, organization_id, 'VEHICLE_TYPE'),
                 'default_service_id': default if any(s['id'] == default for s in services) else None,
-                'shipper': {'id': str(shipper.id), 'name': shipper.company_name or shipper.name, 'warehouse': shipper.warehouse} if shipper else None}}
+                'shipper': {'id': str(shipper.id), 'name': shipper.company_name or shipper.name, 'warehouse': shipper.warehouse, 'status': shipper.status} if shipper else None}}
 
 
 def _finish(organization_id, intake_id, apply):
@@ -221,8 +220,10 @@ def _settle(db,intake,result,draft,missing,ctx,verified):
     if not result.is_order_request:
         intake.status='NOT_AN_ORDER';return
     if ctx['shipper'] is None:
-        intake.status,intake.draft,intake.missing='UNKNOWN_SENDER',draft,['Shipper',*missing]
+        intake.status,intake.draft,intake.missing='UNKNOWN_SENDER',draft,['No Shipper in this company matches the sender email',*missing]
         signal(db,'intake.unknown_sender',intake);return
+    if ctx['shipper'].get('status', 'ACTIVE') != 'ACTIVE':
+        missing=[f"Shipper account is {ctx['shipper']['status'].lower().replace('_', ' ')}",*missing]
     if not verified: missing=[UNVERIFIED,*missing]
     if missing: _review(db,intake,draft,missing)
     else: _create(db,intake,draft)

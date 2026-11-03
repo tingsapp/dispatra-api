@@ -51,7 +51,7 @@ def pick(value, options):
 def address(stop, number, context, verify, missing):
     label = f'Stop {number}'
     if stop.use_shipper_warehouse and stop.kind == 'PICKUP':
-        if context['shipper']: return dict(context['shipper']['warehouse'])
+        if context['shipper'] and context['shipper'].get('warehouse'): return dict(context['shipper']['warehouse'])
         missing.append(f"{label}: the Shipper's warehouse address")
         return None
     found = stop.address

@@ -232,7 +232,7 @@ def test_unknown_sender_waits_until_dispatcher_links_a_shipper(agent):
     [item] = queue(client)
     assert item['status'] == 'UNKNOWN_SENDER' and item['shipper_id'] is None and item['summary']
     assert item['draft']['shipper_id'] is None and item['draft']['stops'][0]['address'] is None and item['draft']['stops'][1]['address']['city'] == 'Vancouver'
-    assert item['missing'] == ['Shipper', "Stop 1: the Shipper's warehouse address"]
+    assert item['missing'] == ['No Shipper in this company matches the sender email', "Stop 1: the Shipper's warehouse address"]
     assert 'Email from unknown sender' in {n['title'] for n in notifications(client)}
     linked = check(post(client, INTAKE + f'/messages/{item["id"]}/shipper', dict(version=item['version'], shipper_id=agent['shipper']['id'])), 202)
     assert linked['status'] == 'RECEIVED' and linked['sender_verified']
@@ -357,3 +357,12 @@ def test_multiple_orders_split_independently_and_retry_never_duplicates_siblings
     assert post(agent['client'],INTAKE+f'/messages/{review["id"]}/order',{'version':detail['version'],'booking':draft}).status_code==201
     worker.cycle()
     with owner_engine.connect() as db:assert db.scalar(text('SELECT count(*) FROM orders'))==3
+
+
+def test_matched_shipper_without_warehouse_reports_missing_pickup():
+    context = {'time_zone': 'America/Vancouver', 'services': [{'id': str(uuid4()), 'code': 'same', 'name': 'Same Day'}],
+        'vehicle_types': [], 'default_service_id': None,
+        'shipper': {'id': str(uuid4()), 'name': 'Fresh', 'warehouse': None}}
+    draft, missing = booking.build(facts(), context, lambda t, p: {'text': t, 'latitude': 49.2, 'longitude': -123.1})
+    assert draft['shipper_id'] == context['shipper']['id']
+    assert missing == ["Stop 1: the Shipper's warehouse address"]
