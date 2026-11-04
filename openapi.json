@@ -24512,7 +24512,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AssistantQuestion"
+                "$ref": "#/components/schemas/WorkspaceAssistantQuestion"
               }
             }
           }
@@ -27566,6 +27566,16 @@
       },
       "AssistantReply": {
         "properties": {
+          "briefing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyBriefing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "message": {
             "type": "string",
             "title": "Message"
@@ -30603,6 +30613,59 @@
           "version"
         ],
         "title": "CustomerView"
+      },
+      "DailyBriefing": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "title": "Day"
+          },
+          "time_zone": {
+            "type": "string",
+            "title": "Time Zone"
+          },
+          "evening": {
+            "type": "boolean",
+            "title": "Evening"
+          },
+          "received": {
+            "type": "integer",
+            "title": "Received"
+          },
+          "unassigned": {
+            "type": "integer",
+            "title": "Unassigned"
+          },
+          "assigned": {
+            "type": "integer",
+            "title": "Assigned"
+          },
+          "in_progress": {
+            "type": "integer",
+            "title": "In Progress"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "open_incidents": {
+            "type": "integer",
+            "title": "Open Incidents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "time_zone",
+          "evening",
+          "received",
+          "unassigned",
+          "assigned",
+          "in_progress",
+          "completed",
+          "open_incidents"
+        ],
+        "title": "DailyBriefing"
       },
       "DailyMetric": {
         "properties": {
@@ -39626,6 +39689,39 @@
           "prices"
         ],
         "title": "WeightBand"
+      },
+      "WorkspaceAssistantQuestion": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantTurn"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "History"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "CHAT",
+              "BRIEFING"
+            ],
+            "title": "Kind",
+            "default": "CHAT"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "WorkspaceAssistantQuestion"
       },
       "Zone": {
         "properties": {

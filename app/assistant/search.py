@@ -107,3 +107,21 @@ def collect(db, org, plan):
                 ref.label, ref.detail = row.name, f'{row.number} · {row.status} · {row.address} · {row.phone} · {row.email}'
             references.append(ref)
     return references, counts
+
+
+def daily_briefing(db, org, observed):
+    from datetime import datetime, time, timedelta
+    from app.order_watch.models import Incident
+    from .schemas import DailyBriefing
+    zone = company_zone(db, org)
+    local = observed.astimezone(zone)
+    start = datetime.combine(local.date(), time.min, zone)
+    end = datetime.combine(local.date() + timedelta(days=1), time.min, zone)
+    counts = dict(db.execute(select(Order.status, func.count()).where(
+        Order.organization_id == org, Order.created_at >= start, Order.created_at < end,
+        Order.status != 'CANCELLED').group_by(Order.status)).all())
+    incidents = db.scalar(select(func.count()).select_from(Incident).where(
+        Incident.organization_id == org, Incident.status.in_(['OPEN', 'ACKNOWLEDGED'])))
+    return DailyBriefing(day=local.date().isoformat(), time_zone=str(zone), evening=local.hour >= 18,
+        received=sum(counts.values()), unassigned=counts.get('NEW', 0), assigned=counts.get('ASSIGNED', 0),
+        in_progress=counts.get('IN_PROGRESS', 0), completed=counts.get('COMPLETED', 0), open_incidents=incidents)

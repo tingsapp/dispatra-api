@@ -30,6 +30,10 @@ class AssistantQuestion(BaseModel):
         return value
 
 
+class WorkspaceAssistantQuestion(AssistantQuestion):
+    kind: Literal['CHAT', 'BRIEFING'] = 'CHAT'
+
+
 class SearchPlan(BaseModel):
     include_records: bool
     query: str = Field(max_length=120)
@@ -52,7 +56,24 @@ class AssistantReference(BaseModel):
     driver_id: str | None = None
 
 
+class BriefingCommentary(BaseModel):
+    message: str = Field(min_length=1, max_length=180)
+
+
+class DailyBriefing(BaseModel):
+    day: str
+    time_zone: str
+    evening: bool
+    received: int
+    unassigned: int
+    assigned: int
+    in_progress: int
+    completed: int
+    open_incidents: int
+
+
 class AssistantReply(BaseModel):
+    briefing: DailyBriefing | None = None
     message: str
     references: list[AssistantReference]
     mode: Literal['AI', 'SEARCH']

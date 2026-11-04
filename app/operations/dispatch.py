@@ -173,8 +173,11 @@ def release(db, actor, identity, data, key):
         company_lock(db, actor)
         route = record(db, Route, actor, identity, True); version(route, data.version)
         if route.generation != data.generation: raise HTTPException(409, 'Assignment generation changed.')
-        if route.status != 'PLANNED': raise HTTPException(409, 'Only a planned Route can be released.')
-        for order in db.scalars(select(Order).where(Order.organization_id == actor.organization_id, Order.route_id == identity).with_for_update()):
+        if route.status != 'PLANNED' or route.locked: raise HTTPException(409, 'Only an unlocked planned Route can be released.')
+        orders = list(db.scalars(select(Order).where(Order.organization_id == actor.organization_id, Order.route_id == identity).with_for_update()))
+        if any(order.status != 'ASSIGNED' for order in orders):
+            raise HTTPException(409, 'Routes containing started or closed Orders cannot be released.')
+        for order in orders:
             order.route_id, order.status = None, 'NEW'; changed(db, actor, order, 'order.unassigned')
         db.execute(delete(RouteStop).where(RouteStop.organization_id == actor.organization_id, RouteStop.route_id == identity))
         route.status, route.locked = 'CANCELLED', False

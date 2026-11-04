@@ -1,3 +1,7 @@
+Route release requires an unlocked PLANNED route containing only ASSIGNED orders. Reject the whole release before any order mutation or stop deletion if the route includes started or closed work; completed order history must never be reset to NEW.
+
+Dispatcher assistant briefing requests return authoritative company-local daily order counts, workspace-wide open/acknowledged incident totals, observation time and grounded commentary. Daily counts use order creation timestamps and exclude cancelled orders. Provider unavailability preserves the factual card and explicitly marks commentary unavailable.
+
 # Dispatra API specification
 
 Updated: 2026-10-14. This is the target FastAPI/PostgreSQL contract. [Implementation state](state.md) records verified manual functionality and remaining automation work. `MUST` and `MUST NOT` are requirements.
