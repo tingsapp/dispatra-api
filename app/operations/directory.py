@@ -368,6 +368,8 @@ def change_directory_password(db, actor, identity, data, key, kind):
 def update_shipper_profile(db, actor, data, key):
     def run():
         row = customer = operational_shipper(db,actor,actor.shipper_id,True); version(row,data.version)
+        if 'logo_url' in data.model_fields_set:
+            row.logo_url = data.logo_url
         row.warehouse = data.warehouse.model_dump(mode='json')
         customer.phone, customer.address = data.phone, data.warehouse.text
         if data.contact_name is not None:
@@ -375,4 +377,7 @@ def update_shipper_profile(db, actor, data, key):
             customer.contact_name = customer.name
         changed(db,actor,row,'shipper.profile_updated')
         return shipper_view(db,actor,row)
-    return command(db,actor,key,'shipper-profile',data.model_dump(mode='json'),run)
+    payload = data.model_dump(mode='json')
+    if 'logo_url' not in data.model_fields_set:
+        payload.pop('logo_url', None)
+    return command(db,actor,key,'shipper-profile',payload,run)

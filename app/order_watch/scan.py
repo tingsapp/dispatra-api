@@ -6,7 +6,7 @@ from app.dispatch.models import DispatchDecision
 from .models import Incident,Question,RouteEstimate
 from .commands import OPEN,apply,ask,close,reported,follow_up_ready_time
 from .detector import evaluate
-from .evidence import instant
+from .evidence import assignment_deadline,deadline,instant
 
 
 def scan_company(db,actor):
@@ -52,6 +52,18 @@ def reconcile(db,actor,seen):
         if not order or order.status in {'COMPLETED','CANCELLED'}:
             close(db,actor,row,'Order closed; this monitoring observation is no longer active.',superseded=True);continue
         if row.id in seen:continue
+        # Supersede observations from the old ready-as-deadline rule. Keep reports
+        # and their evidence; closing uses the normal audited lifecycle and closes questions.
+        if row.certainty!='REPORTED':
+            if row.kind=='UNASSIGNED':
+                due=assignment_deadline(db.scalars(select(OrderStop).where(
+                    OrderStop.organization_id==actor.organization_id,OrderStop.order_id==order.id)))
+                if due is None or due>now():
+                    close(db,actor,row,'No overdue booked arrival deadline supports this observation; ready time is not a deadline.',superseded=True);continue
+            if row.kind in {'ARRIVAL_OVERDUE','ARRIVAL_RISK','TRAFFIC_RISK'} and row.stop_id:
+                booked_stop=db.get(OrderStop,row.stop_id)
+                if booked_stop and deadline(order,booked_stop) is None:
+                    close(db,actor,row,'No booked arrival deadline supports this observation; ready time is not a deadline.',superseded=True);continue
         if row.kind=='UNASSIGNED':
             if order.route_id:close(db,actor,row,'A valid route assignment is recorded.');continue
             if row.fingerprint!=f'unassigned:{order.id}:{order.version}':
@@ -74,7 +86,6 @@ def reconcile(db,actor,seen):
                 fresh=estimate and route and duty and estimate.captured_at>=duty.started_at and first and first.arrived_at is None and estimate.generation==route.generation and estimate.route_version==route.version and estimate.next_stop_id==first.stop_id and (now()-estimate.captured_at).total_seconds()<=120 and (now()-estimate.observed_at).total_seconds()<=180
                 if fresh:
                     prediction=next((item for item in estimate.data['stops'] if item['stop_id']==str(row.stop_id)),None)
-                    from .evidence import deadline
                     stop=db.get(OrderStop,row.stop_id)
                     due=deadline(order,stop) if stop else None
                     if prediction and due and instant(prediction['eta'])<=due:

@@ -37146,6 +37146,12 @@
             "minimum": 1.0,
             "title": "Version"
           },
+          "logo_url": {
+            "type": "string",
+            "maxLength": 280000,
+            "title": "Logo Url",
+            "default": ""
+          },
           "contact_name": {
             "anyOf": [
               {
@@ -37227,6 +37233,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "logo_url": {
+            "type": "string",
+            "title": "Logo Url",
+            "default": ""
           },
           "name": {
             "type": "string",

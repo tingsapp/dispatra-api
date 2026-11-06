@@ -27,6 +27,9 @@ def error(request, status, message, fields=None):
 @app.middleware('http')
 async def boundary(request: Request, call_next):
     request.state.request_id = str(uuid4())
+    # A 200 KB PNG/JPEG expands to roughly 274 KB when encoded in a profile JSON body.
+    logo_profile = re.fullmatch(r'/api/v1/companies/[^/]+/(?:shipper/profile|settings)', request.url.path)
+    body_limit = 3_000_000 if request.url.path.endswith('/evidence') else 524288 if logo_profile else 262144
     # A TMS webhook authenticates with an HMAC signature of the body, never a session, so browser checks do not apply.
     tms_webhook = request.method == 'POST' and TMS_WEBHOOK.match(request.url.path) is not None
     # API keys are sent explicitly by servers and never attached by browsers, so they carry no CSRF risk.
@@ -40,7 +43,7 @@ async def boundary(request: Request, call_next):
         request.headers.get('origin') not in origins or request.headers.get('x-requested-with') != 'Dispatra'
     ):
         response = error(request, 403, 'Request origin could not be verified.')
-    elif not request.headers.get('content-length', '0').isdigit() or int(request.headers.get('content-length', '0')) > (3_000_000 if request.url.path.endswith('/evidence') else 262144):
+    elif not request.headers.get('content-length', '0').isdigit() or int(request.headers.get('content-length', '0')) > body_limit:
         response = error(request, 413, 'Request is too large.')
     else:
         try:

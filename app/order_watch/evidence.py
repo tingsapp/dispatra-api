@@ -36,7 +36,10 @@ def separation(location, address):
 
 
 def deadline(order, stop):
-    end = instant(stop.data.get('window_end'))
-    if end: return end
-    first = next((s for s in order.facts['stops'] if s['kind']=='PICKUP'),None)
-    return order.scheduled_at if first and str(stop.id)==first['id'] else None
+    # Ready/scheduled times are earliest service times, never arrival deadlines.
+    return instant(stop.data.get('window_end'))
+
+
+def assignment_deadline(stops):
+    """Any explicit booked deadline can make an unassigned order overdue."""
+    return min((due for stop in stops if (due := instant(stop.data.get('window_end')))), default=None)

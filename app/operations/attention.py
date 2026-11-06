@@ -10,8 +10,14 @@ def flags(order, visits: dict[str, object], observed_at: datetime) -> list[tuple
     result = []
     if order.pricing.get('status') != 'PRICED':
         result.append(('PRICING', order.pricing.get('review_reason') or 'Pricing needs review.'))
-    if order.status in {'NEW', 'ASSIGNED'} and order.scheduled_at < observed_at:
-        result.append(('LATE_START', 'The scheduled pickup has not started.'))
+    if order.status in {'NEW', 'ASSIGNED'}:
+        for stop in order.facts['stops']:
+            visit = visits.get(stop['id'])
+            if (stop['kind'] == 'PICKUP' and stop.get('window_end')
+                and datetime.fromisoformat(stop['window_end']) < observed_at
+                and not (visit and (visit.arrived_at is not None or visit.status == 'COMPLETED'))):
+                result.append(('LATE_START', 'A booked pickup deadline has passed without recorded arrival.'))
+                break
     for stop in order.facts['stops']:
         if stop['kind'] != 'DROPOFF' or not stop.get('window_end'):
             continue

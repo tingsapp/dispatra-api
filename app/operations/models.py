@@ -55,6 +55,7 @@ class Shipper(TenantRecord, Base):
         ForeignKeyConstraint(['organization_id', 'assigned_driver_id'], ['drivers.organization_id', 'drivers.id'], name='shippers_assigned_driver_company'))
     number: Mapped[str] = mapped_column(String(50))
     name: Mapped[str] = mapped_column(String(160))
+    logo_url: Mapped[str] = mapped_column(Text, default='', server_default='')
     contact_name: Mapped[str] = mapped_column(String(160), default='')
     email: Mapped[str] = mapped_column(String(254), default='')
     phone: Mapped[str] = mapped_column(String(50), default='')

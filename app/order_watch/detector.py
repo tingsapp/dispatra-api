@@ -1,7 +1,7 @@
 """Pure, contextual signals from authoritative milestones and qualified provider estimates."""
 from datetime import timedelta
 from app.dispatch.explanations import no_candidate_description, exclusion_lines
-from .evidence import deadline,fact,instant
+from .evidence import assignment_deadline,deadline,fact,instant
 from .playbooks import suggestions
 
 
@@ -14,11 +14,12 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
     result=[]
     if order.status in {'COMPLETED','CANCELLED'}:return result
     if order.route_id is None:
-        first=next((s for s in stops.values() if s.order_id==order.id and s.kind=='PICKUP'),None)
-        due=deadline(order,first) if first else order.scheduled_at
-        if due<=current or no_candidate:
-            evidence=[fact('Pickup commitment',due.isoformat(),'Booked pickup window'),fact('Assignment','Unassigned','Order record',current)]
-            description = 'Pickup commitment has passed without an assignment.' if due<=current else 'The Dispatch agent recorded no feasible candidate. Review the assignment before pickup.'
+        due=assignment_deadline(s for s in stops.values() if s.order_id==order.id)
+        overdue=due is not None and due<=current
+        if overdue or no_candidate:
+            evidence=[fact('Assignment','Unassigned','Order record',current)]
+            if due: evidence.insert(0,fact('Booked arrival deadline',due.isoformat(),'Booked stop window'))
+            description = 'A booked arrival deadline has passed without an assignment.' if overdue else 'The Dispatch agent recorded no feasible candidate. Review the assignment before pickup.'
             if no_candidate:
                 excluded = no_candidate.excluded
                 evidence.append(fact('Dispatch result','No candidate in the recorded dispatch screening; road feasibility requires validation','Dispatch agent decision',no_candidate.created_at))
@@ -29,7 +30,7 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
                 if len(description)>1000: description = description[:944] + '… See all driver eligibility checks in the evidence.'
             result.append(signal(f'unassigned:{order.id}:{order.version}','UNASSIGNED','Order needs an assignment',
                 description,
-                evidence,severity='CRITICAL' if due<=current else 'WARNING',due=due))
+                evidence,severity='CRITICAL' if overdue else 'WARNING',due=due))
         return result
     if not route:return result
     mine=[v for v in visits if stops[v.stop_id].order_id==order.id and v.status!='COMPLETED']

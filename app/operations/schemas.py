@@ -14,6 +14,22 @@ Percent = Annotated[Decimal, Field(ge=0, le=100, allow_inf_nan=False)]
 Text = Annotated[str, Field(max_length=2000)]
 
 
+def validate_logo(value: str) -> str:
+    if not value:
+        return value
+    if value.startswith(('https://', 'http://')) and len(value) <= 2000:
+        return value
+    for prefix, signature in [('data:image/png;base64,', b'\x89PNG\r\n\x1a\n'), ('data:image/jpeg;base64,', b'\xff\xd8\xff')]:
+        if value.startswith(prefix):
+            try:
+                raw = base64.b64decode(value[len(prefix):], validate=True)
+            except ValueError:
+                raise ValueError('Invalid logo image')
+            if len(raw) <= 200 * 1024 and raw.startswith(signature):
+                return value
+    raise ValueError('Use a PNG/JPEG logo up to 200 KB or an HTTP(S) image URL')
+
+
 class Address(Input):
     text: Annotated[str, Field(min_length=5, max_length=500)]
     city: Name
@@ -76,19 +92,7 @@ class SettingsData(Input):
     @field_validator('logo_url')
     @classmethod
     def company_logo(cls, value):
-        if not value:
-            return value
-        if value.startswith(('https://', 'http://')) and len(value) <= 2000:
-            return value
-        for prefix, signature in [('data:image/png;base64,', b'\x89PNG\r\n\x1a\n'), ('data:image/jpeg;base64,', b'\xff\xd8\xff')]:
-            if value.startswith(prefix):
-                try:
-                    raw = base64.b64decode(value[len(prefix):], validate=True)
-                except ValueError:
-                    raise ValueError('Invalid logo image')
-                if len(raw) <= 200 * 1024 and raw.startswith(signature):
-                    return value
-        raise ValueError('Use a PNG/JPEG logo up to 200 KB or an HTTP(S) image URL')
+        return validate_logo(value)
 
     @field_validator('time_zone')
     @classmethod
@@ -583,6 +587,7 @@ class OrderUpdate(Version):
 
 
 class ShipperView(RecordView):
+    logo_url: str = ''
     name: str
     number: str
     status: str
@@ -683,6 +688,13 @@ class DutyView(RecordView):
 
 
 class ShipperProfileUpdate(Version):
+    logo_url: str = Field(default='', max_length=280000)
+
+    @field_validator('logo_url')
+    @classmethod
+    def shipper_logo(cls, value):
+        return validate_logo(value)
+
     contact_name: Annotated[str, Field(min_length=1, max_length=160)] | None = None
     phone: Annotated[str, Field(max_length=50)] = ''
     warehouse: Address

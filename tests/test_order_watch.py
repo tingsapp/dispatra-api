@@ -15,7 +15,7 @@ from app.order_watch import scan,commands,traffic,worker
 from app.order_watch.models import Incident,Question,RouteEstimate
 from app.order_watch.evidence import location_usable,separation
 from conftest import login,post,HEADERS,owner_engine
-from test_manual_operations import setup,new_order,assign,check,BASE
+from test_manual_operations import setup,new_order,assign,check,BASE,booking
 
 ROOT='/api/v1/platform/agents/operational'
 
@@ -150,7 +150,7 @@ def test_live_estimate_is_validated_and_includes_remaining_service_without_simul
 
 
 def test_owner_review_request_coalesces_and_worker_records_real_operational_activity(setup):
-    w=setup;new_order(w);login(w['client'])
+    w=setup;overdue_order(w);login(w['client'])
     first=check(post(w['client'],ROOT+'/check',{}),202)
     second=check(post(w['client'],ROOT+'/check',{}),202)
     assert first['id']==second['id'] and first['status']=='QUEUED'
@@ -163,7 +163,7 @@ def test_owner_review_request_coalesces_and_worker_records_real_operational_acti
 
 
 def test_acknowledgement_is_not_resolution_and_company_access_is_scoped(setup):
-    w=setup;new_order(w);review(w);row=owner_reports(w)[0]
+    w=setup;overdue_order(w);review(w);row=owner_reports(w)[0]
     key=str(uuid4());path=ROOT+f'/issues/{row["id"]}/acknowledge'
     body=dict(version=row['version'])
     saved=check(post(w['client'],path,body,key));assert saved==check(post(w['client'],path,body,key))
@@ -229,3 +229,10 @@ def test_reported_ready_time_drives_followup_without_repeated_unchanged_question
     review(w);assert check(w['mobile'].get(BASE+'/driver/operational/questions'))[0]['version']==pending[0]['version']
     report=owner_reports(w)[0];assert any(e['label']=='Driver note' and e['value']=='Waiting for packing' for e in report['evidence'])
     assert any(e['label']=='Reported ready time passed without stop completion' for e in report['evidence'])
+
+
+def overdue_order(w):
+    body=booking(w['shipper']['id'],w['service'],w['type_id'])
+    body['scheduled_at']=(now()-timedelta(hours=1)).isoformat()
+    body['stops'][0]['window_end']=(now()-timedelta(minutes=1)).isoformat()
+    return new_order(w,**body)

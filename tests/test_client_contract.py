@@ -98,6 +98,7 @@ def test_monitor_derives_attention_without_changing_order_status(setup):
     w = setup
     body = booking(w['shipper']['id'], w['service'], w['type_id'])
     body['scheduled_at'] = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    body['stops'][0]['window_end'] = (datetime.now(timezone.utc) - timedelta(minutes=90)).isoformat()
     body['stops'][1]['window_end'] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     order = check(post(w['client'], BASE + '/orders', body), 201)
     monitor = check(w['client'].get(BASE + '/monitor'))
