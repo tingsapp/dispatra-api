@@ -109,9 +109,17 @@ def test_failed_order_processing_needs_versioned_owner_approval_and_requeues_onc
             row = db.get(EmailIntake, identity)
             assert row.status == 'RECEIVED' and row.attempts == 0
             version = row.version
-            assert db.get(TechnicalIssue, UUID(report['id'])).status == 'FIXED'
+            assert db.get(TechnicalIssue, UUID(report['id'])).status == 'APPLYING'
         technical_worker.cycle(force=True)
         with Session(owner_engine) as db: assert db.get(EmailIntake, identity).version == version
+        # A real terminal outcome, not enqueueing alone, verifies the repair.
+        from test_email_intake import facts
+        agent['extracted']['value'] = facts(is_order_request=False)
+        order_worker.cycle()
+        technical_worker.cycle(force=True)
+        with Session(owner_engine) as db:
+            assert db.get(EmailIntake, identity).status == 'NOT_AN_ORDER'
+            assert db.get(TechnicalIssue, UUID(report['id'])).status == 'FIXED'
         notices = owner.get('/api/v1/platform/notifications').json()['items']
         assert any(row['kind'] == 'technical.approval_required' and row['target'] == 'monitor' for row in notices)
 
@@ -133,7 +141,7 @@ def test_changed_and_dismissed_repair_targets_are_never_replayed(agent):
         assert post(owner, ROOT + f"/issues/{report['id']}/approve", {'version': 1}).status_code == 409
 
 
-def test_mailbox_retry_uses_saved_settings_and_is_never_automatic(setup, monkeypatch):
+def test_risky_mailbox_retry_uses_saved_settings_and_needs_approval(setup, monkeypatch):
     from app.intake import mailbox, service
     from test_email_delivery import connect_mailbox
     workflow = setup
@@ -191,6 +199,7 @@ def test_runtime_api_failures_and_interrupted_repairs_are_reported_without_sensi
     assert 'Internal private message' not in str(result)
     assert any(row['kind'] == 'RUNTIME_ERROR' for row in result['issues'])
     assert any(row['status'] == 'FAILED' and 'interrupted' in row['description'] for row in result['issues'])
+    assert result['platform_attention'] >= 2
 
 
 def test_integration_and_background_delivery_failures_are_reported_without_replaying(client):

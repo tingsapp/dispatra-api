@@ -12,15 +12,14 @@ from .schemas import PlatformNotificationView
 
 OWNER_NOTICES = {
     'watch.update_requested': ('WARNING', 'Driver progress update requested', 'A reported ready time passed without recorded completion. Review the operational report in Monitor.'),
-    'watch.detected': ('WARNING', 'Operational risk detected', 'The Operational agent found an order risk. Review the evidence in Monitor.'),
+    'watch.detected': ('WARNING', 'Operational risk detected', 'The Supervisor agent found an order risk. Review the evidence in Monitor.'),
     'watch.escalated': ('CRITICAL', 'Operational risk escalated', 'An order risk has become urgent. Review it in Monitor.'),
-    'watch.driver_replied': ('WARNING', 'Driver clarification received', 'A driver replied to the Operational agent. Review the report in Monitor.'),
+    'watch.driver_replied': ('WARNING', 'Driver clarification received', 'A driver replied to the Supervisor agent. Review the report in Monitor.'),
     'technical.approval_required': ('CRITICAL', 'Technical repair needs approval', 'The Technical agent proposed a repair. Review it in Monitor before it runs.'),
     'technical.problem_detected': ('CRITICAL', 'Technical problem reported', 'The Technical agent found a problem requiring investigation. Review it in Monitor.'),
     'settings.updated': ('INFO', 'Company settings updated', 'The dispatcher updated company settings.'),
     'password.changed': ('INFO', 'Dispatcher password changed', 'The dispatcher changed their account password.'),
     'issue.reported': ('CRITICAL', 'Operational issue reported', 'An operational issue was reported. Ask the company dispatcher to investigate.'),
-    'mailbox.failed': ('CRITICAL', 'Order mailbox disconnected', 'The company order mailbox is disconnected. Ask the dispatcher to check it.'),
     'email.unknown': ('CRITICAL', 'Email delivery status unknown', 'A quote email may have been delivered. Ask the dispatcher to confirm before sending again.'),
 }
 

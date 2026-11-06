@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from app.schemas import Input
 
 AgentName = Literal['ORDER', 'DISPATCH', 'TECHNICAL', 'OPERATIONAL', 'CHAT']
@@ -54,6 +54,11 @@ class TechnicalIssueView(BaseModel):
     severity: Literal['WARNING', 'CRITICAL']
     title: str
     description: str
+    diagnosis: str | None = None
+    diagnosis_source: Literal['AI', 'RULES'] | None = None
+    diagnosed_at: datetime | None = None
+    repair_stage: str | None = None
+    repair_summary: str | None = None
     status: Literal['NEEDS_ADMIN', 'AWAITING_APPROVAL', 'APPROVED', 'APPLYING', 'FIXED', 'FAILED', 'REJECTED', 'SUPERSEDED']
     action: Literal['RETRY_ORDER_AGENT', 'RETRY_MAILBOX'] | None
     automatic: bool
@@ -68,6 +73,7 @@ class AgentMonitorView(BaseModel):
     running: int
     awaiting_approval: int
     needs_attention: int
+    platform_attention: int = 0
     automatic_fixes_24h: int
     errors_24h: int
     issues: list[TechnicalIssueView]
@@ -81,7 +87,10 @@ class TechnicalIssuePage(BaseModel):
 
 class ClientDiagnostic(Input):
     source: Literal['WEB', 'DRIVER']
-    kind: Literal['RUNTIME_ERROR', 'UNHANDLED_REJECTION']
+    kind: Literal['RUNTIME_ERROR', 'UNHANDLED_REJECTION', 'READ_RECOVERED', 'READ_RECOVERY_FAILED']
+    code_path: str | None = Field(default=None, max_length=240, pattern=r'^src/[A-Za-z0-9_/-]+\.(tsx?|jsx?)$')
+    code_line: int | None = Field(default=None, ge=1, le=100000)
+    error_type: Literal['Error', 'TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'URIError', 'EvalError'] | None = None
 
 
 class DiagnosticAccepted(BaseModel):

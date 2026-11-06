@@ -50,6 +50,8 @@ def snapshot(db):
         'running': sum(bool(item['run'] and item['run'].status == 'RUNNING' and not item['stale']) for item in agents),
         'awaiting_approval': db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status == 'AWAITING_APPROVAL')),
         'needs_attention': operational_count + db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.status.in_(['NEEDS_ADMIN', 'AWAITING_APPROVAL', 'FAILED']))),
+        'platform_attention': db.scalar(select(func.count()).select_from(TechnicalIssue).where(TechnicalIssue.organization_id.is_(None),
+            TechnicalIssue.status.in_(['NEEDS_ADMIN', 'AWAITING_APPROVAL', 'FAILED']), TechnicalIssue.notified_at.is_not(None))),
         'automatic_fixes_24h': db.scalar(select(func.coalesce(func.sum(TechnicalIssue.fixed_count), 0)).where(TechnicalIssue.automatic.is_(True), TechnicalIssue.status == 'FIXED', TechnicalIssue.created_at >= observed - timedelta(hours=24))),
         'errors_24h': db.scalar(select(func.count()).select_from(AgentLog).where(AgentLog.level == 'ERROR', AgentLog.created_at >= observed - timedelta(hours=24))),
         'issues': [issue_view(db, row, name, agent) for row, name, agent in rows]}

@@ -1,0 +1,1 @@
+dispatra-app ALL=(root) NOPASSWD: /usr/local/libexec/dispatra-repair-control

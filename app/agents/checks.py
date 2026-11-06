@@ -7,10 +7,10 @@ from app.models import Organization, OutboxEvent, now
 from app.integrations.models import ApiWebhook, TmsConnection, TmsInbox
 from app.intake.models import EmailIntake, MailboxConnection
 from app.operations.models import EmailDelivery, Order, Settings
-from app.events import publish
 from .models import AgentRun, RuntimeDiagnostic, TechnicalIssue
 from .maintenance import clean_expired_sessions
 from .machine_events import RUNTIME_VERIFIED
+from .recovery_policy import available
 
 SYSTEM = SimpleNamespace(id=None, role='TECHNICAL', organization_id=None, actor_type='AGENT')
 
@@ -23,7 +23,6 @@ def report(db, progress, fingerprint, kind, title, description, organization_id=
         .on_conflict_do_nothing(index_elements=['fingerprint']).returning(TechnicalIssue.id))
     if identity:
         progress.step(title, organization_id=organization_id, level='WARNING')
-        publish.record(db, SYSTEM, 'technical.approval_required' if action else 'technical.problem_detected', identity, organization_id, 'AGENT')
 
 
 def require_runtime_role(db):
@@ -43,11 +42,15 @@ def scan(db, progress):
     progress.step('Checking Order agent processing and mailbox connections.', 35)
     for row in db.scalars(select(EmailIntake).join(Organization, Organization.id == EmailIntake.organization_id)
                           .where(Organization.active.is_(True), EmailIntake.status == 'FAILED')):
+        retry = db.scalar(select(TechnicalIssue.id).where(TechnicalIssue.target_id == row.id,
+            TechnicalIssue.action == 'RETRY_ORDER_AGENT', TechnicalIssue.status.in_(['APPLYING', 'FAILED'])).limit(1))
+        if retry: continue  # The existing retry report owns verification/escalation for this task.
         report(db, progress, f'intake:{row.id}:{row.version}', 'ORDER_PROCESSING', 'Order agent processing failed',
             'Reprocess the saved email through normal booking checks. This may use the AI provider and needs admin approval.',
             row.organization_id, 'RETRY_ORDER_AGENT', row)
     for row in db.scalars(select(MailboxConnection).join(Organization, Organization.id == MailboxConnection.organization_id)
                           .where(Organization.active.is_(True), MailboxConnection.enabled.is_(True), MailboxConnection.last_error.is_not(None))):
+        if available(db, row): continue  # Bounded recovery queue; don't alert before its first safe attempt.
         report(db, progress, f'mailbox:{row.id}:{row.version}', 'MAILBOX_CONNECTION', 'Order mailbox connection failed',
             'Retry the connection using saved company settings. The dispatcher may need to update its credentials.',
             row.organization_id, 'RETRY_MAILBOX', row)
@@ -66,9 +69,17 @@ def scan(db, progress):
     for row in db.scalars(select(EmailDelivery).where(EmailDelivery.status == 'UNKNOWN')):
         report(db, progress, f'email:{row.id}:{row.version}', 'EMAIL_UNCERTAIN', 'Email delivery needs investigation',
             'Delivery may already have succeeded. The company dispatcher must confirm the outcome before any resend.', row.organization_id)
-    for row in db.scalars(select(RuntimeDiagnostic).where(RuntimeDiagnostic.last_seen_at >= now() - timedelta(hours=1))):
-        report(db, progress, f'runtime:{row.id}', 'RUNTIME_ERROR', f'{row.source.title()} application error reported',
-            f'{row.occurrences} {row.kind.lower().replace("_", " ")} report(s). Technical investigation is required; code and deployment changes require review.', row.organization_id)
+    for row in db.scalars(select(RuntimeDiagnostic).where(RuntimeDiagnostic.last_seen_at >= now() - timedelta(hours=1),
+            RuntimeDiagnostic.kind != 'READ_RECOVERED')):
+        fingerprint = f'runtime:{row.id}'
+        previous = db.scalar(select(TechnicalIssue).where(TechnicalIssue.fingerprint.like(fingerprint + '%'))
+            .order_by(TechnicalIssue.created_at.desc()).limit(1))
+        if previous:
+            # A verified fix must not hide a later recurrence in the same diagnostic hour.
+            if previous.status != 'FIXED' or row.last_seen_at <= previous.updated_at: continue
+            fingerprint += ':' + row.last_seen_at.isoformat()
+        report(db, progress, fingerprint, 'RUNTIME_ERROR', f'{row.source.title()} application error reported',
+            f'{row.occurrences} {row.kind.lower().replace("_", " ")} report(s). Technical diagnosis and verified recovery are required.', row.organization_id)
     progress.step('Checking worker heartbeats and queued work.', 80)
     pending_order = db.scalar(select(func.count()).select_from(EmailIntake).join(Organization, Organization.id == EmailIntake.organization_id)
         .where(EmailIntake.status == 'RECEIVED', Organization.active.is_(True)))
@@ -78,6 +89,6 @@ def scan(db, progress):
     for agent, pending in [('ORDER', pending_order), ('DISPATCH', pending_dispatch), ('OPERATIONAL', pending_operational)]:
         latest = db.scalar(select(AgentRun).where(AgentRun.agent == agent).order_by(AgentRun.created_at.desc()).limit(1))
         if (pending or latest and latest.status == 'RUNNING') and (not latest or latest.heartbeat_at < now() - timedelta(minutes=5)):
-            report(db, progress, f'worker:{agent}:{latest.id if latest else "not-started"}', 'WORKER_PROGRESS', f'{agent.title()} agent progress is overdue',
+            report(db, progress, f'worker:{agent}:{latest.id if latest else "not-started"}', 'WORKER_PROGRESS', f'{"Supervisor" if agent == "OPERATIONAL" else agent.title()} agent progress is overdue',
                 'The agent has no recent progress heartbeat. Service availability needs operator investigation.')
     progress.step('Platform checks completed; repairs requiring approval are reported.', 95)

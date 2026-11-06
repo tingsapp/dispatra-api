@@ -26811,6 +26811,11 @@
             "type": "integer",
             "title": "Needs Attention"
           },
+          "platform_attention": {
+            "type": "integer",
+            "title": "Platform Attention",
+            "default": 0
+          },
           "automatic_fixes_24h": {
             "type": "integer",
             "title": "Automatic Fixes 24H"
@@ -29067,9 +29072,57 @@
             "type": "string",
             "enum": [
               "RUNTIME_ERROR",
-              "UNHANDLED_REJECTION"
+              "UNHANDLED_REJECTION",
+              "READ_RECOVERED",
+              "READ_RECOVERY_FAILED"
             ],
             "title": "Kind"
+          },
+          "code_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240,
+                "pattern": "^src/[A-Za-z0-9_/-]+\\.(tsx?|jsx?)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Path"
+          },
+          "code_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Line"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Error",
+                  "TypeError",
+                  "ReferenceError",
+                  "RangeError",
+                  "SyntaxError",
+                  "URIError",
+                  "EvalError"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
           }
         },
         "additionalProperties": false,
@@ -37819,6 +37872,66 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          },
+          "diagnosis_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AI",
+                  "RULES"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis Source"
+          },
+          "diagnosed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosed At"
+          },
+          "repair_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repair Stage"
+          },
+          "repair_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repair Summary"
           },
           "status": {
             "type": "string",

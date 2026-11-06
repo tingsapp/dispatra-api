@@ -60,5 +60,7 @@ def report_runtime(data: ClientDiagnostic, user: Annotated[User, Depends(auth.au
     if data.source == 'DRIVER' and user.role != 'DRIVER':
         from fastapi import HTTPException
         raise HTTPException(403, 'Driver access required.')
-    diagnostics.record(data.source, data.kind, user.organization_id)
+    diagnostics.record(data.source, data.kind, user.organization_id,
+        code_path=data.code_path if data.source == 'WEB' else None,
+        code_line=data.code_line if data.source == 'WEB' else None, error_type=data.error_type)
     return DiagnosticAccepted()

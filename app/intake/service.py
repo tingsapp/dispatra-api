@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from app.database import context, engine
 from app.events import publish
-from app.models import User, now
+from app.models import Organization, User, now
 from app.operations import orders
 from app.operations.common import settings
 from app.operations.models import Catalog, Shipper
@@ -56,34 +56,46 @@ def mailboxes(): return companies(MailboxConnection, MailboxConnection.enabled.i
 def pending(): return companies(EmailIntake, EmailIntake.status == 'RECEIVED', EmailIntake.attempts < MAX_ATTEMPTS)
 
 
-def poll_mailbox(organization_id: UUID):
-    """Fetch new messages and store each once as a RECEIVED intake. Returns the number stored."""
+def _poll_target(db, organization_id):
+    return db.scalar(select(MailboxConnection).join(Organization, Organization.id == MailboxConnection.organization_id)
+        .where(MailboxConnection.organization_id == organization_id, MailboxConnection.enabled.is_(True),
+            Organization.active.is_(True)).with_for_update(of=MailboxConnection))
+
+
+def _mailbox_failure(db, row, code):
+    first = row.last_error is None
+    row.last_error, row.last_polled_at = code, now()
+    if first:
+        # Every failure episode, including unreadable credentials, needs a fresh report identity.
+        row.version += 1
+        publish.record(db, SYSTEM, 'mailbox.failed', row.id, row.organization_id, 'AGENT')
+
+
+def poll_mailbox(organization_id: UUID, *, expected_target: tuple[UUID, int] | None = None):
+    """Fetch/store each message once. An approved retry may pin the mailbox identity/version."""
     with Session(engine) as db, db.begin():
         context(db, organization_id)
-        row = db.scalar(select(MailboxConnection).where(MailboxConnection.organization_id == organization_id, MailboxConnection.enabled.is_(True)))
-        if row is None: return 0
+        row = _poll_target(db, organization_id)
+        if row is None or (expected_target is not None and (row.id, row.version) != expected_target): return 0
         try: password = vault.unseal(row.secret)
         except HTTPException:
-            row.last_error, row.last_polled_at = 'PASSWORD_UNREADABLE', now()
+            _mailbox_failure(db, row, 'PASSWORD_UNREADABLE')
             return 0
+        observed = (row.id, row.version, row.last_polled_at)
         settings_ = (row.host, row.port, row.username, password, row.folder, row.uid_validity, row.last_uid)
     try: validity, last_uid, fetched = mailbox.fetch_new(*settings_)
     except mailbox.MailboxError as error:
         with Session(engine) as db, db.begin():
             context(db, organization_id)
-            row = db.scalar(select(MailboxConnection).where(MailboxConnection.organization_id == organization_id).with_for_update())
-            if row:
-                if row.last_error is None:
-                    # Each failure episode needs a new version for recipient notification deduplication.
-                    row.version += 1
-                    publish.record(db, SYSTEM, 'mailbox.failed', row.id, organization_id, 'AGENT')
-                row.last_error, row.last_polled_at = error.code, now()
+            row = _poll_target(db, organization_id)
+            if row and (row.id, row.version, row.last_polled_at) == observed:
+                _mailbox_failure(db, row, error.code)
         return 0
     stored = 0
     with Session(engine) as db, db.begin():
         context(db, organization_id)
-        row = db.scalar(select(MailboxConnection).where(MailboxConnection.organization_id == organization_id).with_for_update())
-        if row is None: return 0
+        row = _poll_target(db, organization_id)
+        if row is None or (row.id, row.version, row.last_polled_at) != observed: return 0
         for message in fetched:
             parsed = mailbox.parse(message.raw)
             values = dict(organization_id=organization_id, message_id=parsed.message_id, mailbox_uid=message.uid,
@@ -98,7 +110,7 @@ def poll_mailbox(organization_id: UUID):
                 stored += 1
                 if values['status'] == 'FAILED': signal(db, 'intake.failed', db.get(EmailIntake, identity))
                 else: signal(db, 'intake.received', db.get(EmailIntake, identity))
-        # A concurrent poll may have advanced further; duplicates were skipped by Message-ID.
+        # Only the current snapshot may advance the cursor; messages also deduplicate by Message-ID.
         row.last_uid = max(row.last_uid, last_uid) if row.uid_validity == validity else last_uid
         row.uid_validity, row.last_polled_at, row.last_error = validity, now(), None
     return stored

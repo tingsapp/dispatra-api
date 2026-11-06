@@ -1,0 +1,26 @@
+[Unit]
+Description=Dispatra tested code repair worker
+After=network-online.target postgresql.service dispatra-api.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+User=dispatra-app
+Group=dispatra-app
+WorkingDirectory=/opt/dispatra/api
+EnvironmentFile=/etc/dispatra/api.env
+EnvironmentFile=/etc/dispatra/technical.env
+ExecStart=/opt/dispatra/api/.venv/bin/python -m app.agents.code_repair.worker
+Restart=always
+RestartSec=10
+MemoryMax=3G
+TasksMax=256
+CPUQuota=100%
+Nice=10
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/dispatra /var/lib/dispatra-watchdog
+
+[Install]
+WantedBy=multi-user.target

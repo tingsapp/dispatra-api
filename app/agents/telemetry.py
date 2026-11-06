@@ -10,11 +10,11 @@ CURRENT = ContextVar('agent_progress', default=None)
 
 
 class Progress:
-    def __init__(self, agent, identity=None):
+    def __init__(self, agent, identity=None, purpose='GENERAL'):
         self.errors = 0
         with Session(engine) as db, db.begin():
             context(db, platform=True)
-            row = db.get(AgentRun, identity) if identity else AgentRun(agent=agent, step='Starting agent run')
+            row = db.get(AgentRun, identity) if identity else AgentRun(agent=agent, purpose=purpose, step='Starting agent run')
             row.status, row.heartbeat_at = 'RUNNING', now()
             if not identity: db.add(row)
             db.flush()
@@ -40,8 +40,8 @@ class Progress:
 
 
 @contextmanager
-def monitor_run(agent, identity=None):
-    progress = Progress(agent, identity)
+def monitor_run(agent, identity=None, *, purpose='GENERAL'):
+    progress = Progress(agent, identity, purpose)
     token = CURRENT.set(progress)
     try:
         yield progress

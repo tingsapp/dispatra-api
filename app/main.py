@@ -45,11 +45,12 @@ async def boundary(request: Request, call_next):
     else:
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             from .agents.diagnostics import api_failure
-            await run_in_threadpool(api_failure, getattr(request.state, 'organization_id', None))
+            await run_in_threadpool(api_failure, getattr(request.state, 'organization_id', None), exc)
             raise
-    if response.status_code >= 500:
+    # Availability failures are infrastructure signals, not new application-code faults.
+    if response.status_code >= 500 and request.url.path not in {'/ready', '/health', '/api/v1/availability'}:
         from .agents.diagnostics import api_failure
         await run_in_threadpool(api_failure, getattr(request.state, 'organization_id', None))
     response.headers.update({'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
@@ -159,3 +160,5 @@ app.include_router(company_payment_router)
 
 from .assistant.public import router as public_assistant_router
 app.include_router(public_assistant_router)
+from .agents.availability import router as availability_router
+app.include_router(availability_router)

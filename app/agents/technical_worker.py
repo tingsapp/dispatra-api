@@ -6,7 +6,9 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.database import context, engine
 from app.models import now
-from . import checks, repairs
+from . import checks, repairs, recovery, escalation
+from .brain import Brain
+from .verification import verify_order_retries, reconcile_mailboxes
 from .models import AgentRun, TechnicalIssue
 from .telemetry import monitor_run
 
@@ -23,21 +25,31 @@ def cycle(force=False):
                 context(db, platform=True)
                 queued = db.scalar(select(AgentRun).where(AgentRun.agent == 'TECHNICAL', AgentRun.status == 'QUEUED')
                                    .order_by(AgentRun.created_at).with_for_update(skip_locked=True).limit(1))
-                latest = db.scalar(select(AgentRun).where(AgentRun.agent == 'TECHNICAL').order_by(AgentRun.created_at.desc()).limit(1))
+                latest = db.scalar(select(AgentRun).where(AgentRun.agent == 'TECHNICAL', AgentRun.purpose != 'CODE_REPAIR').order_by(AgentRun.created_at.desc()).limit(1))
                 approved = db.scalar(select(TechnicalIssue.id).where(TechnicalIssue.status == 'APPROVED').limit(1))
                 if queued is None and not force and not approved and latest and latest.heartbeat_at > now() - timedelta(seconds=60): return False
                 identity = queued.id if queued else None
                 if queued: queued.status, queued.heartbeat_at = 'RUNNING', now()
                 # An interrupted approved repair is reported, never blindly replayed.
-                for issue in db.scalars(select(TechnicalIssue).where(TechnicalIssue.status == 'APPLYING', TechnicalIssue.updated_at < now() - timedelta(minutes=5)).with_for_update()):
+                for issue in db.scalars(select(TechnicalIssue).where(TechnicalIssue.status == 'APPLYING',
+                        TechnicalIssue.repair_stage.is_(None),
+                        TechnicalIssue.action != 'RETRY_ORDER_AGENT', TechnicalIssue.updated_at < now() - timedelta(minutes=5)).with_for_update()):
                     issue.status, issue.description, issue.updated_at = 'FAILED', 'Repair execution was interrupted. Verify its outcome before retrying.', now()
+                    issue.notified_at = None
                     issue.version += 1
             with monitor_run('TECHNICAL', identity) as progress:
                 progress.step('Checking platform health and safe maintenance.', 5)
+                brain = Brain()
+                reconcile_mailboxes()
+                verify_order_retries()
+                recovery.recover(progress, brain)
                 repairs.execute(progress)
                 with Session(engine) as db, db.begin():
                     context(db, platform=True)
                     checks.scan(db, progress)
+                    from .code_repair.queue import enqueue
+                    enqueue(db)
+                escalation.escalate(progress, brain)
             return True
         finally:
             lock.execute(text("SELECT pg_advisory_unlock(hashtextextended('technical-agent-cycle', 0))"))

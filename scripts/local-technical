@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Local-only services; migration and database backup must precede start.
+set -euo pipefail
+api_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+case "${1:-status}" in
+  install)
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    mkdir -p "$unit_dir"
+    for role in technical code-repair; do
+      unit_file="$unit_dir/dispatra-local-$role.service"
+      if [[ -e "$unit_file" ]] && ! rg -q '^# Dispatra local tested code repair$' "$unit_file"; then
+        echo "Existing service configuration needs review: $unit_file" >&2; exit 1
+      fi
+    done
+    systemctl --user stop dispatra-local-technical.service dispatra-local-code-repair.service || true
+    for role in technical code-repair; do
+      module=app.agents.technical_worker
+      if [[ "$role" == code-repair ]]; then module=app.agents.code_repair.worker; fi
+      cat > "$unit_dir/dispatra-local-$role.service" <<EOF
+# Dispatra local tested code repair
+[Unit]
+Description=Dispatra local $role worker
+After=dispatra-local-db.service dispatra-local-api.service
+Wants=dispatra-local-db.service dispatra-local-api.service
+
+[Service]
+WorkingDirectory=$api_dir
+Environment=TECHNICAL_LOCAL_CODE_REPAIR=1
+ExecStart=$api_dir/.venv/bin/python -c "from dotenv import load_dotenv; load_dotenv(); from $module import main; main()"
+Restart=on-failure
+RestartSec=5
+MemoryMax=4G
+TasksMax=256
+CPUQuota=200%
+
+[Install]
+WantedBy=default.target
+EOF
+    done
+    systemctl --user daemon-reload
+    systemctl --user enable --now dispatra-local-technical.service dispatra-local-code-repair.service ;;
+  start)
+    for role in technical code-repair; do
+      module=app.agents.technical_worker
+      if [[ "$role" == code-repair ]]; then module=app.agents.code_repair.worker; fi
+      if [[ "$(systemctl --user show "dispatra-local-$role.service" --property=LoadState --value 2>/dev/null)" == loaded ]]; then
+        systemctl --user restart "dispatra-local-$role.service"
+        continue
+      fi
+      systemd-run --user --unit="dispatra-local-$role" --property="WorkingDirectory=$api_dir" \
+        --property=Restart=on-failure --property=RestartSec=5 \
+        --property=MemoryMax=4G --property=TasksMax=256 --property=CPUQuota=200% \
+        --setenv=TECHNICAL_LOCAL_CODE_REPAIR=1 \
+        "$api_dir/.venv/bin/python" -c "from dotenv import load_dotenv; load_dotenv(); from $module import main; main()"
+    done ;;
+  stop) systemctl --user stop dispatra-local-technical.service dispatra-local-code-repair.service ;;
+  status) systemctl --user status --no-pager dispatra-local-technical.service dispatra-local-code-repair.service ;;
+  *) echo 'Usage: bash scripts/local-technical install|start|stop|status' >&2; exit 2 ;;
+esac

@@ -132,7 +132,7 @@ def test_critical_driver_issue_notifies_owner_and_restores_driver_scope(setup):
         assert workflow['mobile'].get(ROOT).status_code == 403
 
 
-def test_critical_system_mailbox_alert_is_transactional_and_company_labeled(client):
+def test_raw_mailbox_failure_waits_for_technical_recovery_before_notifying(client):
     from types import SimpleNamespace
     from app.services import audit
     from app.database import context
@@ -141,9 +141,7 @@ def test_critical_system_mailbox_alert_is_transactional_and_company_labeled(clie
     with Session(owner_engine) as db, db.begin():
         context(db, actor.organization_id)
         audit(db, actor, 'mailbox.failed', uuid4(), actor.organization_id, 'SYSTEM')
-    note, = snapshot(client)['items']
-    assert note['kind'] == 'mailbox.failed' and note['severity'] == 'CRITICAL'
-    assert note['organization_id'] == org['id'] and note['company_name'] == 'Acme'
+    assert snapshot(client)['items'] == []
 
 
 def test_unknown_quote_email_alert_is_private_and_order_updates_are_excluded(setup, monkeypatch):
@@ -170,8 +168,9 @@ def test_unknown_quote_email_alert_is_private_and_order_updates_are_excluded(set
         assert 'private@example.net' not in str(notes) and 'quote_id' not in notes[0]
 
 
-def test_mailbox_worker_failure_notifies_owner_once_until_recovery(setup, monkeypatch):
+def test_risky_mailbox_failure_notifies_after_assessment_once_per_episode(setup, monkeypatch):
     from app.intake import mailbox, service
+    from app.agents import technical_worker
     from test_email_delivery import connect_mailbox
     from test_manual_operations import BASE, check
     workflow = setup
@@ -185,11 +184,15 @@ def test_mailbox_worker_failure_notifies_owner_once_until_recovery(setup, monkey
     assert check(workflow['client'].get(BASE + '/email-intake/mailbox'))['last_error'] == 'AUTHENTICATION'
     with TestClient(app, headers=HEADERS) as owner:
         login(owner)
-        notes = [note for note in snapshot(owner)['items'] if note['kind'] == 'mailbox.failed']
+        assert not any(note['kind'] == 'mailbox.failed' for note in snapshot(owner)['items'])
+        technical_worker.cycle(force=True)
+        technical_worker.cycle(force=True)
+        notes = [note for note in snapshot(owner)['items'] if note['kind'] == 'technical.approval_required']
         assert len(notes) == 1 and notes[0]['severity'] == 'CRITICAL'
         assert 'AUTHENTICATION' not in str(notes)
         monkeypatch.setattr(mailbox, 'fetch_new', lambda *args: (7, 0, []))
         assert service.poll_mailbox(org_id) == 0
         monkeypatch.setattr(mailbox, 'fetch_new', disconnected)
         assert service.poll_mailbox(org_id) == 0
-        assert len([note for note in snapshot(owner)['items'] if note['kind'] == 'mailbox.failed']) == 2
+        technical_worker.cycle(force=True)
+        assert len([note for note in snapshot(owner)['items'] if note['kind'] == 'technical.approval_required']) == 2

@@ -37,13 +37,16 @@ def apply(task):
             intake.reopen(row)
             row.version += 1
             audit(db, actor, 'intake.retried', row.id, org_id, 'AGENT')
-            return 'FIXED', 'Order agent task requeued through its normal processing workflow.'
+            return 'APPLYING', 'Order agent task requeued. Waiting for a verified processing result before marking the repair fixed.'
         if not row.enabled or not row.last_error: return 'SUPERSEDED', 'Mailbox state changed; retry is no longer applicable.'
     # Network work remains outside the transaction; the shared mailbox poll deduplicates fetched mail.
-    intake.poll_mailbox(org_id)
+    intake.poll_mailbox(org_id, expected_target=(task['target_id'], task['target_version']))
     with Session(engine) as db, db.begin():
         context(db, org_id)
         row = db.scalar(select(MailboxConnection).where(MailboxConnection.id == task['target_id'], MailboxConnection.organization_id == org_id))
+        org = db.get(Organization, org_id)
+        if not org or not org.active or row is None or not row.enabled or row.version != task['target_version']:
+            return 'SUPERSEDED', 'Mailbox settings or company access changed during retry; no successful repair is claimed.'
         if row and row.last_error is None: return 'FIXED', 'Mailbox connection retry succeeded.'
     return 'FAILED', 'Mailbox retry failed; the dispatcher must review its settings.'
 
@@ -59,6 +62,7 @@ def execute(progress, limit=10):
             context(db, platform=True)
             row = db.get(TechnicalIssue, task['id'])
             row.status, row.description, row.updated_at = status, message, now()
+            if status == 'FAILED': row.notified_at = None
             row.fixed_count = int(status == 'FIXED')
             row.version += 1
             actor = SimpleNamespace(id=None, organization_id=None, actor_type='AGENT')
