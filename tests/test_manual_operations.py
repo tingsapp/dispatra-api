@@ -150,12 +150,14 @@ def test_shipper_preferred_driver_and_rate_card(setup):
 
 def test_seed_is_repeatable_and_preserves_changes(setup):
     w=setup;client=w['client']
-    default=next(r for r in w['rates'] if r['is_default'])
+    # A saved distance default must survive the new Zone to zone signup default.
+    default=next(r for r in w['rates'] if r['active'] and r['data']['method']=='BASE_PLUS_DISTANCE')
     default['data']['base_fee']='123'
     updated=check(client.put(BASE+'/rate-cards/'+default['id'],json={'version':default['version'],'is_default':True,'active':True,'data':default['data']},headers={'Idempotency-Key':str(uuid4())}))
     assert check(post(client,BASE+'/pricing/seed',{}))['created']==0
     rates=check(client.get(BASE+'/rate-cards'))
     assert next(r for r in rates if r['id']==updated['id'])['data']['base_fee']=='123'
+    assert [r['id'] for r in rates if r['is_default']]==[updated['id']]
     assert len(rates)==7
     zone=next(r for r in rates if r['data']['method']=='ZONE')
     assert zone['data']['weight_bands'][0]['prices']['zone_1']=='20'

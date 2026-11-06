@@ -34,6 +34,7 @@ def test_quote_email_is_queued_once_and_sent_from_snapshot(setup, monkeypatch):
     assert len(delivered) == 1
     assert delivered[0].recipient == 'buyer@example.net'
     assert 'Pickup:' in delivered[0].body_text and 'Total:' in delivered[0].body_text
+    assert 'alt="Dispatra"' in delivered[0].body_html and 'Price summary' in delivered[0].body_html
     assert check(client.get(BASE + f'/email-deliveries/{queued["id"]}'))['status'] == 'SENT'
     assert email_worker.poll_once('smtp-test') == 0
 
@@ -95,6 +96,8 @@ def test_company_mailbox_sends_order_updates_to_shippers(setup, monkeypatch):
     message, account = sent[0]
     assert message.recipient == 'alice@example.com' and message.subject == 'Acme, Driver assigned'
     assert order['number'] in message.body_text and 'Alice Shipper' in message.body_text
+    assert 'alt="Dispatra"' in message.body_html and '<h1' in message.body_html
+    assert order['number'] in message.body_html and 'Ask them to turn these emails off.' in message.body_html
     assert (account.host, account.port, account.username, account.password, account.company) == ('smtp.example.com', 465, 'orders@acme.test', 'app-password', True)
     assert account.sender_name
     with owner_engine.connect() as db:

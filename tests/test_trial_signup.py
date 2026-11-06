@@ -42,6 +42,9 @@ def test_signup_creates_isolated_dispatcher_and_thirty_day_defaults(client):
     assert settings['company_name'] == BODY['name'] and settings['contact_name'] == BODY['full_name']
     cards = client.get(base + '/rate-cards').json()
     assert {card['data']['method'] for card in cards if card['active']} == {'BASE_PLUS_DISTANCE', 'FIXED', 'ZONE', 'HOURLY', 'IMPORTED'}
+    default, = [card for card in cards if card['is_default']]
+    assert default['active'] and default['data']['method'] == 'ZONE'
+    assert default['data']['name'] == 'Zone to zone'
     with owner_engine.connect() as db:
         dates = db.execute(text('SELECT trial_started_at, trial_ends_at FROM organizations WHERE id=:id'), {'id':org['id']}).one()
         assert dates[1] - dates[0] == timedelta(days=30)

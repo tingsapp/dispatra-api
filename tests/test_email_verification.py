@@ -74,6 +74,8 @@ def test_code_is_private_and_cookie_is_not_authentication(client,monkeypatch):
     sent=[];monkeypatch.setattr(verification_worker.smtp_transport,'send',lambda message:sent.append(message))
     assert verification_worker.poll_once()==1
     assert code in sent[0].body_text
+    assert code in sent[0].body_html and 'alt="Dispatra"' in sent[0].body_html
+    assert 'Verify your email address' in sent[0].body_html
     assert verification_worker.poll_once()==0
     status=client.get('/api/v1/auth/verification')
     assert status.json()['delivery_status']=='SENT' and code not in status.text

@@ -96,7 +96,7 @@ def test_new_company_includes_imported_price_and_seed_preserves_edits(client):
     imported, = [r for r in rates if r['data']['method'] == 'IMPORTED']
     assert imported['data']['name'] == 'Imported price' and imported['active'] and not imported['is_default']
     assert all(not imported['data'][flag] for flag in ('apply_fuel', 'apply_service', 'apply_vehicle', 'apply_accessorials'))
-    assert next(r for r in rates if r['is_default'])['data']['method'] == 'BASE_PLUS_DISTANCE'
+    assert next(r for r in rates if r['is_default'])['data']['method'] == 'ZONE'
     edited = check(client.put(base + '/rate-cards/' + imported['id'], json={
         'version': imported['version'], 'active': False, 'is_default': False,
         'data': {**imported['data'], 'name': 'Custom TMS terms'},

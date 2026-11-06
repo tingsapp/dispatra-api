@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import smtplib
 import ssl
 import socket
@@ -60,6 +61,15 @@ def notify(keys):
     message.set_content('The live Technical watchdog could not restore normal operation within its recovery window.\n'
         'Checks needing attention: ' + ', '.join(keys) + '\nReview the live Monitor or server services. '
         'No customer data or logs are included.\nhttps://dispatra.com/admin/monitor')
+    # Load only the stdlib presentation module; the watchdog must survive API/database failures.
+    source = Path(__file__).resolve().parents[1] / 'app/email_templates.py'
+    if not source.is_file():
+        source = Path('/opt/dispatra/api/app/email_templates.py')
+    try:
+        template = runpy.run_path(str(source))
+        template['add_html'](message, template['service_alert'](keys))
+    except Exception:
+        pass  # Preserve the independent plain-text alert if application files are unavailable.
     port = int(os.environ.get('SMTP_PORT','465'))
     if port == 465:
         connection = smtplib.SMTP_SSL(os.environ['SMTP_HOST'],port,timeout=20,context=ssl.create_default_context())

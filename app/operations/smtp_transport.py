@@ -9,6 +9,7 @@ import os
 import smtplib
 import ssl
 from app.models import now
+from app.email_templates import add_html
 
 
 class TemporaryFailure(Exception):
@@ -82,7 +83,7 @@ def send(delivery, account=None):
     message['Message-ID'] = delivery.message_id
     message['Date'] = format_datetime(now())
     message.set_content(delivery.body_text)
-    message.add_alternative(delivery.body_html, subtype='html')
+    add_html(message, delivery.body_html)
     smtp = _open(account)
     try:
         try:

@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "source": "Dispatra client demo defaults, 2026-09-25; vehicle types from the client presets, 2026-10-06",
+  "version": 3,
+  "source": "Dispatra client demo defaults, 2026-09-25; vehicle types from the client presets, 2026-10-06; Zone to zone default, 2026-11-06",
   "pricing": {
     "discountSource": "SHIPPER",
     "rateCards": [
@@ -10,7 +10,7 @@
         "code": "STD",
         "status": "ACTIVE",
         "version": 1,
-        "scope": "ORGANIZATION",
+        "scope": "ORDER",
         "customerId": null,
         "serviceId": null,
         "vehicleId": null,
@@ -138,7 +138,7 @@
         "code": "PFL-2026",
         "status": "ACTIVE",
         "version": 1,
-        "scope": "ORDER",
+        "scope": "ORGANIZATION",
         "customerId": null,
         "serviceId": null,
         "vehicleId": null,

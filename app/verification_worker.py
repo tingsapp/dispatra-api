@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 from app.database import engine, context
+from app.email_templates import verification
 from app.models import EmailVerification, OutboxEvent, now
 from app.intake import vault
 from app.operations import outbox, smtp_transport
@@ -25,10 +26,10 @@ def process(org_id, event_id, worker):
             outbox.acknowledge(db, org_id, event_id, worker); return
         code = vault.unseal(row.secret, 'verification message')
         row.delivery_status = 'SENDING'
+        body_text, body_html = verification(code)
         message = SimpleNamespace(recipient=row.email, subject='Verify your Dispatra account',
             message_id=f'<verification-{row.id}@dispatra.com>',
-            body_text=f'Your Dispatra verification code is {code}. It expires in 10 minutes. If you did not create this account, ignore this email.',
-            body_html=f'<p>Your Dispatra verification code is <strong>{code}</strong>.</p><p>It expires in 10 minutes. If you did not create this account, ignore this email.</p>')
+            body_text=body_text, body_html=body_html)
     status, failure = 'SENT', None
     try: smtp_transport.send(message)
     except smtp_transport.TemporaryFailure as exc: status, failure = 'PENDING', exc.code

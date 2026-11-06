@@ -5,9 +5,9 @@ Only companies with a connected mailbox send them, and only to Shippers who keep
 Text is the notification text: Order numbers only, never addresses, prices or dispatcher notes.
 """
 import os
-from html import escape
 from uuid import uuid4
 from sqlalchemy import select
+from app.email_templates import order_update
 from app.models import Organization, OutboxEvent
 
 
@@ -31,12 +31,7 @@ class Sender:
         company = self.company()
         base = os.environ.get('PUBLIC_WEB_URL', '').strip().rstrip('/')
         link = f'{base}/{company.slug}/shipper' if base else ''
-        text = '\n'.join([f'Hello {shipper.name},', '', notification.body, *([f'', f'View your orders: {link}'] if link else []), '',
-            f'{company.name}', '', f'You receive order updates from {company.name}. Ask them to turn these emails off.']) + '\n'
-        html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
-            f'<p>Hello {escape(shipper.name)},</p><p>{escape(notification.body)}</p>'
-            + (f'<p><a href="{escape(link)}">View your orders</a></p>' if link else '')
-            + f'<p>{escape(company.name)}</p><p style="color:#64748b;font-size:12px">You receive order updates from {escape(company.name)}. Ask them to turn these emails off.</p></html>')
+        text, html = order_update(company.name, shipper.name, notification.title, notification.body, link)
         identity = uuid4()
         self.db.flush()  # the delivery references the notification row
         self.db.add(EmailDelivery(id=identity, organization_id=self.organization_id, notification_id=notification.id, requested_by=user.id,

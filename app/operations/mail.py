@@ -1,36 +1,14 @@
 """Quote email queueing; SMTP runs after the transaction commits."""
 from datetime import datetime
-from html import escape
 from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import select
+from app.email_templates import quote as _message
 from app.models import now
 from app.services import audit
 from .common import command, record, settings, version
 from .models import EmailDelivery, Quote
 from .schemas import EmailDeliveryView
-
-
-def _price_lines(pricing):
-    return [(str(line['label']), str(line['amount'])) for line in pricing.get('lines', [])]
-
-
-def _message(company, title, recipient_name, pricing, details):
-    currency = pricing.get('currency', 'CAD')
-    lines = _price_lines(pricing)
-    summary = [('Subtotal', str(pricing['subtotal'])), ('Tax', str(pricing['tax'])),
-               ('Total', f"{pricing['total']} {currency}")]
-    text_lines = [company, title, '', f'To: {recipient_name}', *details, '',
-                  *(f'{label}: {amount}' for label, amount in lines + summary)]
-    body_text = '\n'.join(text_lines) + '\n'
-    table = ''.join(f'<tr><td>{escape(label)}</td><td>{escape(amount)}</td></tr>'
-                    for label, amount in lines + summary)
-    body_html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
-                 f'<h1>{escape(title)}</h1><p>{escape(company)}</p>'
-                 f'<p>To: {escape(recipient_name)}</p>'
-                 + ''.join(f'<p>{escape(detail)}</p>' for detail in details)
-                 + f'<table>{table}</table></html>')
-    return body_text, body_html
 
 
 def _queue(db, actor, *, recipient, subject, body_text, body_html, quote_id):

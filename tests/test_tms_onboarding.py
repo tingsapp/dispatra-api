@@ -110,6 +110,13 @@ def test_external_provisioning_selects_imported_tms_price_before_first_login(cli
     assert confirm_trial(client,'external-trial@example.com').status_code==200
     default=next(row for row in client.get('/api/v1/companies/trial-external/rate-cards').json() if row['is_default'])
     assert default['data']['method']=='IMPORTED'
+    base='/api/v1/companies/trial-external'
+    saved=client.get(base+'/settings').json()
+    response=client.put(base+'/settings',json={'version':saved['version'],'data':{**saved['data'],'tms_workspace':False}},
+        headers={'Idempotency-Key':str(uuid4())})
+    assert response.status_code==200,response.text
+    default=next(row for row in client.get(base+'/rate-cards').json() if row['is_default'])
+    assert default['data']['method']=='ZONE'
 
 
 def test_mode_rejection_leaves_rates_settings_and_other_company_unchanged(client):
