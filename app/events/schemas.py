@@ -28,6 +28,7 @@ class SyncView(BaseModel):
 
 
 class NotificationView(BaseModel):
+    conversation_id: UUID | None = None
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     version: int

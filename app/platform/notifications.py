@@ -60,9 +60,9 @@ def inbox(user):
 
 def view(db, row):
     return PlatformNotificationView.model_validate({**{field: getattr(row, field) for field in
-        ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')},
+        ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id', 'conversation_id')},
         'company_name': db.scalar(select(Organization.name).where(Organization.id == row.organization_id)),
-        'target': 'operational' if row.kind.startswith('watch.') or row.kind == 'issue.reported' else 'monitor' if row.kind.startswith('technical.') else 'company'}).model_dump(mode='json')
+        'target': 'chat' if row.conversation_id else 'operational' if row.kind.startswith('watch.') or row.kind == 'issue.reported' else 'monitor' if row.kind.startswith('technical.') else 'company'}).model_dump(mode='json')
 
 
 def page(db, user, limit, before=None):
@@ -75,8 +75,8 @@ def page(db, user, limit, before=None):
     rows = db.execute(query.add_columns(Organization.name).join(Organization, Organization.id == Notification.organization_id)
         .order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit))
     items = [PlatformNotificationView.model_validate({**{field: getattr(row, field) for field in
-        ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id')}, 'company_name': name,
-        'target': 'operational' if row.kind.startswith('watch.') or row.kind == 'issue.reported' else 'monitor' if row.kind.startswith('technical.') else 'company'}) for row, name in rows]
+        ('id', 'version', 'created_at', 'kind', 'severity', 'title', 'body', 'read_at', 'organization_id', 'conversation_id')}, 'company_name': name,
+        'target': 'chat' if row.conversation_id else 'operational' if row.kind.startswith('watch.') or row.kind == 'issue.reported' else 'monitor' if row.kind.startswith('technical.') else 'company'}) for row, name in rows]
     unread = db.scalar(select(func.count()).select_from(inbox(user).where(Notification.read_at.is_(None)).subquery()))
     return {'items': items, 'unread': unread}
 

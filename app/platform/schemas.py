@@ -111,6 +111,7 @@ class AuditEntry(BaseModel):
 
 
 class PlatformNotificationView(BaseModel):
+    conversation_id: UUID | None = None
     id: UUID
     version: int
     created_at: datetime
@@ -121,7 +122,7 @@ class PlatformNotificationView(BaseModel):
     read_at: datetime | None
     organization_id: UUID
     company_name: str
-    target: Literal['company', 'monitor', 'operational'] = 'company'
+    target: Literal['company', 'monitor', 'operational', 'chat'] = 'company'
 
 
 class PlatformInbox(BaseModel):

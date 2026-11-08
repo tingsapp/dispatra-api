@@ -5,7 +5,7 @@ from app import auth
 from app.models import User
 from app.routes import DB, OperationKey
 from . import service
-from .schemas import ChannelView, ChatKind, InboxItem, MessageCreate, MessagePage, MessageView, ReadMark, ReadView
+from .schemas import ChannelView, ChatKind, InboxItem, InboxPage, MessageCreate, MessagePage, MessageView, ReadMark, ReadView
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Order chat'])
 
@@ -58,3 +58,28 @@ def shipper_company_chat(slug: str, shipper_id: UUID, db: DB, user: User = Depen
 def shipper_company_message(slug: str, shipper_id: UUID, data: MessageCreate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.company_user)):
     from . import company
     return company.send(db, user, shipper_id, data, idempotency_key, kind='shipper')
+
+
+@router.get('/chat-inbox', response_model=InboxPage)
+def inbox_page(slug: str, db: DB, user: User = Depends(auth.company_user), cursor: str | None = Query(None, max_length=200),
+               search: str = Query('', max_length=200), kind: ChatKind | None = None, unread_only: bool = False, limit: int = Query(50, ge=1, le=100)):
+    from . import inbox
+    return inbox.page(db, user, limit, cursor, search, kind, unread_only)
+
+
+@router.get('/chats/{identity}', response_model=InboxItem)
+def chat_detail(slug: str, identity: UUID, db: DB, user: User = Depends(auth.company_user)):
+    from . import inbox
+    return inbox.detail(db, user, identity)
+
+
+@router.get('/admin-chat', response_model=ChannelView)
+def admin_channel(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
+    from . import support
+    return support.channel(db, user, user.id)
+
+
+@router.post('/admin-chat/messages', response_model=MessageView, status_code=201)
+def admin_message(slug: str, data: MessageCreate, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    from . import support
+    return support.send(db, user, user.id, data, idempotency_key)

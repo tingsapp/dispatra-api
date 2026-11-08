@@ -55,15 +55,28 @@ def notes(db, action, entity_id, audience, actor, recipients):
         from app.chat.models import Conversation, Message
         message = db.get(Message, entity_id)
         conversation = db.get(Conversation, message.conversation_id) if message else None
-        if not order or not conversation or conversation.kind != 'DRIVER_SHIPPER': return []
-        if message.sender_role not in {'SHIPPER', 'DRIVER'}: return []
-        previous = db.scalar(select(Message.id).where(Message.organization_id == recipients.organization_id,
-            Message.conversation_id == conversation.id, Message.sender_role == message.sender_role,
-            Message.seq < message.seq).limit(1))
-        if previous: return []
-        sender = 'Shipper' if message.sender_role == 'SHIPPER' else 'driver'
-        return to(driver() if message.sender_role == 'SHIPPER' else shipper(), 'INFO',
-            f'New message from {sender}', f'{number}: your {sender} sent you a message. Open the order to reply.')
+        if not conversation: return []
+        if conversation.kind == 'ADMIN_DISPATCHER':
+            if message.sender_role == 'ADMIN':
+                users = recipients.account(User.id, conversation.dispatcher_id)
+            else:
+                from app.database import context
+                from sqlalchemy import text
+                saved = db.execute(text("SELECT current_setting('app.organization_id',true),current_setting('app.platform',true),current_setting('app.shipper_id',true),current_setting('app.driver_id',true)")).one()
+                try:
+                    context(db)
+                    users = list(db.scalars(select(User).where(User.role == 'ADMIN', User.active.is_(True))))
+                finally:
+                    context(db, saved[0] or None, saved[1] == 'true', saved[2] or None, saved[3] or None)
+        elif conversation.kind == 'DRIVER_SHIPPER':
+            users = driver() if message.sender_role == 'SHIPPER' else shipper()
+        elif message.sender_role == 'DISPATCHER':
+            users = driver() if conversation.kind == 'DISPATCH_DRIVER' else shipper()
+        else:
+            users = dispatch()
+        sender = {'ADMIN': 'Admin', 'DISPATCHER': 'Dispatch', 'SHIPPER': 'Shipper', 'DRIVER': 'driver'}[message.sender_role]
+        return to(users, 'INFO', f'New message from {sender}',
+            (f'{number}: ' if number else '') + f'{sender} sent you a message. Open chat to reply.')
 
     if action in {'watch.detected','watch.escalated','watch.driver_replied','watch.update_requested'}:
         from app.order_watch.models import Incident

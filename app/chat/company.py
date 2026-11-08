@@ -88,4 +88,4 @@ def send(db, user, identity, data, key, kind='driver'):
         audit(db, user, 'message.created', row.id, user.organization_id)
         return message_view(row, user)
     action = f'company-chat-message:{identity}' if kind == 'driver' else f'shipper-company-chat-message:{identity}'
-    return command(db, user, key, action, data.model_dump(), run)
+    return command(db, user, key, action, data.model_dump(include={'body'}), run)

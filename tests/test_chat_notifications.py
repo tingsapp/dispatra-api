@@ -1,4 +1,4 @@
-"""First shipper/driver messages notify the other party once, including concurrent sends."""
+"""Every incoming message notifies its recipient once, including concurrent sends and retries."""
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 import pytest
@@ -17,7 +17,7 @@ def notes(client):
 
 
 @pytest.mark.parametrize('first_sender', ['SHIPPER', 'DRIVER'])
-def test_first_message_in_each_direction_notifies_only_the_opposite_party(setup, first_sender):
+def test_each_message_notifies_only_the_opposite_party(setup, first_sender):
     w = setup
     order = new_order(w)
     assign(w, order)
@@ -41,10 +41,10 @@ def test_first_message_in_each_direction_notifies_only_the_opposite_party(setup,
         assert check(post(opposite, BASE + f'/notifications/{notification["id"]}/read', {'version': notification['version']}))['read_at']
         check(post(opposite, BASE + f'/chats/{first["conversation_id"]}/read', {'seq': first['seq']}))
         say(sender, order, 'DRIVER_SHIPPER', 'Second message after read')
-        assert len(notes(opposite)) == 1 and notes(opposite)[0]['read_at']
+        assert len(notes(opposite)) == 2 and not notes(opposite)[0]['read_at']
         say(opposite, order, 'DRIVER_SHIPPER', 'First reply')
         say(opposite, order, 'DRIVER_SHIPPER', 'Second reply')
-        assert len(notes(sender)) == 1 and len(notes(opposite)) == 1
+        assert len(notes(sender)) == 2 and len(notes(opposite)) == 2
         # Stored recipient scope protects notices, independently of message visibility/oversight.
         assert post(sender, BASE + f'/notifications/{notification["id"]}/read', {'version': 1}).status_code == 404
         assert post(w['client'], BASE + f'/notifications/{notification["id"]}/read', {'version': 1}).status_code == 404
@@ -52,7 +52,7 @@ def test_first_message_in_each_direction_notifies_only_the_opposite_party(setup,
 
 
 @pytest.mark.parametrize('existing_conversation', [False, True])
-def test_simultaneous_first_sends_notify_once(setup, existing_conversation):
+def test_simultaneous_sends_each_notify_once(setup, existing_conversation):
     w = setup
     order = new_order(w)
     assign(w, order)
@@ -62,7 +62,7 @@ def test_simultaneous_first_sends_notify_once(setup, existing_conversation):
         futures = [pool.submit(say, shipper, order, 'DRIVER_SHIPPER', body) for body in ['First concurrent send', 'Second concurrent send']]
         sent = [future.result() for future in futures]
         assert len({message['conversation_id'] for message in sent}) == 1
-        assert len(notes(w['mobile'])) == 1
+        assert len(notes(w['mobile'])) == 2
         assert len(notes(shipper)) == int(existing_conversation)
 
 
@@ -93,7 +93,7 @@ def test_first_chat_notification_keeps_one_existing_phone_push(setup):
         register(native)
         for body in ['First message', 'Second message']:
             say(shipper, order, 'DRIVER_SHIPPER', body)
-        assert len(notes(native)) == 1
+        assert len(notes(native)) == 2
         queued = pushes()
         assert len(queued) == 2 and all(p['kind'] == 'message.created' and p['data']['type'] == 'chat' for p in queued)
         assert all(p['data']['order_id'] == order['id'] for p in queued)

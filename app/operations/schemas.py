@@ -562,6 +562,7 @@ class OrderView(RecordView):
 
 
 class DriverNotificationView(RecordView):
+    conversation_id: UUID | None = None
     title: str
     body: str
     order_id: UUID | None

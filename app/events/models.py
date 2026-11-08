@@ -47,6 +47,7 @@ class Notification(Base):
     shipper_id: Mapped[UUID | None]
     driver_id: Mapped[UUID | None]
     event_id: Mapped[UUID | None]
+    conversation_id: Mapped[UUID | None]
     kind: Mapped[str] = mapped_column(String(80))
     severity: Mapped[str] = mapped_column(String(10), default='INFO')
     order_id: Mapped[UUID | None]

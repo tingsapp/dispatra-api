@@ -138,6 +138,8 @@ from .dispatch.routes import router as dispatch_router
 app.include_router(dispatch_router)
 from .chat.routes import router as chat_router
 app.include_router(chat_router)
+from .chat.admin_routes import router as admin_chat_router
+app.include_router(admin_chat_router)
 from .push.routes import router as push_router
 app.include_router(push_router)
 from .integrations.routes import api_keys as api_key_router, receiver as tms_receiver, router as integrations_router, webhooks as webhook_router

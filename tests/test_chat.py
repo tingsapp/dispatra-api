@@ -43,7 +43,7 @@ def test_order_chat_participants_windows_and_reads(setup):
         assert post(shipper, BASE + f'/orders/{order["id"]}/chats/DISPATCH_SHIPPER/messages', {'body': 'Different'}, key).status_code == 409
         seen = sync(dispatcher, cursors['dispatcher'])
         assert [change['entity_id'] for change in message_changes(seen)] == [first['id']] and seen['unread_messages'] == 1
-        assert seen['unread'] == 0, 'chat messages do not create inbox notifications'
+        assert seen['unread'] == 1, 'incoming chat messages notify their recipient'
         assert message_changes(sync(driver, cursors['driver'])) == []
         page = thread(dispatcher, first['conversation_id'])
         assert page['has_more'] is False and [m['mine'] for m in page['messages']] == [False]
@@ -121,9 +121,23 @@ def test_reassignment_revokes_previous_driver_and_shippers_are_isolated(setup):
             check(post(mobile, BASE + '/driver/duty', {}), 201)
             check(post(dispatcher, BASE + f'/orders/{order["id"]}/assign', dict(version=order['version'], driver_id=second['id'],
                 vehicle_id=vehicle['id'], planned_at=datetime.now(timezone.utc).isoformat())))
+            assert post(dispatcher, BASE + f'/orders/{order["id"]}/chats/DISPATCH_DRIVER/messages',
+                {'body':'Stale draft must not reach Sam','expected_conversation_id':ops['conversation_id']}).status_code == 409
+            assert post(dispatcher, BASE + f'/orders/{order["id"]}/chats/DISPATCH_DRIVER/messages',
+                {'body':'Unopened stale draft','expected_driver_id':w['driver']['id']}).status_code == 409
+            assert check(mobile.get(BASE+'/chats')) == []
+
             fresh = chats(mobile, order)
             assert kinds(fresh) == ['DISPATCH_DRIVER', 'DRIVER_SHIPPER'] and all(c['conversation_id'] is None and c['can_send'] for c in fresh)
             thread(mobile, old['conversation_id'], 404)
+            url = BASE + f'/orders/{order["id"]}/chats/DISPATCH_DRIVER/messages'
+            first_key = str(uuid4())
+            bound = check(post(dispatcher, url, {'body':'Hello Sam', 'expected_driver_id':second['id']}, first_key), 201)
+            assert check(post(dispatcher, url, {'body':'Hello Sam', 'expected_driver_id':second['id'], 'expected_conversation_id':bound['conversation_id']}, first_key), 201) == bound
+            payload = {'body':'Received', 'expected_conversation_id':bound['conversation_id'], 'expected_driver_id':second['id']}
+            retry_key = str(uuid4())
+            reply = check(post(mobile, url, payload, retry_key), 201)
+            assert check(post(mobile, url, payload, retry_key), 201) == reply
             assert [c['title'] for c in chats(shipper, order)] == ['Dispatch', 'Sam Second']
             new = say(shipper, order, 'DRIVER_SHIPPER', 'Hi Sam')
             assert new['conversation_id'] != old['conversation_id']
