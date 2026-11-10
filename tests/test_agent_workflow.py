@@ -46,7 +46,7 @@ def test_email_auto_dispatch_driver_completion(agent, monkeypatch, ranking):
     drivers = []
     with ExitStack() as sessions:
         for index, (latitude, on_duty) in enumerate([(49.26, True), (49.36, True), (49.26, False)]):
-            vehicle = check(post(client, BASE + '/vehicles', dict(name=f'Workflow Van {index}', type_id=type_id,
+            vehicle = check(post(client, BASE + '/vehicles', dict(name=f'Workflow Van {index}', parking_address=address(lat=latitude), type_id=type_id,
                 plate=f'FLOW{index}', province='BC', payload_kg=1000, volume_m3=12,
                 length_cm=300, width_cm=180, height_cm=180)), 201)
             driver = check(post(client, BASE + '/drivers', dict(name=f'Workflow Driver {index}',

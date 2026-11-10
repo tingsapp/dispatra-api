@@ -52,3 +52,5 @@ class EmailIntake(TenantRecord, Base):
     order_id: Mapped[UUID | None]
     error_code: Mapped[str | None] = mapped_column(String(80))
     attempts: Mapped[int] = mapped_column(default=0)
+    completion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completion_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

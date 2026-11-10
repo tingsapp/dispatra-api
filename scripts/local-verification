@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Supervise verification delivery separately from order/customer email delivery.
+set -euo pipefail
+api_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+unit=dispatra-local-verification.service
+case "${1:-status}" in
+  install)
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    unit_file="$unit_dir/$unit"
+    mkdir -p "$unit_dir"
+    if [[ -e "$unit_file" ]] && ! rg -q '^# Dispatra local verification delivery$' "$unit_file"; then
+      echo "Existing service configuration needs review: $unit_file" >&2
+      exit 1
+    fi
+    cat > "$unit_file" <<EOF
+# Dispatra local verification delivery
+[Unit]
+Description=Dispatra local signup verification email
+After=dispatra-local-db.service dispatra-local-api.service
+Requires=dispatra-local-db.service
+Wants=dispatra-local-api.service
+PartOf=dispatra-local-api.service
+
+[Service]
+WorkingDirectory=$api_dir
+ExecStart=$api_dir/.venv/bin/python -u -c "from dotenv import load_dotenv; load_dotenv('.env'); from app.verification_worker import main; main()"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target dispatra-local-api.service
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable "$unit"
+    systemctl --user restart "$unit"
+    ;;
+  start) systemctl --user start "$unit" ;;
+  stop) systemctl --user stop "$unit" ;;
+  status) systemctl --user status --no-pager "$unit" ;;
+  *) echo 'Usage: bash scripts/local-verification install|start|stop|status' >&2; exit 2 ;;
+esac

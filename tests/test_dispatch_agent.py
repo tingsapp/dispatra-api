@@ -33,7 +33,7 @@ def fleet(setup, monkeypatch):
     """Dana (on duty, attached van) plus Omar (off duty) and Nia (no vehicle). AI is off unless a test enables it."""
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
     client = setup['client']
-    omar_van = check(post(client, BASE + '/vehicles', dict(name='Spare Van', type_id=setup['type_id'], plate='SPARE1', province='BC', payload_kg=1000,
+    omar_van = check(post(client, BASE + '/vehicles', dict(name='Spare Van', parking_address=address(), type_id=setup['type_id'], plate='SPARE1', province='BC', payload_kg=1000,
         volume_m3=12, length_cm=300, width_cm=180, height_cm=180)), 201)
     omar = check(post(client, BASE + '/drivers', dict(name='Omar Offduty', email='omar@example.com', phone='6045550103', address=address(), vehicle_id=omar_van['id'])), 201)
     nia = check(post(client, BASE + '/drivers', dict(name='Nia Novan', email='nia@example.com', phone='6045550104', address=address())), 201)
@@ -48,7 +48,7 @@ def test_suggestion_ranks_feasible_drivers_and_approval_assigns(fleet):
     assert [c['driver_id'] for c in decision['candidates']] == [w['driver']['id']]
     best = decision['candidates'][0]
     assert best['vehicle_id'] == w['vehicle']['id'] and best['route_id'] is None and best['reason']
-    assert best['metrics']['position'] == 'HOME' and best['metrics']['deadhead_km'] is not None
+    assert best['metrics']['position'] == 'PARKING' and best['metrics']['deadhead_km'] is not None
     reasons = {item['driver_id']: item['reason'] for item in decision['excluded']}
     assert 'On Duty' in reasons[w['omar']['id']] and 'No vehicle' in reasons[w['nia']['id']]
     # A recent suggestion for the same Order version is reused; refresh evaluates again.

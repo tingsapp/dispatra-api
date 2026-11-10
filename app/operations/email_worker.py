@@ -109,7 +109,8 @@ def process_event(organization_id: UUID, event_id: UUID, worker_id: str):
 
 
 def poll_once(worker_id: str, limit: int = 25):
-    processed = 0
+    from app.support.worker import poll_once as support_mail
+    processed = support_mail(limit)
     for organization_id in pending_companies():
         with Session(engine) as db, db.begin():
             context(db, organization_id)

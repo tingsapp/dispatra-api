@@ -13,11 +13,11 @@ from .workload import measure
 from .policy import ordered
 
 
-def position(db, actor, driver):
+def position(db, actor, driver, vehicle):
     points = fixes(db, actor, driver)
     if points: return points[0].data, 'GPS'
-    home = driver.address or {}
-    if home.get('latitude') is not None and home.get('longitude') is not None: return home, 'HOME'
+    parking = vehicle.data.get('parking_address') or {}
+    if parking.get('latitude') is not None and parking.get('longitude') is not None: return parking, 'PARKING'
     return None, None
 
 
@@ -56,8 +56,8 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             duty = db.scalar(select(DutySession.id).where(DutySession.organization_id==actor.organization_id,
                 DutySession.driver_id==driver.id,DutySession.ended_at.is_(None)))
             expected = bool(include_expected and not duty and shift_start and now()<shift_start<=now()+timedelta(hours=1) and (route is None or route.status=='PLANNED'))
-            here, source = position(db, actor, driver)
-            if here is None: raise HTTPException(409, 'A verified driver starting position is required for planning.')
+            here, source = position(db, actor, driver, vehicle)
+            if here is None: raise HTTPException(409, 'Select a vehicle parking address with map coordinates or provide fresh driver GPS before planning.')
             pickups = [s for s in order.facts['stops'] if s['kind']=='PICKUP']
             direction, bearing = movement(fixes(db, actor, driver), pickups[0]['address'])
             origin = {**here, **({'heading':bearing} if bearing is not None else {})} if here else None
@@ -95,7 +95,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             facts.append(f'{round(worked)} min worked today; about {round(remaining)} min committed; {completed} orders completed')
             if live: facts.append({'APPROACHING':'Approaching the new pickup', 'MOVING_AWAY':'Moving away; remaining-route detour considered',
                 'CROSSING':'Travelling across the pickup direction', 'STATIONARY':'Stationary; planned route used', 'UNKNOWN':'Movement direction unavailable; planned route used'}[direction])
-            elif source == 'HOME': facts.append('Starting position estimated from driver address, not live GPS')
+            elif source == 'PARKING': facts.append('Starting position estimated from vehicle parking address, not live GPS')
             if slack: facts.append(f'Planned delivery slack: {round(min(slack))} min')
             candidates.append({**base, 'vehicle_id':str(vehicle.id), 'vehicle_name':vehicle.data.get('name') or vehicle.number,
                 'route_id':str(route.id) if route and route.id else None, 'route_version':getattr(route,'version',None),

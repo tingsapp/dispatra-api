@@ -120,7 +120,7 @@ from app.integrations import fleet  # noqa: E402
 
 DRIVER_MAP = {'id': 'driverId', 'name': 'fullName', 'email': 'email', 'phone': 'mobile', 'address': 'home.street', 'city': 'home.city',
     'province': 'home.province', 'postal_code': 'home.postal', 'vehicle_unit': 'truck', 'active': 'status'}
-VEHICLE_MAP = {'id': 'unitId', 'unit_number': 'unit', 'vehicle_type': 'equipment', 'plate': 'plate', 'province': 'plateRegion', 'payload': 'maxWeight'}
+VEHICLE_MAP = {'id': 'unitId', 'unit_number': 'unit', 'vehicle_type': 'equipment', 'plate': 'plate', 'province': 'plateRegion', 'payload': 'maxWeight', 'parking.address':'parking.street', 'parking.city':'parking.city', 'parking.province':'parking.province', 'parking.postal_code':'parking.postal'}
 
 
 def tms_driver(number, truck='T-12', **changes):
@@ -135,7 +135,7 @@ def fleet_tms(client, tms, monkeypatch):
     """A fake TMS: vehicles and drivers endpoints serve whatever the test puts in `data`; drivers are paged by cursor."""
     catalog = check(client.get('/api/v1/companies/acme/catalog'))
     van = next(c for c in catalog if c['code'] == 'veh_1_ton')
-    data = {'vehicles': [{'unitId': 'U-12', 'unit': 't-12', 'equipment': van['data']['name'].upper(), 'plate': 'nxt 482', 'plateRegion': 'BC', 'maxWeight': '2,000'},
+    data = {'vehicles': [{'unitId': 'U-12', 'unit': 't-12', 'equipment': van['data']['name'].upper(), 'plate': 'nxt 482', 'plateRegion': 'BC', 'maxWeight': '2,000', 'parking': {'street':'20 Yard St', 'city':'Vancouver', 'province':'BC', 'postal':'V5Y 1V4'}},
             {'unitId': 'U-21', 'unit': 'T-21', 'equipment': 'REEFER', 'plate': 'RFX 220', 'plateRegion': 'BC'}],
         'drivers': [tms_driver(1), tms_driver(2, truck=None), tms_driver(3, home={'street': '9 Main', 'city': 'Vancouver', 'province': 'BC', 'postal': ''})]}
     geocoded = []
@@ -199,7 +199,7 @@ def test_resync_skips_unchanged_records_updates_changes_and_archives_removed_one
 
 def test_sync_links_existing_dispatra_records_instead_of_duplicating(client, fleet_tms):
     van = fleet_tms['van']
-    existing = check(post(client, '/api/v1/companies/acme/vehicles', dict(name='Old', unit_number='T-12', type_id=van['id'], plate='OLD1', province='BC',
+    existing = check(post(client, '/api/v1/companies/acme/vehicles', dict(name='Old', parking_address=dict(text='20 Yard St, Vancouver, BC V5Y 1V4',city='Vancouver',province='BC',postal_code='V5Y 1V4',latitude=49.26,longitude=-123.07), unit_number='T-12', type_id=van['id'], plate='OLD1', province='BC',
         payload_kg=500, length_cm=300, width_cm=180, height_cm=180)), 201)
     person = check(post(client, '/api/v1/companies/acme/drivers', dict(name='Existing', email='driver1@fleet.example', phone='6045550000',
         address=dict(text='1 Main Street, Vancouver, BC V5Y 1V4', city='Vancouver', province='BC', postal_code='V5Y 1V4'), crew_size=2)), 201)
@@ -473,3 +473,18 @@ def test_api_keys_act_as_the_company_on_documented_endpoints_only(client, tms):
     assert api.get('/api/v1/companies/acme/orders', headers=auth).status_code == 401
     assert api.get('/api/v1/companies/acme/orders', headers={'Authorization': f'Bearer {replacement}'}).status_code == 200
     api.close()
+
+
+def test_unmapped_parking_preserves_existing_fleet_and_blocks_new_unlocated_vehicles(client, fleet_tms):
+    check(client.post(BASE + '/sync', json={}))
+    saved = next(v for v in directory(client, 'vehicles') if v['data']['unit_number'] == 'T-12')
+    legacy_map = {key: value for key, value in VEHICLE_MAP.items() if not key.startswith('parking.')}
+    check(put(client, body(version=check(client.get(BASE))['version'], field_maps={'driver': DRIVER_MAP, 'vehicle': legacy_map})))
+    fleet_tms['data']['vehicles'][0]['plate'] = 'UPDATED'
+    fleet_tms['data']['vehicles'].append({**fleet_tms['data']['vehicles'][0], 'unitId': 'U-99', 'unit': 'T-99', 'plate': 'NEW99'})
+    result = check(client.post(BASE + '/sync', json={}))
+    updated = next(v for v in directory(client, 'vehicles') if v['id'] == saved['id'])
+    assert updated['plate'] == 'UPDATED'
+    assert updated['data']['parking_address'] == saved['data']['parking_address']
+    assert any(issue['id'] == 'U-99' and 'parking address is required' in issue['reason'] for issue in result['issues'])
+    assert all(v['data']['unit_number'] != 'T-99' for v in directory(client, 'vehicles'))

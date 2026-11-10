@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Supervise only local public-support notification delivery.
+set -euo pipefail
+api_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+unit=dispatra-local-support
+case "${1:-status}" in
+  install)
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    mkdir -p "$unit_dir"
+    for extension in service timer; do
+      unit_file="$unit_dir/$unit.$extension"
+      if [[ -e "$unit_file" ]] && ! rg -q '^# Dispatra local support delivery$' "$unit_file"; then
+        echo "Existing service configuration needs review: $unit_file" >&2
+        exit 1
+      fi
+    done
+    cat > "$unit_dir/$unit.service" <<EOF
+# Dispatra local support delivery
+[Unit]
+Description=Dispatra local public support email
+After=dispatra-local-db.service
+Requires=dispatra-local-db.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$api_dir
+ExecStart=$api_dir/.venv/bin/python -u -c "from dotenv import load_dotenv; load_dotenv('.env'); from app.support.worker import main; main()"
+TimeoutStartSec=15min
+EOF
+    cat > "$unit_dir/$unit.timer" <<EOF
+# Dispatra local support delivery
+[Unit]
+Description=Poll Dispatra local public support email
+
+[Timer]
+OnActiveSec=1s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=$unit.service
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable --now "$unit.timer"
+    ;;
+  start) systemctl --user start "$unit.timer" ;;
+  stop) systemctl --user stop "$unit.timer" "$unit.service" ;;
+  status) systemctl --user status --no-pager "$unit.timer" "$unit.service" ;;
+  *) echo 'Usage: bash scripts/local-support install|start|stop|status' >&2; exit 2 ;;
+esac

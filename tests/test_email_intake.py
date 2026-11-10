@@ -40,7 +40,7 @@ def raw_email(sender='alice@example.com', verified=True, subject='Delivery tomor
 
 
 def facts(**changes):
-    value = dict(is_order_request=True, summary='Two boxes from the warehouse to a customer.', service=None, vehicle_type=None,
+    value = dict(is_order_request=True, summary='Two boxes from the warehouse to a customer.', service='SAME_DAY', vehicle_type=None,
         scheduled_at='2026-10-06T09:00:00-07:00', reference='PO-77',
         stops=[dict(kind='PICKUP', use_shipper_warehouse=True, address=None, contact_name=None, phone=None, instructions=None, window_start=None, window_end=None),
             dict(kind='DROPOFF', use_shipper_warehouse=False, address=dict(street='500 Granville Street', city='Vancouver', province='British Columbia', postal_code='v6c1w6'),
@@ -75,6 +75,7 @@ def agent(client, monkeypatch):
         value = extracted['value']
         if isinstance(value, Exception): raise value
         assert context['shipper'] is None or set(context['shipper']) == {'name', 'warehouse_city'}
+        assert all('description' in entry for entry in context['services'])
         return value
     monkeypatch.setattr(extract, 'extract', fake_extract)
     monkeypatch.setattr(geocode, 'verify', lambda text_, postal: {'text': text_, 'latitude': 49.28, 'longitude': -123.12})
@@ -138,7 +139,7 @@ def test_booking_build_converts_units_and_lists_missing_facts():
     assert (item['weight_kg'], item['length_cm'], item['height_cm']) == ('9.98', '30.48', '20.32')
     assert draft['stops'][0]['address'] == address() and draft['stops'][1]['address']['province'] == 'BC'
     assert draft['stops'][1]['address']['postal_code'] == 'V6C 1W6'
-    incomplete = facts(scheduled_at=None, items=[dict(facts().items[0].model_dump(), weight_each=None, length=None)])
+    incomplete = facts(service=None, scheduled_at=None, items=[dict(facts().items[0].model_dump(), weight_each=None, length=None)])
     draft, missing = booking.build(incomplete, context, lambda t, p: None)
     assert missing == ['Service level', 'Stop 2: address could not be verified on the map', 'Pickup date and time',
         'Item 1: weight', 'Item 1: length, width and height']
@@ -188,6 +189,10 @@ def test_complete_verified_email_becomes_an_order_once(agent):
     assert order['source'] == 'EMAIL' and order['number'] == item['order_number'] and order['shipper_id'] == agent['shipper']['id']
     assert order['service_id'] == agent['service'] and order['pricing']['status'] == 'PRICED'
     assert order['facts']['external_reference'] == 'PO-77' and order['facts']['internal_notes'] == ''
+    assert order['facts']['stops'][0]['contact_name'] == 'Alice Shipper'
+    assert order['facts']['stops'][0]['phone'] == '6045550101'
+    assert order['facts']['stops'][1]['contact_name'] == 'Bob'
+    assert order['facts']['stops'][1]['phone'] == '6045550199'
     assert worker.cycle() == (0, 0)
     with owner_engine.connect() as db:
         assert db.execute(text("SELECT count(*) FROM orders")).scalar() == 1
@@ -216,6 +221,50 @@ def test_incomplete_email_becomes_a_draft_the_dispatcher_completes(agent):
     assert done['status'] == 'ORDER_CREATED' and done['order_id'] == order['id']
     again = post(client, INTAKE + f'/messages/{item["id"]}/order', dict(version=done['version'], booking=draft))
     assert again.status_code == 409
+
+
+def test_books_email_draft_resolves_address_defaults_contacts_and_keeps_local_deadline(agent, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    original = facts()
+    pickup, dropoff = [stop.model_dump() for stop in original.stops]
+    pickup['window_start'] = '2026-11-10T14:00:00'
+    dropoff.update(address={'street': '456 lougheed highway', 'city': 'Bunaby', 'province': None, 'postal_code': None},
+        contact_name=None, phone=None, window_end='2026-11-10T17:00:00', instructions='Location closes at 5pm')
+    agent['extracted']['value'] = facts(scheduled_at='2026-11-10T14:00:00', stops=[pickup, dropoff],
+        items=[{**original.items[0].model_dump(), 'quantity': 1, 'weight_each': None, 'length': 48, 'width': 48,
+            'height': 48, 'dimension_unit': None, 'pallets_each': 1, 'description': 'Books'}])
+    resolved = {'text': '456 Lougheed Highway, Burnaby, BC V5C 3Y5, Canada', 'city': 'Burnaby', 'province': 'BC',
+        'postal_code': 'V5C 3Y5', 'latitude': 49.26, 'longitude': -122.9}
+    monkeypatch.setattr(geocode, 'verify', lambda *_: resolved)
+    agent['inbox'].add(raw_email(subject='New order', body='Hi, I have a pickup for tomorrow from our warehouse to 456 lougheed highway Bunaby at 2pm it is just one pallet of books dimension is 48x48x48 please make sure it is delivered before 5 pm as the location will close at 5.'))
+    worker.cycle()
+    [item] = queue(agent['client'], 'NEEDS_REVIEW')
+    detail = check(agent['client'].get(INTAKE + f'/messages/{item["id"]}'))
+    draft = detail['draft']
+    assert detail['missing'] == ['Item 1: weight']
+    assert draft['service_id'] == agent['service']
+    assert draft['stops'][0]['address'] == agent['shipper']['warehouse']
+    assert draft['stops'][1]['address'] == {**resolved, 'country': 'CA'}
+    assert [(s['contact_name'], s['phone']) for s in draft['stops']] == [('Alice Shipper', '6045550101')] * 2
+    zone = ZoneInfo('America/Vancouver')
+    for value, clock in [(draft['scheduled_at'], '14:00'), (draft['stops'][0]['window_start'], '14:00'), (draft['stops'][1]['window_end'], '17:00')]:
+        assert datetime.fromisoformat(value).astimezone(zone).strftime('%Y-%m-%d %H:%M') == '2026-11-10 ' + clock
+    assert [draft['items'][0][key] for key in ('length_cm', 'width_cm', 'height_cm')] == ['121.92'] * 3
+    assert draft['items'][0]['pallets'] == 1 and draft['items'][0]['weight_kg'] is None
+
+
+def test_contact_defaults_are_per_field_and_do_not_cross_unknown_shipper_boundary():
+    ctx = {'time_zone': 'UTC', 'services': [], 'vehicle_types': [],
+        'shipper': {'id': str(uuid4()), 'name': 'Shipper Name', 'contact_name': 'Booking Contact', 'phone': '6045550101', 'warehouse': address()}}
+    value = facts()
+    value.stops[0].contact_name = 'Pickup Person'
+    value.stops[1].contact_name = None
+    draft, _ = booking.build(value, ctx, lambda *_: None)
+    assert [(s['contact_name'], s['phone']) for s in draft['stops']] == [('Pickup Person', '6045550101'), ('Booking Contact', '6045550199')]
+    draft, _ = booking.build(value, {**ctx, 'shipper': None}, lambda *_: None)
+    assert [(s['contact_name'], s['phone']) for s in draft['stops']] == [('Pickup Person', ''), ('', '6045550199')]
+    assert draft['stops'][0]['address'] is None
 
 
 def test_unverified_sender_never_creates_an_order_automatically(agent):
@@ -363,6 +412,6 @@ def test_matched_shipper_without_warehouse_reports_missing_pickup():
     context = {'time_zone': 'America/Vancouver', 'services': [{'id': str(uuid4()), 'code': 'same', 'name': 'Same Day'}],
         'vehicle_types': [], 'default_service_id': None,
         'shipper': {'id': str(uuid4()), 'name': 'Fresh', 'warehouse': None}}
-    draft, missing = booking.build(facts(), context, lambda t, p: {'text': t, 'latitude': 49.2, 'longitude': -123.1})
+    draft, missing = booking.build(facts(service='Same Day'), context, lambda t, p: {'text': t, 'latitude': 49.2, 'longitude': -123.1})
     assert draft['shipper_id'] == context['shipper']['id']
     assert missing == ["Stop 1: the Shipper's warehouse address"]

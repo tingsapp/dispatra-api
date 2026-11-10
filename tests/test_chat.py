@@ -112,7 +112,7 @@ def test_reassignment_revokes_previous_driver_and_shippers_are_isolated(setup):
         assert kinds(history) == ['DISPATCH_SHIPPER', 'DISPATCH_DRIVER', 'DRIVER_SHIPPER']
         assert all(not channel['can_send'] for channel in history[1:]) and history[1]['conversation_id'] == ops['conversation_id']
 
-        vehicle = check(post(dispatcher, BASE + '/vehicles', dict(name='Second Van', type_id=w['type_id'], plate='TEST456', province='BC',
+        vehicle = check(post(dispatcher, BASE + '/vehicles', dict(name='Second Van', parking_address=address(), type_id=w['type_id'], plate='TEST456', province='BC',
             payload_kg=1000, volume_m3=12, length_cm=300, width_cm=180, height_cm=180, pallet_capacity=2)), 201)
         second = check(post(dispatcher, BASE + '/drivers', dict(name='Sam Second', email='sam@example.com', phone='6045550109',
             address=address(), vehicle_id=vehicle['id'])), 201)

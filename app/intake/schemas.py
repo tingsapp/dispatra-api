@@ -66,6 +66,8 @@ class IntakeView(BaseModel):
     order_id: UUID | None
     order_number: str | None = None
     error_code: str | None
+    completion_requested_at: datetime | None = None
+    completion_submitted_at: datetime | None = None
     draft: dict | None = Field(description='Booking body the Order agent built; incomplete values are null')
 
 

@@ -18,7 +18,7 @@ class CandidateMetrics(BaseModel):
     road_verified: bool = False
     extra_minutes: float = Field(description='Estimated extra fleet driving: trip to pickup plus the Order, or the increase of a planned Route')
     deadhead_km: float | None = Field(description='Straight-line distance from the driver to the first pickup')
-    position: Literal['GPS', 'HOME'] | None
+    position: Literal['GPS', 'PARKING', 'HOME'] | None = Field(description='GPS or vehicle parking address; HOME is retained only for historical decisions')
     route_orders: int = Field(description='Orders already on the planned Route this Order would join')
     slack_minutes: int | None = Field(description='Minutes between planned delivery and the earliest delivery deadline')
     preferred: bool

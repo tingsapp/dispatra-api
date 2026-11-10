@@ -52,11 +52,6 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_
             raise HTTPException(409, 'This Order requires the shipper’s assigned driver: ' + assigned['name'] + '.')
         if order.pricing.get('status') != 'PRICED': raise HTTPException(409, 'Order needs pricing review before assignment.')
         if order.status == 'NEW' and datetime.fromisoformat(order.pricing['expires_at']) < now(): raise HTTPException(409, 'Order quote has expired; reprice it before assignment.')
-        for stop in order.facts['stops']:
-            if stop['kind'] == 'PICKUP' and ' '.join(stop['address']['city'].casefold().split()) != driver.service_city:
-                raise HTTPException(409, 'Pickup city is outside the driver service area.')
-            if stop['kind'] == 'PICKUP' and stop['address']['province'].upper() != driver.address['province'].upper():
-                raise HTTPException(409, 'Pickup province is outside the driver service area.')
         if any(i['dangerous_goods'] for i in order.facts['items']) and 'DG' not in driver.data['qualifications']:
             raise HTTPException(409, 'Driver requires a verified DG qualification.')
         context = order.pricing['context']
@@ -98,8 +93,8 @@ def plan_route(db, actor, orders, driver, vehicle, planned_at, road=True, origin
 
 def rebuild(db, actor, route, orders, driver, vehicle, planned_at):
     from app.dispatch.candidates import position
-    origin, _ = position(db, actor, driver)
-    if origin is None: raise HTTPException(409, 'A verified driver starting position is required for planning.')
+    origin, _ = position(db, actor, driver, vehicle)
+    if origin is None: raise HTTPException(409, 'Select a vehicle parking address with map coordinates or provide fresh driver GPS before planning.')
     plan = plan_route(db, actor, orders, driver, vehicle, planned_at, origin=origin)
     existing = {str(s.stop_id): s for s in db.scalars(select(RouteStop).where(RouteStop.route_id == route.id, RouteStop.organization_id == actor.organization_id))}
     # Move positions temporarily to avoid unique collisions while preserving stable visit IDs.

@@ -84,6 +84,7 @@ def seed_demo(db):
         company_name='Demo Shipping Company', email='shipper@example.com', phone='6045550101',
         warehouse=address, rate_card_id=fixed.id), 'demo-v1-shipper-create')
     vehicle = save_vehicle(db, dispatcher, VehicleData(name='Demo Van', unit_number='DEMO-001',
+        parking_address=address.model_copy(update={'latitude': 49.26, 'longitude': -123.11}),
         type_id=vehicle_type.id, plate='DEMO001', province='BC', payload_kg=1000,
         length_cm=300, width_cm=180, height_cm=180, pallet_capacity=2, maximum_stops=20,
         description='Fictional demonstration vehicle.'), 'demo-v1-vehicle-create')

@@ -12,12 +12,16 @@ def test_anonymous_public_chat_uses_only_static_product_facts(client, monkeypatc
     seen = []
     def generate(schema, instructions, messages):
         seen.append((instructions, messages))
-        assert schema is public.PublicAssistantReply
+        from app.assistant.public_service import PublicAssistantDecision
+        assert schema is PublicAssistantDecision
         assert 'No account' not in instructions  # module docs are not exposed
         assert 'cannot access any company records' in instructions
         assert 'do not assume a 30-day trial' in instructions
         assert 'configured by Dispatra' in instructions
         assert '/docs/integrations' in instructions
+        assert 'contact@dispatra.com' in instructions
+        assert 'dispatra@tingsapp.com' not in instructions
+        assert 'Never claim that a ticket was created' in instructions
         assert 'The other five named connectors are not available to connect yet' in instructions
         assert 'Samsara supports token testing and account connection only; fleet data imports are not enabled' in instructions
         return schema(message='See /plans for current trial availability and duration.')
@@ -44,7 +48,7 @@ def test_failure_is_explicit_and_never_exposes_provider_details(client, monkeypa
     monkeypatch.setattr(provider, 'generate', unavailable)
     reply = client.post(ROOT, json={'message': 'Hello'})
     assert reply.status_code == 503
-    assert 'dispatra@tingsapp.com' in reply.text
+    assert 'contact@dispatra.com' in reply.text
     assert 'private-provider-detail' not in reply.text
 
 

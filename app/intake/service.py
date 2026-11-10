@@ -29,6 +29,7 @@ UNVERIFIED = 'Sender verification: confirm this email really came from the Shipp
 def reopen(row):
     """Shared retry transition used by dispatcher commands and approved technical repairs."""
     row.status, row.attempts, row.error_code = 'RECEIVED', 0, None
+    row.completion_requested_at = row.completion_submitted_at = None
 
 
 class AgentActor:
@@ -118,7 +119,8 @@ def poll_mailbox(organization_id: UUID, *, expected_target: tuple[UUID, int] | N
 
 def _choices(db, organization_id, kind):
     rows = db.scalars(select(Catalog).where(Catalog.organization_id == organization_id, Catalog.kind == kind, Catalog.active.is_(True)).order_by(Catalog.code))
-    return [{'id': str(row.id), 'code': row.code, 'name': row.data.get('name', row.code)} for row in rows]
+    return [{'id': str(row.id), 'code': row.code, 'name': row.data.get('name', row.code),
+        'description': row.data.get('description', '')} for row in rows]
 
 
 def _match(db, intake):
@@ -145,8 +147,11 @@ def _claim(organization_id, intake_id):
             'saved_booking': intake.extraction if intake.extraction and intake.extraction.get('_email_batch') else None,
             'verified': intake.sender_verified,
             'context': {'time_zone': config.time_zone, 'services': services, 'vehicle_types': _choices(db, organization_id, 'VEHICLE_TYPE'),
+                'accessorials': _choices(db, organization_id, 'ACCESSORIAL'), 'dimension_unit': config.dimension_unit, 'weight_unit': config.weight_unit,
                 'default_service_id': default if any(s['id'] == default for s in services) else None,
-                'shipper': {'id': str(shipper.id), 'name': shipper.company_name or shipper.name, 'warehouse': shipper.warehouse, 'status': shipper.status} if shipper else None}}
+                'shipper': {'id': str(shipper.id), 'name': shipper.name, 'company_name': shipper.company_name,
+                    'contact_name': shipper.contact_name, 'phone': shipper.phone,
+                    'warehouse': shipper.warehouse, 'status': shipper.status} if shipper else None}}
 
 
 def _finish(organization_id, intake_id, apply):
@@ -186,7 +191,7 @@ def process(organization_id: UUID, intake_id: UUID):
     issues=[file['error'] for file in claimed['email'].get('attachments',[]) if file.get('error')]
     if issues: return _finish(organization_id, intake_id, lambda db,intake: _review(db,intake,None,list(dict.fromkeys(issues))))
     ctx = claimed['context']
-    prompt_shipper = {'name': ctx['shipper']['name'], 'warehouse_city': (ctx['shipper']['warehouse'] or {}).get('city')} if ctx['shipper'] else None
+    prompt_shipper = {'name': ctx['shipper'].get('company_name') or ctx['shipper']['name'], 'warehouse_city': (ctx['shipper']['warehouse'] or {}).get('city')} if ctx['shipper'] else None
     step('Extracting booking facts with the Order agent.', organization_id)
     try: result = extract.Extraction.model_validate(claimed['saved_booking']) if claimed.get('saved_booking') else extract.extract(claimed['email'], {**ctx, 'shipper': prompt_shipper})
     except extract.Unavailable as error:
@@ -217,7 +222,7 @@ def process(organization_id: UUID, intake_id: UUID):
 
 
 def _prepare(result,ctx):
-    if result.review_reasons or not result.is_order_request: return result,None,[]
+    if not result.is_order_request: return result,None,[]
     draft,missing=booking.build(result,ctx,geocode.verify)
     return result,draft,missing
 

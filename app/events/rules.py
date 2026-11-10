@@ -128,7 +128,7 @@ def notes(db, action, entity_id, audience, actor, recipients):
             # A possibly-duplicated order update is harmless; only a definite failure needs attention.
             if action == 'email.unknown': return []
             return to(dispatch(), 'WARNING', 'Order update email not sent', 'An order update email to a Shipper could not be delivered. Check Settings → Mailbox.')
-        document = 'quote'
+        document = 'draft completion' if delivery and delivery.intake_id else 'quote'
         if action == 'email.failed':
             return to(dispatch(), 'WARNING', 'Email not sent', f'A {document} email could not be delivered. Review it and send again.')
         return to(dispatch(), 'CRITICAL', 'Email status unknown', f'A {document} email may have been delivered. Confirm with the recipient before sending again.')
@@ -137,6 +137,8 @@ def notes(db, action, entity_id, audience, actor, recipients):
         intake = db.get(EmailIntake, entity_id)
         owner = db.get(m.Shipper, intake.shipper_id) if intake and intake.shipper_id else None
         return to(dispatch(), 'WARNING', 'Email order needs review', f'An email from {owner.name if owner else "a Shipper"} needs details before it can become an Order.')
+    if action == 'intake.details_submitted':
+        return to(dispatch(), 'INFO', 'Draft details received', 'A Shipper completed an email order draft. Review it in Orders before creating the order.')
     if action == 'intake.unknown_sender':
         return to(dispatch(), 'WARNING', 'Email from unknown sender', 'An order email from an address that is not a Shipper is waiting for review.')
     if action == 'intake.failed':

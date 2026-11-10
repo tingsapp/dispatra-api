@@ -92,6 +92,7 @@ def ready() -> dict[str,str]:
         if role.rolsuper or role.rolbypassrls: raise HTTPException(503, 'Runtime database role is not restricted.')
         connection.execute(text('SELECT id, verification_pending, payment_method_valid_until, billing_enrolled, billing_access_until FROM organizations LIMIT 0'))
         connection.execute(text('SELECT id FROM email_verifications LIMIT 0'))
+        connection.execute(text('SELECT id FROM support_tickets LIMIT 0'))
         connection.execute(text('SELECT id, pricing FROM orders LIMIT 0'))
         connection.execute(text('SELECT id, arrived_at FROM route_stops LIMIT 0'))
         connection.execute(text('SELECT id, status FROM email_deliveries LIMIT 0'))

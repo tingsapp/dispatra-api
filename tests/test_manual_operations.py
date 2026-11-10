@@ -39,7 +39,7 @@ def setup(client):
     fixed = next(c['id'] for c in rates if c['data']['method']=='FIXED')
     shipper_body = dict(name='Alice Shipper',kind='BUSINESS',company_name='Fresh Test',email='alice@example.com',phone='6045550101',warehouse=address(),rate_card_id=fixed)
     shipper = check(post(client,BASE+'/shippers',shipper_body),201)
-    vehicle = check(post(client,BASE+'/vehicles',dict(name='Test Van',type_id=type_id,plate='TEST123',province='BC',payload_kg=1000,volume_m3=12,length_cm=300,width_cm=180,height_cm=180,pallet_capacity=2)),201)
+    vehicle = check(post(client,BASE+'/vehicles',dict(name='Test Van',parking_address=address(),type_id=type_id,plate='TEST123',province='BC',payload_kg=1000,volume_m3=12,length_cm=300,width_cm=180,height_cm=180,pallet_capacity=2)),201)
     driver_body = dict(name='Dana Driver',email='dana@example.com',phone='6045550102',address=address(),vehicle_id=vehicle['id'])
     driver = check(post(client,BASE+'/drivers',driver_body),201)
     with TestClient(app,headers=HEADERS) as mobile:
@@ -184,7 +184,7 @@ def test_atomic_accounts_and_idempotency_do_not_store_passwords(setup):
         assert 'initial_password' not in stored
 
 
-def test_assignment_capacity_city_dg_and_stale_version(setup):
+def test_assignment_capacity_dg_versions_and_residential_city_independence(setup):
     w=setup;order=new_order(w)
     body=dict(version=99,driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat())
     assert post(w['client'],BASE+f'/orders/{order["id"]}/assign',body).status_code==409
@@ -197,7 +197,7 @@ def test_assignment_capacity_city_dg_and_stale_version(setup):
     assert post(w['client'],BASE+f'/orders/{dg["id"]}/assign',{**body,'version':1}).status_code==409
     payload=booking(w['shipper']['id'],w['service'],w['type_id']);payload['stops'][0]['address']=address(city='Burnaby')
     outside=check(post(w['client'],BASE+'/orders',payload),201)
-    assert post(w['client'],BASE+f'/orders/{outside["id"]}/assign',{**body,'version':1}).status_code==409
+    assert post(w['client'],BASE+f'/orders/{outside["id"]}/assign',{**body,'version':1}).status_code==200
 
 
 def test_multiple_orders_route_and_locked_mutations(setup):

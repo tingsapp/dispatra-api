@@ -32,6 +32,7 @@ class Account:
     password: str
     sender_name: str = ''
     company: bool = False  # company-entered hosts get the public-host check
+    sender_address: str = ''  # Optional provider-authorized alias; login stays username.
 
 
 def configuration():
@@ -39,11 +40,12 @@ def configuration():
     username = os.environ.get('SMTP_USERNAME', '').strip()
     password = os.environ.get('SMTP_APP_PASSWORD', '').replace(' ', '')
     sender = os.environ.get('SMTP_FROM', '').strip()
+    sender_name = os.environ.get('SMTP_FROM_NAME', '').strip()
     try: port = int(os.environ.get('SMTP_PORT', '465'))
     except ValueError: raise PermanentFailure('SMTP_CONFIGURATION') from None
-    if not host or not username or not password or not sender or sender.lower() != username.lower() or not 1 <= port <= 65535:
+    if not host or not username or not password or not sender or not 1 <= port <= 65535 or any(c in sender + sender_name for c in '\r\n'):
         raise PermanentFailure('SMTP_CONFIGURATION')
-    return Account(host, port, username, password)
+    return Account(host, port, username, password, sender_name=sender_name, sender_address=sender)
 
 
 def _open(account, timeout=20):
@@ -75,7 +77,8 @@ def check(account):
 
 def send(delivery, account=None):
     account = account or configuration()
-    username, password, sender = account.username, account.password, account.username
+    username, password = account.username, account.password
+    sender = account.sender_address or username
     message = EmailMessage()
     message['From'] = formataddr((account.sender_name, sender)) if account.sender_name else sender
     message['To'] = delivery.recipient

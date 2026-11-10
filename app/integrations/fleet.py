@@ -90,7 +90,13 @@ def vehicle_data(record: dict, mapping: dict, setup: dict) -> tuple[str, dict]:
         'height_cm': size['height'], 'pallet_capacity': int(pallets) if pallets is not None else int(defaults.get('pallet_capacity') or 0),
         'make_model': text(get(record, mapping, 'make_model'), 160), 'year': int(year) if year is not None else None,
         'vin': text(get(record, mapping, 'vin'), 50), 'active': True if active is None else active}
-    try: return external, VehicleData.model_validate(data).model_dump(mode='json')
+    if any(mapping.get(f'parking.{key}') for key in ('address', 'city', 'province', 'postal_code')):
+        street, city = text(get(record, mapping, 'parking.address')), text(get(record, mapping, 'parking.city'), 160)
+        province = booking.province(text(get(record, mapping, 'parking.province')))
+        postal = booking.postal(text(get(record, mapping, 'parking.postal_code')))
+        if not (street and city and province and postal): raise Skip('Vehicle parking address is incomplete', external)
+        data['parking_address'] = {'text': f'{street}, {city}, {province} {postal}', 'city': city, 'province': province, 'postal_code': postal, 'country': 'CA'}
+    try: return external, VehicleData.model_validate(data).model_dump(mode='json', exclude_unset=True)
     except ValidationError as error: raise Skip(_invalid(error), external) from None
 
 
@@ -218,11 +224,19 @@ def sync(organization_id: UUID) -> dict | None:
         vehicle_map, driver_map = maps.get('vehicle', {}), maps.get('driver', {})
         def vehicle(record):
             external, data = vehicle_data(record, vehicle_map, setup)
-            return external, data, lambda: _write_vehicle(organization_id, data)
+            def prepare():
+                payload = dict(data)
+                if data.get('parking_address'):
+                    address = data['parking_address']
+                    located = geocode.verify(address['text'], address['postal_code'])
+                    if not located: raise Skip('Vehicle parking address could not be located', external)
+                    payload['parking_address'] = {**address, 'latitude': located['latitude'], 'longitude': located['longitude']}
+                return _write_vehicle(organization_id, payload)
+            return external, data, prepare
         def driver(record):
             external, data, unit = driver_data(record, driver_map)
             def prepare():
-                # Geocode only new or changed drivers: the home point is the dispatch fallback position.
+                # Keep the residential address accurate; dispatch never uses it as a starting position.
                 located = geocode.verify(data['address']['text'], data['address']['postal_code'])
                 address = {**data['address'], **({'latitude': located['latitude'], 'longitude': located['longitude']} if located else {})}
                 return _write_driver(organization_id, {**data, 'address': address}, unit)

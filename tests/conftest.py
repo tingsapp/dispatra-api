@@ -36,6 +36,7 @@ def confirm_trial(client, email):
 @pytest.fixture(autouse=True)
 def reset_database():
     with owner_engine.begin() as c:
+        c.execute(text('TRUNCATE support_tickets'))
         c.execute(text('UPDATE subscription_plans SET trial_enabled=true, trial_days=30'))
         c.execute(text('TRUNCATE archived_invoice_email_deliveries, archived_invoice_notifications, archived_invoices, archived_shipper_payment_terms CASCADE'))
         c.execute(text('TRUNCATE organizations, shippers, users, login_sessions, audit_events, operations, login_buckets CASCADE'))

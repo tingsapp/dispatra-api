@@ -7,7 +7,7 @@ from fastapi import HTTPException
 engine = create_engine(os.environ.get("DATABASE_URL", "postgresql+psycopg://dispatra_app@localhost:5432/dispatra"), pool_pre_ping=True)
 
 def context(db: Session, organization_id=None, platform=False, shipper_id=None, driver_id=None):
-    db.execute(text("SELECT set_config('app.organization_id', :org, true), set_config('app.platform', :platform, true), set_config('app.shipper_id', :shipper, true), set_config('app.driver_id', :driver, true)"),
+    db.execute(text("SELECT set_config('app.organization_id', :org, true), set_config('app.platform', :platform, true), set_config('app.shipper_id', :shipper, true), set_config('app.driver_id', :driver, true), set_config('app.support_session', '', true)"),
                {"org": str(organization_id or ''), "platform": 'true' if platform else 'false', "shipper": str(shipper_id or ''), "driver": str(driver_id or '')})
 
 def session():

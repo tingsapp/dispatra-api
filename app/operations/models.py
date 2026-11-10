@@ -253,9 +253,11 @@ class EmailDelivery(TenantRecord, Base):
     __table_args__ = (UniqueConstraint('organization_id', 'id'),
         ForeignKeyConstraint(['organization_id', 'quote_id'], ['quotes.organization_id', 'quotes.id']),
         ForeignKeyConstraint(['organization_id', 'notification_id'], ['notifications.organization_id', 'notifications.id']),
-        CheckConstraint('num_nonnulls(quote_id, notification_id) = 1', name='email_delivery_source'),
+        ForeignKeyConstraint(['organization_id', 'intake_id'], ['email_intakes.organization_id', 'email_intakes.id']),
+        CheckConstraint('num_nonnulls(quote_id, notification_id, intake_id) = 1', name='email_delivery_source'),
         CheckConstraint("status IN ('PENDING','SENDING','SENT','FAILED','UNKNOWN')", name='email_delivery_status'))
     quote_id: Mapped[UUID | None]
+    intake_id: Mapped[UUID | None]
     # An order-update email to a Shipper, copied from their inbox notification.
     notification_id: Mapped[UUID | None]
     requested_by: Mapped[UUID] = mapped_column(ForeignKey('users.id'))

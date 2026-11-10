@@ -15,7 +15,7 @@ REQUIRED = {
 }
 OPTIONAL = {
     'driver': {'vehicle_unit', 'active'},
-    'vehicle': {'name', 'payload', 'length', 'width', 'height', 'pallet_capacity', 'make_model', 'year', 'vin', 'active'},
+    'vehicle': {'name', 'payload', 'length', 'width', 'height', 'pallet_capacity', 'make_model', 'year', 'vin', 'active', *(f'parking.{key}' for key in ADDRESS)},
     'order': {'vehicle_type', 'notes', 'status', 'cancelled_value', 'shipper.company_name', 'shipper.phone', *(f'shipper.{key}' for key in ADDRESS),
         'stop.id', 'stop.window_start', 'stop.window_end', 'stop.contact', 'stop.phone', 'stop.instructions',
         'item.pickup_stop', 'item.delivery_stop', 'item.quantity', 'item.pallets', 'item.fragile', 'item.dangerous_goods', 'item.description'},

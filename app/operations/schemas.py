@@ -77,7 +77,7 @@ class SettingsData(Input):
     # AUTO: the Dispatch agent assigns priced, unassigned Orders inside its horizon; MANUAL: dispatchers assign, the agent only recommends.
     dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
     dispatch_zones: list[DispatchZone] = Field(default_factory=list, max_length=100)
-    # New Orders (and Order agent emails that name no service) start on this active SERVICE; a Shipper's own default wins.
+    # Manual new-order forms start on this active SERVICE; email intake resolves service from requested facts.
     default_service_id: UUID | None = None
 
     @model_validator(mode='after')
@@ -271,6 +271,8 @@ class ShipperUpdate(Version):
 
 class VehicleData(Input):
     name: Name
+    # Nullable for historical records; registration requires this in save_vehicle.
+    parking_address: Address | None = None
     unit_number: str = Field(default='', max_length=50)
     make_model: str = Field(default='', max_length=160)
     year: int | None = Field(default=None, ge=1886, le=2100)
@@ -576,6 +578,7 @@ class QuoteSend(Version):
 
 class EmailDeliveryView(RecordView):
     quote_id: UUID | None
+    intake_id: UUID | None = None
     notification_id: UUID | None = None
     recipient: EmailStr
     status: Literal['PENDING', 'SENDING', 'SENT', 'FAILED', 'UNKNOWN']

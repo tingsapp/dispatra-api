@@ -95,6 +95,17 @@ Automatic fixes are limited to deleting **already-expired sessions**, preserving
 
 `POST /api/v1/diagnostics/runtime` accepts authenticated WEB/DRIVER fixed error categories, rate-limited and scoped from the session. API 5xx and browser/native handlers record category/count/time only, never messages, stacks, URLs, bookings or credentials. Native reporting preserves the original crash handler and ends on logout. Agent tables have forced owner-only RLS and expose no private target IDs or email/provider data. Logs currently have no automatic retention/pruning. Deployments must migrate and supervise the new worker explicitly; running FastAPI alone does not perform checks.
 
+## Local signup verification email
+
+The API queues signup and resend codes; it does not send them itself. Localhost needs the dedicated verification worker even when the same SMTP account works in production. With the local database and API services configured, install its persistent user service:
+
+```sh
+bash scripts/local-verification install
+bash scripts/local-verification status
+```
+
+The worker loads the same `api/.env` as the local API, including its restricted runtime database credentials, SMTP configuration and mailbox encryption key. It starts with the local API and at user-service startup, restarts after a crash, and consumes only `verification.requested` events. It does not start the order/customer email worker. Codes that expired while the worker was stopped are discarded; use Resend code on the verification page to request a fresh one. Starting the worker can send still-valid queued verification codes. `start` and `stop` control this local worker without changing production.
+
 ## Demo pricing in PostgreSQL
 
 New companies automatically receive the versioned [demo pricing seed](app/operations/seeds/demo_pricing_v1.json). It preserves the current client presets: seven Rate Cards (five active methods, including Imported price, and two archived cards), four Service Levels, ten Vehicle Types (nine active with dimensions and equipment, plus the retired `veh_5_ton`), thirteen Accessorials, fuel surcharge, GST/HST settings, and the 0–99 lb / Zone 1 / $20 starter matrix. Fragile starts at $15 and DG at $25 per flagged package unit; both rates are editable. No real driver, Shipper, Order, or payment account is created by this pricing seed.
@@ -193,7 +204,7 @@ A booking with missing rates/distance or a failed routing provider is retained a
 
 Reference: [Google route matrix](https://developers.google.com/maps/documentation/routes/compute_route_matrix), [route directions](https://developers.google.com/maps/documentation/routes/compute_route_directions), and [provider storage/display policies](https://developers.google.com/maps/documentation/routes/policies). Production UI must retain required attribution.
 
-Both travel modes validate explicit item links, pickup precedence, per-stop physical weight/volume/pallet capacity, package fit, driver duty, pickup service city, DG qualifications, crew/equipment, exclusive service, active Order limits, vehicle custody, shift/windows, and stop limits. Search is bounded and reports whether it exhausted its search budget; no feasible result means dispatcher review. Executing Routes cannot be silently rearranged. Release a planned Route before changing its assignments.
+Both travel modes validate explicit item links, pickup precedence, per-stop physical weight/volume/pallet capacity, package fit, driver duty, DG qualifications, crew/equipment, exclusive service, active Order limits, vehicle custody, shift/windows, and stop limits. Search is bounded and reports whether it exhausted its search budget; no feasible result means dispatcher review. Executing Routes cannot be silently rearranged. Release a planned Route before changing its assignments.
 
 ## Completion and evidence
 
@@ -207,7 +218,11 @@ Valid completion records `COMPLETED` and the completion time. All required cargo
 
 A dispatcher queues a priced, unexpired prospect Quote with `POST /quotes/{id}/send` and `{ "version": 1, "recipient": "buyer@example.com" }`. Explicit commands require an `Idempotency-Key` and return a delivery record with `PENDING` status. `GET /email-deliveries/{id}` reports `PENDING`, `SENDING`, `SENT`, `FAILED` or `UNKNOWN`. A resend is a new explicit command after the preceding attempt reaches a terminal state. Connected company mailboxes also queue allowed delivery notifications for Shippers with email updates enabled. Completion never queues an invoice email.
 
-Configure the private server `SMTP_*` values from `.env.example`, or connect the company mailbox in Settings. Run the separate delivery worker:
+Configure the private server `SMTP_*` values from `.env.example`, or connect the company mailbox in Settings.
+
+`SMTP_USERNAME` is the mailbox login; `SMTP_FROM` is the provider-authorized sender address and may differ when using a verified alias. `SMTP_FROM_NAME` optionally sets its display name. For the Dispatra Google alias, authenticate as `support@tingsapp.com` and send as `contact@dispatra.com` with display name `Dispatra`. Keep the app password only in private runtime configuration. Aliases share the authenticated mailbox's sending allowance. Company-connected mailboxes retain their own login, sender and company name. Restart the API and active email/verification workers after changing runtime settings.
+
+Run the separate delivery worker:
 
 ```sh
 .venv/bin/python -m app.operations.email_worker
@@ -227,7 +242,7 @@ Every minute (`--interval`, minimum 15 s; `--once` runs one cycle) it reads new 
 
 ## Dispatch agent
 
-For an unassigned, priced Order the agent lists every active driver: drivers that fail a hard check (no attached vehicle, off duty, another active or started Route, service area, qualifications, equipment, capacity, windows, shift, maximum work time) are excluded with the check's own message; the rest are feasible candidates with metrics (estimated extra fleet driving, distance to pickup from fresh GPS or the home address, Orders already on the planned Route it would join, slack before the earliest deadline, Shipper-requested driver, booked vehicle type). Screening uses the built-in travel estimator, so it never calls a paid routing provider; the assignment command re-checks everything with road travel before saving. OpenAI (`OPENAI_API_KEY`, model `DISPATCH_AGENT_MODEL`, default `ORDER_AGENT_MODEL`, reasoning `DISPATCH_AGENT_REASONING`, `store=false`) only orders those candidates and writes a one-line reason; it sees metrics and Order counts, never addresses, contacts, prices or notes. It cannot add or drop a candidate, and any AI failure falls back to the rule score (`ranked_by: RULES` with an `error_code`). Every evaluation is stored in `dispatch_decisions`.
+For an unassigned, priced Order the agent lists every active driver: drivers that fail a hard check (no attached vehicle, off duty, another active or started Route, qualifications, equipment, capacity, windows, shift, maximum work time) are excluded with the check's own message; the rest are feasible candidates with metrics (estimated extra fleet driving, distance to pickup from fresh GPS or the vehicle parking address, Orders already on the planned Route it would join, slack before the earliest deadline, Shipper-requested driver, booked vehicle type). Screening uses the built-in travel estimator, so it never calls a paid routing provider; the assignment command re-checks everything with road travel before saving. OpenAI (`OPENAI_API_KEY`, model `DISPATCH_AGENT_MODEL`, default `ORDER_AGENT_MODEL`, reasoning `DISPATCH_AGENT_REASONING`, `store=false`) only orders those candidates and writes a one-line reason; it sees metrics and Order counts, never addresses, contacts, prices or notes. It cannot add or drop a candidate, and any AI failure falls back to the rule score (`ranked_by: RULES` with an `error_code`). Every evaluation is stored in `dispatch_decisions`.
 
 - `POST /companies/{slug}/orders/{id}/dispatch-suggestions` (dispatcher; `?refresh=true` re-evaluates, otherwise a suggestion under two minutes old is reused) and `GET .../dispatch-decisions` (history).
 - `POST /companies/{slug}/dispatch-decisions/{id}/approve` (`version`, `driver_id`, Idempotency-Key) assigns a recommended driver through the shared `assign` command, joining that driver's planned Route when there is one.
@@ -364,3 +379,16 @@ Generated fixes cannot edit repair controls, existing tests, migrations, credent
 Verification codes, delivery quotes, all Shipper order-update notifications, and watchdog service alerts share `app/email_templates.py`: a responsive table layout with a Dispatra logo header, message heading, structured content, and sender/context footer. Plain-text alternatives, saved quote amounts, notification preferences and delivery/retry boundaries are preserved. SMTP attaches `app/assets/dispatra-logo.png` as an inline CID image; ship this asset with the API (it is the existing web wordmark). Existing queued HTML without a CID reference remains readable without an added image. No remote image download is required.
 
 Deploy the updated `scripts/production-watchdog.py` to its installed `/usr/local/libexec/dispatra-watchdog.py` location when releasing this design. It loads the dependency-free presentation module from `/opt/dispatra/api/app/email_templates.py` and retains its original plain-text alert if those application files are unavailable. No database migration or OpenAPI change is required.
+
+
+### Public chat support tickets
+
+For local development, `bash scripts/local-support install` enables a support-only user timer that polls every 30 seconds after each completed run using the existing private `.env`. Inspect it with `bash scripts/local-support status`; stop it with `bash scripts/local-support stop`. This uses the same durable delivery command without draining company transactional email queues. Apply migration 0065 first.
+
+Apply migration `0065_public_support_tickets` before starting the updated API or email worker. Public text chat can classify an issue requiring team assistance, collect the visitor's follow-up email, and commit a ticket plus its pending notification before returning a `DSP-…` number. The public endpoint accepts random UUID `conversation_id` and `request_id`; preserve both on retries. There is one ticket per chat; New chat starts a separate issue. Ordinary questions do not create tickets. Voice directs visitors to text chat for this handoff.
+
+The existing `python -m app.operations.email_worker` service now also drains support notifications through the platform `SMTP_*` account to the fixed address `contact@dispatra.com`. Configure those SMTP settings and supervise the worker alongside the API. No company mailbox is used for public support. Temporary failures retry up to five times; permanent failures are `FAILED`, and interrupted/uncertain SMTP acceptance is `UNKNOWN` and never automatically resent. Monitor worker errors and `Support email DSP-…: FAILED/UNKNOWN …` log entries; tickets remain saved. A receipt confirms persistence, not completed delivery or resolution.
+
+Private operator recovery: inspect the ticket's delivery status with platform database context and check the receiving inbox before retrying an `UNKNOWN` delivery. Run `python -m app.support.worker --retry DSP-TICKET_NUMBER` using the restricted runtime environment to requeue a failed/uncertain notification and drain pending support mail. The stable Message-ID is preserved. The public API exposes no ticket-list or status endpoint; ticket rows contain the follow-up email and a concise issue summary, not the full conversation. Do not add credentials to issue summaries.
+
+Vehicle registration requires a complete parking address. Address search supplies coordinates; manually entered addresses must resolve successfully before saving. Dispatch uses fresh accurate GPS or the vehicle parking point, never the driver residence. Older vehicles remain readable but need a parking address before planning without GPS. TMS vehicle maps optionally include parking.address, parking.city, parking.province and parking.postal_code; unmapped existing parking is preserved, while new vehicles without parking require review.

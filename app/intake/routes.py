@@ -10,8 +10,9 @@ from app.services import audit
 from app.operations import orders
 from app.operations.common import command, operational_shipper, record
 from app.operations.models import Order, Shipper
-from app.operations.schemas import OrderView
-from . import mailbox, vault, service
+from app.operations.schemas import OrderView, EmailDeliveryView
+from . import mailbox, vault, service, drafts
+from .draft_schemas import SaveEmailDraft, SubmitShipperDraft, ShipperDraftView
 from .models import EmailIntake, MailboxConnection
 from .schemas import (IntakeDetail, IntakeOrder, IntakeShipper, IntakeVersion, IntakeView, MailboxCheck, MailboxCheckResult,
     MailboxInput, MailboxView, Status)
@@ -159,3 +160,24 @@ def create_order(slug: str, identity: UUID, data: IntakeOrder, db: DB, key: Oper
         audit(db, user, 'intake.order_created', row.id, user.organization_id)
         return order
     return command(db, user, key, 'intake-order', {'id': str(identity), **data.model_dump(mode='json')}, run)
+
+
+
+@router.put('/messages/{identity}/draft', response_model=IntakeDetail)
+def save_draft(slug: str, identity: UUID, data: SaveEmailDraft, db: DB, key: OperationKey, user: Dispatcher):
+    return drafts.save(db, user, identity, data, key, lambda row: view(db, row, detail=True))
+
+
+@router.post('/messages/{identity}/request-details', response_model=EmailDeliveryView, status_code=202)
+def request_draft_details(slug: str, identity: UUID, data: IntakeVersion, db: DB, key: OperationKey, user: Dispatcher):
+    return drafts.request_details(db, user, identity, data, key)
+
+
+@router.get('/drafts/{identity}', response_model=ShipperDraftView)
+def shipper_draft(slug: str, identity: UUID, db: DB, user: Annotated[User, Depends(auth.customer)]):
+    return drafts.shipper_view(drafts.shipper_record(db, user, identity))
+
+
+@router.post('/drafts/{identity}/submit', response_model=ShipperDraftView)
+def submit_shipper_draft(slug: str, identity: UUID, data: SubmitShipperDraft, db: DB, key: OperationKey, user: Annotated[User, Depends(auth.customer)]):
+    return drafts.submit(db, user, identity, data, key)

@@ -234,6 +234,16 @@ def save_vehicle(db, actor, data, key, identity=None):
         type_changed = identity and row.type_id != payload.type_id
         row.type_id, row.plate, row.province = payload.type_id, payload.plate.upper(), payload.province.upper()
         values = payload.model_dump(mode='json')
+        if identity and 'parking_address' not in payload.model_fields_set:
+            values['parking_address'] = row.data.get('parking_address')
+        elif payload.parking_address is None:
+            raise HTTPException(422, 'Vehicle parking address is required.')
+        elif payload.parking_address.latitude is None:
+            from app.intake.geocode import verify
+            located = verify(payload.parking_address.text, payload.parking_address.postal_code)
+            if not located:
+                raise HTTPException(422, 'Parking address could not be located. Select a full address from the address suggestions.')
+            values['parking_address'] = {**values['parking_address'], 'latitude': located['latitude'], 'longitude': located['longitude']}
         if identity and 'road_profile' not in payload.model_fields_set:
             values['road_profile'] = None if type_changed else row.data.get('road_profile')
             if values['road_profile'] and values['road_profile']['gross_weight_kg'] < payload.payload_kg:
@@ -253,6 +263,8 @@ def save_vehicle(db, actor, data, key, identity=None):
     payload = data.data if identity else data
     if 'road_profile' not in payload.model_fields_set:
         (values['data'] if identity else values).pop('road_profile', None)
+    if 'parking_address' not in payload.model_fields_set:
+        (values['data'] if identity else values).pop('parking_address', None)
     return command(db, actor, key, 'vehicle:' + str(identity or 'new'), values, run)
 
 
