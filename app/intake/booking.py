@@ -50,28 +50,18 @@ def pick(value, options):
 
 
 def best_vehicle_type(items, options, requested=None):
-    """Use an explicit catalogue match, otherwise the smallest complete fit; Cargo Van is the safe default."""
+    """Use an explicit catalogue match; otherwise Cargo Van is the deliberate default.
+
+    Cargo capacity does not grant permission to infer a different type. Refrigerated,
+    flatbed and trailer equipment are operational requirements, not size upgrades.
+    """
     selected = pick(requested, options)
     if selected: return selected
-    # Automated selection must not choose a refrigerated, flatbed, or trailer type
-    # unless the email explicitly asks for it. General local-delivery types are the
-    # seeded veh_* catalogue entries, with Cargo Van as the standard fallback.
+    # An unspecified shipment starts with the company's standard Cargo Van. A
+    # dispatcher may choose another type later, or the extractor may pass through
+    # a vehicle type specifically stated in the email.
     general = [item for item in options if item['code'].startswith('veh_')]
     cargo_van = next((item for item in general if item['code'] == 'veh_1_ton'), None)
-    complete = all(item['weight_kg'] and item['length_cm'] and item['width_cm'] and item['height_cm'] for item in items)
-    if not complete: return cargo_van['id'] if cargo_van else (general[0]['id'] if general else (options[0]['id'] if options else None))
-    weight = sum(Decimal(item['weight_kg']) * item['quantity'] for item in items)
-    pallets = sum(item['pallets'] * item['quantity'] for item in items)
-    volume = sum(Decimal(item['length_cm']) * Decimal(item['width_cm']) * Decimal(item['height_cm']) * item['quantity'] / Decimal('1000000') for item in items)
-    candidates = []
-    for vehicle in general:
-        if (Decimal(str(vehicle.get('payload_kg') or 0)) < weight or int(vehicle.get('pallet_capacity') or 0) < pallets
-                or Decimal(str(vehicle.get('volume_m3') or 0)) < volume): continue
-        dimensions = (Decimal(str(vehicle.get('length_cm') or 0)), Decimal(str(vehicle.get('width_cm') or 0)), Decimal(str(vehicle.get('height_cm') or 0)))
-        if any(max(Decimal(item['length_cm']), Decimal(item['width_cm']), Decimal(item['height_cm'])) > max(dimensions) for item in items): continue
-        candidates.append(vehicle)
-    if candidates:
-        return min(candidates, key=lambda vehicle: (Decimal(str(vehicle.get('volume_m3') or 0)), Decimal(str(vehicle.get('payload_kg') or 0))))['id']
     return cargo_van['id'] if cargo_van else (general[0]['id'] if general else (options[0]['id'] if options else None))
 
 

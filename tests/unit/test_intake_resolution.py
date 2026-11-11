@@ -84,3 +84,6 @@ def test_prompt_supplies_company_local_received_date_and_service_meaning():
     value = json.loads(extract.prompt({'received_at': '2026-11-10T01:00:00+00:00', 'subject': 'New order', 'body': 'Tomorrow at 2pm'}, context))
     assert value['received_at_company_local'].startswith('2026-11-09T')
     assert value['services'][0]['description'] == 'Standard delivery by 17:00.'
+    assert 'Cargo Van as its standard default' in extract.INSTRUCTIONS
+    assert 'EVERY requested additional service' in extract.INSTRUCTIONS
+    assert 'dangerous_goods true' in extract.INSTRUCTIONS

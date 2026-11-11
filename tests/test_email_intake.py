@@ -146,17 +146,33 @@ def test_booking_build_converts_units_and_lists_missing_facts():
     assert draft['items'][0]['weight_kg'] is None and draft['stops'][1]['address'].get('latitude') is None
 
 
-def test_vehicle_selection_defaults_to_cargo_van_and_skips_specialist_types():
-    cargo, refrigerated = str(uuid4()), str(uuid4())
+def test_vehicle_selection_defaults_to_cargo_van_unless_email_explicitly_requests_a_type():
+    cargo, cube, refrigerated = str(uuid4()), str(uuid4()), str(uuid4())
     vehicles = [
         {'id': cargo, 'code': 'veh_1_ton', 'name': 'Cargo Van', 'payload_kg': 800, 'volume_m3': 14,
          'length_cm': 400, 'width_cm': 180, 'height_cm': 180, 'pallet_capacity': 2},
+        {'id': cube, 'code': 'veh_2_ton', 'name': 'Cube Van', 'payload_kg': 1600, 'volume_m3': 24,
+         'length_cm': 500, 'width_cm': 210, 'height_cm': 210, 'pallet_capacity': 4},
         {'id': refrigerated, 'code': 'REFRIGERATED_VAN', 'name': 'Refrigerated Van', 'payload_kg': 900, 'volume_m3': 12,
          'length_cm': 350, 'width_cm': 170, 'height_cm': 170, 'pallet_capacity': 2},
     ]
-    item = {'quantity': 1, 'weight_kg': '90.72', 'length_cm': '121.92', 'width_cm': '121.92', 'height_cm': '121.92', 'pallets': 1}
+    item = {'quantity': 3, 'weight_kg': '600', 'length_cm': '300', 'width_cm': '180', 'height_cm': '180', 'pallets': 3}
     assert booking.best_vehicle_type([item], vehicles) == cargo
     assert booking.best_vehicle_type([item], vehicles, 'Refrigerated Van') == refrigerated
+
+
+def test_booking_keeps_requested_accessorials_and_handling_flags():
+    service, liftgate = str(uuid4()), str(uuid4())
+    context = {'time_zone': 'America/Vancouver', 'services': [{'id': service, 'code': 'SAME_DAY', 'name': 'Same-Day'}],
+        'accessorials': [{'id': liftgate, 'code': 'LIFTGATE', 'name': 'Liftgate'}], 'vehicle_types': [],
+        'shipper': {'id': str(uuid4()), 'name': 'Fresh', 'warehouse': address()}}
+    value = facts(accessorials=['LIFTGATE'])
+    value.items[0].fragile = True
+    value.items[0].dangerous_goods = True
+    draft, missing = booking.build(value, context, lambda text, postal: {'text': text, 'latitude': 49.2, 'longitude': -123.1})
+    assert not missing
+    assert draft['accessorials'] == [{'id': liftgate, 'quantity': '1'}]
+    assert draft['items'][0]['fragile'] and draft['items'][0]['dangerous_goods']
 
 
 def test_mailbox_settings_are_dispatcher_only_and_password_is_encrypted(agent):
