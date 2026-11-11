@@ -49,6 +49,28 @@ def pick(value, options):
     return next((o['id'] for o in options if text and text in {o['code'].lower(), o['name'].lower()}), None)
 
 
+def best_vehicle_type(items, options, requested=None):
+    """Use an explicit catalogue match, otherwise the smallest complete fit; Cargo Van is the safe default."""
+    selected = pick(requested, options)
+    if selected: return selected
+    cargo_van = next((item for item in options if item['code'] == 'veh_1_ton'), None)
+    complete = all(item['weight_kg'] and item['length_cm'] and item['width_cm'] and item['height_cm'] for item in items)
+    if not complete: return cargo_van['id'] if cargo_van else (options[0]['id'] if options else None)
+    weight = sum(Decimal(item['weight_kg']) * item['quantity'] for item in items)
+    pallets = sum(item['pallets'] * item['quantity'] for item in items)
+    volume = sum(Decimal(item['length_cm']) * Decimal(item['width_cm']) * Decimal(item['height_cm']) * item['quantity'] / Decimal('1000000') for item in items)
+    candidates = []
+    for vehicle in options:
+        if (Decimal(str(vehicle.get('payload_kg') or 0)) < weight or int(vehicle.get('pallet_capacity') or 0) < pallets
+                or Decimal(str(vehicle.get('volume_m3') or 0)) < volume): continue
+        dimensions = (Decimal(str(vehicle.get('length_cm') or 0)), Decimal(str(vehicle.get('width_cm') or 0)), Decimal(str(vehicle.get('height_cm') or 0)))
+        if any(max(Decimal(item['length_cm']), Decimal(item['width_cm']), Decimal(item['height_cm'])) > max(dimensions) for item in items): continue
+        candidates.append(vehicle)
+    if candidates:
+        return min(candidates, key=lambda vehicle: (Decimal(str(vehicle.get('volume_m3') or 0)), Decimal(str(vehicle.get('payload_kg') or 0))))['id']
+    return cargo_van['id'] if cargo_van else (options[0]['id'] if options else None)
+
+
 def address(stop, number, context, verify, missing):
     label = f'Stop {number}'
     if stop.use_shipper_warehouse and stop.kind == 'PICKUP':
@@ -128,7 +150,7 @@ def build(extraction, context, verify):
         if identity and not any(item['id'] == identity for item in accessorials): accessorials.append({'id': identity, 'quantity': '1'})
         elif not identity: missing.append(f'Requested additional service: {requested}')
     draft = {'shipper_id': context['shipper']['id'] if context['shipper'] else None, 'service_id': service,
-        'vehicle_type_id': pick(extraction.vehicle_type, context['vehicle_types']), 'scheduled_at': scheduled,
+        'vehicle_type_id': best_vehicle_type(items, context['vehicle_types'], extraction.vehicle_type), 'scheduled_at': scheduled,
         'stops': stops, 'items': items, 'accessorials': accessorials, 'external_reference': (extraction.reference or '')[:160]}
     if not missing:
         try: Booking.model_validate(draft)

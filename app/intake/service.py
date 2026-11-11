@@ -120,7 +120,8 @@ def poll_mailbox(organization_id: UUID, *, expected_target: tuple[UUID, int] | N
 def _choices(db, organization_id, kind):
     rows = db.scalars(select(Catalog).where(Catalog.organization_id == organization_id, Catalog.kind == kind, Catalog.active.is_(True)).order_by(Catalog.code))
     return [{'id': str(row.id), 'code': row.code, 'name': row.data.get('name', row.code),
-        'description': row.data.get('description', '')} for row in rows]
+        'description': row.data.get('description', ''),
+        **({field: row.data.get(field) for field in ('payload_kg', 'volume_m3', 'length_cm', 'width_cm', 'height_cm', 'pallet_capacity', 'equipment')} if kind == 'VEHICLE_TYPE' else {})} for row in rows]
 
 
 def _match(db, intake):
