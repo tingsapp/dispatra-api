@@ -1,7 +1,8 @@
 """Deterministic step after extraction: map facts onto the shared `Booking` contract and list what is missing.
 
-Nothing here guesses. Units are converted exactly, addresses must carry a valid postal code and verified
-coordinates, and the result is validated by the same `Booking` schema the portals use.
+Nothing here guesses. Units are converted exactly. A map lookup enriches a complete Canadian address with
+coordinates when it is available, but a temporary lookup failure must not make an otherwise complete address
+unprocessable. The result is validated by the same `Booking` schema the portals use.
 """
 import re
 from datetime import datetime
@@ -90,6 +91,13 @@ def address(stop, number, context, verify, missing):
         return {'text': text, 'city': city, 'province': code or (found.province or '' if found else ''),
             'postal_code': zip_code or (found.postal_code or '' if found else ''), 'country': 'CA'} if text else None
     text = f'{street}, {city}, {code} {zip_code}, Canada'
+    # The external map service is an enrichment, not the authority for a stated
+    # Canadian street address.  Do not leave a shipment in review forever when
+    # that service is unavailable but the sender gave a deliverable address.
+    # Requiring a civic number avoids treating a road or neighbourhood alone as
+    # a complete street address.
+    if re.match(r'^\s*\d+[A-Za-z0-9 -]*\s+\S', street):
+        return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': 'CA'}
     missing.append(f'{label} could not be verified on the map. Choose a complete suggested address or add its postal code.')
     return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': 'CA'}
 

@@ -141,9 +141,24 @@ def test_booking_build_converts_units_and_lists_missing_facts():
     assert draft['stops'][1]['address']['postal_code'] == 'V6C 1W6'
     incomplete = facts(service=None, scheduled_at=None, items=[dict(facts().items[0].model_dump(), weight_each=None, length=None)])
     draft, missing = booking.build(incomplete, context, lambda t, p: None)
-    assert missing == ['Service level', 'Delivery address could not be verified on the map. Choose a complete suggested address or add its postal code.', 'Pickup date and time',
+    assert missing == ['Service level', 'Pickup date and time',
         'Item 1: weight', 'Item 1: length, width and height']
     assert draft['items'][0]['weight_kg'] is None and draft['stops'][1]['address'].get('latitude') is None
+
+
+def test_booking_accepts_a_complete_civic_address_when_map_lookup_is_unavailable():
+    context = {'time_zone': 'America/Vancouver', 'services': [{'id': str(uuid4()), 'code': 'SAME_DAY', 'name': 'Same Day'}],
+        'vehicle_types': [], 'default_service_id': None, 'shipper': {'id': str(uuid4()), 'name': 'Fresh', 'warehouse': address()}}
+    value = facts()
+    value.stops[1].address.street = '4567 Lougheed Highway'
+    value.stops[1].address.city = 'Burnaby'
+    value.stops[1].address.province = 'BC'
+    value.stops[1].address.postal_code = 'V5C 3Z6'
+    draft, missing = booking.build(value, context, lambda text, postal: None)
+    delivery = draft['stops'][1]['address']
+    assert missing == []
+    assert delivery['text'] == '4567 Lougheed Highway, Burnaby, BC V5C 3Z6, Canada'
+    assert delivery.get('latitude') is None and delivery.get('longitude') is None
 
 
 def test_vehicle_selection_defaults_to_cargo_van_unless_email_explicitly_requests_a_type():
