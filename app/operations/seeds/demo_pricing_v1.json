@@ -461,8 +461,8 @@
       {
         "id": "srv_same_day",
         "code": "SAME_DAY",
-        "name": "Same-Day Standard",
-        "description": "Standard scheduled delivery completed by 17:00 across metro area.",
+        "name": "Same-Day",
+        "description": "Economical scheduled delivery completed the same business day across Metro Vancouver.",
         "defaultMultiplier": 1,
         "additionalCharge": 0,
         "estimatedTime": "Same-Day (by 17:00)",
@@ -471,21 +471,33 @@
         "active": true
       },
       {
-        "id": "srv_rush",
-        "code": "RUSH_2H",
-        "name": "Rush Expedited (2-Hour)",
-        "description": "Priority expedited pickup and delivery within 2 hours of booking.",
-        "defaultMultiplier": 1.3,
-        "additionalCharge": 20,
-        "estimatedTime": "Under 2 Hours",
-        "bookingCutoffTime": "16:00",
+        "id": "srv_rush_4h",
+        "code": "RUSH_4H",
+        "name": "Rush — 4 Hour",
+        "description": "Priority same-day pickup and delivery within a four-hour service window.",
+        "defaultMultiplier": 1.2,
+        "additionalCharge": 15,
+        "estimatedTime": "Within 4 Hours",
+        "bookingCutoffTime": "13:00",
+        "exclusiveVehicle": false,
+        "active": true
+      },
+      {
+        "id": "srv_priority_2h",
+        "code": "PRIORITY_2H",
+        "name": "Priority — 2 Hour",
+        "description": "Expedited pickup and delivery within a two-hour service window.",
+        "defaultMultiplier": 1.4,
+        "additionalCharge": 30,
+        "estimatedTime": "Within 2 Hours",
+        "bookingCutoffTime": "15:00",
         "exclusiveVehicle": false,
         "active": true
       },
       {
         "id": "srv_direct",
         "code": "DIRECT",
-        "name": "Direct Hotshot",
+        "name": "Direct",
         "description": "Immediate non-stop exclusive vehicle with zero intermediate stops.",
         "defaultMultiplier": 1.5,
         "additionalCharge": 35,
@@ -494,18 +506,6 @@
         "exclusiveVehicle": true,
         "active": true
       },
-      {
-        "id": "srv_economy",
-        "code": "NEXT_DAY",
-        "name": "Scheduled Economy",
-        "description": "Cost-efficient next-day consolidated delivery for non-urgent shipments.",
-        "defaultMultiplier": 0.9,
-        "additionalCharge": 0,
-        "estimatedTime": "Next-Day Flexible",
-        "bookingCutoffTime": "17:00",
-        "exclusiveVehicle": false,
-        "active": true
-      }
     ],
     "vehicles": [
       {
