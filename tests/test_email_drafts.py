@@ -41,6 +41,18 @@ def test_partial_save_preserves_nulls_identity_body_and_concurrency(agent):
     assert post(client,INTAKE+f'/messages/{row["id"]}/order',{'version':saved['version'],'booking':saved['draft']}).status_code==422
 
 
+def test_create_order_cannot_bypass_unsaved_draft_blockers(agent):
+    row = incomplete(agent)
+    # The submitted payload looks complete, but the stored draft still has a
+    # required weight missing. A dispatcher must save the correction first.
+    booking = deepcopy(row['draft'])
+    booking['items'][0]['weight_kg'] = '12'
+    response = post(agent['client'], INTAKE + f'/messages/{row["id"]}/order', {'version': row['version'], 'booking': booking})
+    assert response.status_code == 422
+    assert 'Complete the draft before creating an Order' in response.json()['detail']
+    assert agent['client'].get(BASE + '/orders').json() == []
+
+
 def test_authenticated_shipper_completion_returns_to_dispatch_without_creating_order(agent, monkeypatch):
     row=incomplete(agent);client=agent['client'];identity=row['id']
     row=check(save(client,row,{**row['draft'],'internal_notes':'Dispatcher only','imported_total':'123'}))

@@ -153,6 +153,10 @@ def create_order(slug: str, identity: UUID, data: IntakeOrder, db: DB, key: Oper
     def run():
         row = intake(db, user, identity, data.version)
         if row.status not in OPEN: raise HTTPException(409, 'This email can no longer be turned into an Order.')
+        # An email draft is deliberately not an Order until its review blockers
+        # are cleared. Do not let a crafted request bypass the dispatcher form.
+        if row.missing:
+            raise HTTPException(422, 'Complete the draft before creating an Order: ' + '; '.join(row.missing))
         order = orders.create_order(db, user, data.booking, f'intake-{identity}', source='EMAIL')
         row.status, row.order_id, row.shipper_id, row.missing = 'ORDER_CREATED', UUID(str(order['id'])), UUID(str(order['shipper_id'])), []
         row.version += 1
