@@ -53,14 +53,18 @@ def best_vehicle_type(items, options, requested=None):
     """Use an explicit catalogue match, otherwise the smallest complete fit; Cargo Van is the safe default."""
     selected = pick(requested, options)
     if selected: return selected
-    cargo_van = next((item for item in options if item['code'] == 'veh_1_ton'), None)
+    # Automated selection must not choose a refrigerated, flatbed, or trailer type
+    # unless the email explicitly asks for it. General local-delivery types are the
+    # seeded veh_* catalogue entries, with Cargo Van as the standard fallback.
+    general = [item for item in options if item['code'].startswith('veh_')]
+    cargo_van = next((item for item in general if item['code'] == 'veh_1_ton'), None)
     complete = all(item['weight_kg'] and item['length_cm'] and item['width_cm'] and item['height_cm'] for item in items)
-    if not complete: return cargo_van['id'] if cargo_van else (options[0]['id'] if options else None)
+    if not complete: return cargo_van['id'] if cargo_van else (general[0]['id'] if general else (options[0]['id'] if options else None))
     weight = sum(Decimal(item['weight_kg']) * item['quantity'] for item in items)
     pallets = sum(item['pallets'] * item['quantity'] for item in items)
     volume = sum(Decimal(item['length_cm']) * Decimal(item['width_cm']) * Decimal(item['height_cm']) * item['quantity'] / Decimal('1000000') for item in items)
     candidates = []
-    for vehicle in options:
+    for vehicle in general:
         if (Decimal(str(vehicle.get('payload_kg') or 0)) < weight or int(vehicle.get('pallet_capacity') or 0) < pallets
                 or Decimal(str(vehicle.get('volume_m3') or 0)) < volume): continue
         dimensions = (Decimal(str(vehicle.get('length_cm') or 0)), Decimal(str(vehicle.get('width_cm') or 0)), Decimal(str(vehicle.get('height_cm') or 0)))
@@ -68,11 +72,11 @@ def best_vehicle_type(items, options, requested=None):
         candidates.append(vehicle)
     if candidates:
         return min(candidates, key=lambda vehicle: (Decimal(str(vehicle.get('volume_m3') or 0)), Decimal(str(vehicle.get('payload_kg') or 0))))['id']
-    return cargo_van['id'] if cargo_van else (options[0]['id'] if options else None)
+    return cargo_van['id'] if cargo_van else (general[0]['id'] if general else (options[0]['id'] if options else None))
 
 
 def address(stop, number, context, verify, missing):
-    label = f'Stop {number}'
+    label = 'Pickup address' if stop.kind == 'PICKUP' else 'Delivery address'
     if stop.use_shipper_warehouse and stop.kind == 'PICKUP':
         if context['shipper'] and context['shipper'].get('warehouse'): return dict(context['shipper']['warehouse'])
         missing.append(f"{label}: the Shipper's warehouse address")
@@ -91,12 +95,12 @@ def address(stop, number, context, verify, missing):
                 return {'text': verified['text'], 'city': resolved_city, 'province': resolved_province, 'postal_code': resolved_postal, 'country': 'CA',
                     'latitude': verified['latitude'], 'longitude': verified['longitude']}
     if not (street and city and code and zip_code):
-        missing.append(f'{label}: complete address with street, city, province and postal code')
+        missing.append(f'{label} is incomplete. Add street, city, province and postal code.')
         text = ', '.join(value for value in [street, city, ' '.join(value for value in [code or (found.province if found else ''), zip_code or (found.postal_code if found else '')] if value)] if value)
         return {'text': text, 'city': city, 'province': code or (found.province or '' if found else ''),
             'postal_code': zip_code or (found.postal_code or '' if found else ''), 'country': 'CA'} if text else None
     text = f'{street}, {city}, {code} {zip_code}, Canada'
-    missing.append(f'{label}: address could not be verified on the map')
+    missing.append(f'{label} could not be verified on the map. Choose a complete suggested address or add its postal code.')
     return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': 'CA'}
 
 
@@ -142,8 +146,10 @@ def build(extraction, context, verify):
             'description': (item.description or '')[:2000]})
     if not items: missing.append('Items: quantity, weight and dimensions')
     linked = {i['pickup_id'] for i in items} | {i['delivery_id'] for i in items}
-    for number, stop in enumerate(stops, 1):
-        if stop['id'] not in linked and items: missing.append(f'Stop {number}: no item is picked up or delivered there')
+    for stop in stops:
+        if stop['id'] not in linked and items:
+            label = 'Pickup address' if stop['kind'] == 'PICKUP' else 'Delivery address'
+            missing.append(f'{label}: no item is picked up or delivered there')
     accessorials = []
     for requested in extraction.accessorials:
         identity = pick(requested, context.get('accessorials', []))

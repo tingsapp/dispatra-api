@@ -141,9 +141,22 @@ def test_booking_build_converts_units_and_lists_missing_facts():
     assert draft['stops'][1]['address']['postal_code'] == 'V6C 1W6'
     incomplete = facts(service=None, scheduled_at=None, items=[dict(facts().items[0].model_dump(), weight_each=None, length=None)])
     draft, missing = booking.build(incomplete, context, lambda t, p: None)
-    assert missing == ['Service level', 'Stop 2: address could not be verified on the map', 'Pickup date and time',
+    assert missing == ['Service level', 'Delivery address could not be verified on the map. Choose a complete suggested address or add its postal code.', 'Pickup date and time',
         'Item 1: weight', 'Item 1: length, width and height']
     assert draft['items'][0]['weight_kg'] is None and draft['stops'][1]['address'].get('latitude') is None
+
+
+def test_vehicle_selection_defaults_to_cargo_van_and_skips_specialist_types():
+    cargo, refrigerated = str(uuid4()), str(uuid4())
+    vehicles = [
+        {'id': cargo, 'code': 'veh_1_ton', 'name': 'Cargo Van', 'payload_kg': 800, 'volume_m3': 14,
+         'length_cm': 400, 'width_cm': 180, 'height_cm': 180, 'pallet_capacity': 2},
+        {'id': refrigerated, 'code': 'REFRIGERATED_VAN', 'name': 'Refrigerated Van', 'payload_kg': 900, 'volume_m3': 12,
+         'length_cm': 350, 'width_cm': 170, 'height_cm': 170, 'pallet_capacity': 2},
+    ]
+    item = {'quantity': 1, 'weight_kg': '90.72', 'length_cm': '121.92', 'width_cm': '121.92', 'height_cm': '121.92', 'pallets': 1}
+    assert booking.best_vehicle_type([item], vehicles) == cargo
+    assert booking.best_vehicle_type([item], vehicles, 'Refrigerated Van') == refrigerated
 
 
 def test_mailbox_settings_are_dispatcher_only_and_password_is_encrypted(agent):

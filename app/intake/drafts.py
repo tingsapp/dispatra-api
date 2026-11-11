@@ -63,7 +63,10 @@ def save(db, actor, identity, data, key, view):
             row.sender_verified = False
         row.shipper_id = data.draft.shipper_id
         row.draft, row.missing = draft, missing_facts(draft)
-        if not row.sender_verified: row.missing.insert(0, 'Sender verification: confirm this email really came from the Shipper')
+        # Once a dispatcher has selected a company Shipper, the known account is
+        # sufficient for draft review; mailbox authentication remains diagnostic.
+        if not row.sender_verified and not row.shipper_id:
+            row.missing.insert(0, 'Sender verification: confirm this email really came from the Shipper')
         row.status = 'NEEDS_REVIEW' if row.shipper_id else 'UNKNOWN_SENDER'
         row.version += 1
         db.flush()
