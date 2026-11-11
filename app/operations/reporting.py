@@ -15,6 +15,16 @@ from .attention import flags as attention_flags
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Operations reporting'])
 
 
+def add_no_driver_attention(attention, candidates):
+    """Add a dispatch alert unless an operational incident already explains it."""
+    for order_id, description in candidates.items():
+        # An overdue-assignment incident already includes the dispatch agent's
+        # no-candidate result. Showing its separate NO_DRIVER row repeats the
+        # same practical issue in the Monitor.
+        if any(kind == 'OPERATIONAL' and description in detail for kind, detail in attention[order_id]): continue
+        attention[order_id].append(('NO_DRIVER', description))
+
+
 def dated_orders(db, user, date_from, date_to):
     if (date_from and date_from.tzinfo is None) or (date_to and date_to.tzinfo is None):
         raise HTTPException(422,'Date filters must include a time zone.')
@@ -145,7 +155,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
         OperationalIncident.status.in_(('OPEN','ACKNOWLEDGED')), OperationalIncident.source_issue_id.is_(None))).all()
     for incident in watched:
         if incident.order_id in attention: attention[incident.order_id].append(('OPERATIONAL', incident.title + ': ' + incident.description))
-    for order_id, description in no_driver(db, user.organization_id, orders).items(): attention[order_id].append(('NO_DRIVER', description))
+    add_no_driver_attention(attention, no_driver(db, user.organization_id, orders))
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,
         'location':points[d.id].data if d.id in points else None,

@@ -45,6 +45,7 @@ def result(lat=49.26,postal='V5C 3Y5'):
 
 def test_geocode_accepts_one_precise_address_and_rejects_ambiguity_or_postal_conflicts(monkeypatch):
     monkeypatch.setenv('GOOGLE_GEOCODING_API_KEY','test')
+    monkeypatch.delenv('GOOGLE_ROUTES_API_KEY', raising=False)
     payload={'status':'OK','results':[result()]}
     class Response:
         def __enter__(self):return self
@@ -60,6 +61,29 @@ def test_geocode_accepts_one_precise_address_and_rejects_ambiguity_or_postal_con
     assert geocode.verify('456 Lougheed hiway, Burnaby','') is None
     payload['results']=[result()];payload['results'][0]['partial_match']=True
     assert geocode.verify('456 Lougheed hiway, Burnaby','') is None
+
+
+def test_places_fallback_resolves_a_complete_address_with_the_routes_credential(monkeypatch):
+    monkeypatch.delenv('GOOGLE_GEOCODING_API_KEY', raising=False)
+    monkeypatch.setenv('GOOGLE_ROUTES_API_KEY', 'routes-test')
+    payload = {'places': [{'formattedAddress': '4567 Lougheed Highway, Burnaby, BC V5C 3Z6, Canada',
+        'location': {'latitude': 49.267, 'longitude': -123.001}, 'addressComponents': [
+            {'types': ['street_number'], 'longText': '4567', 'shortText': '4567'},
+            {'types': ['route'], 'longText': 'Lougheed Highway', 'shortText': 'Lougheed Highway'},
+            {'types': ['locality'], 'longText': 'Burnaby', 'shortText': 'Burnaby'},
+            {'types': ['administrative_area_level_1'], 'longText': 'British Columbia', 'shortText': 'BC'},
+            {'types': ['country'], 'longText': 'Canada', 'shortText': 'CA'},
+            {'types': ['postal_code'], 'longText': 'V5C 3Z6', 'shortText': 'V5C 3Z6'}]}]}
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, *args): return json.dumps(payload).encode()
+    requests = []
+    monkeypatch.setattr(geocode.urllib.request, 'urlopen', lambda request, **kwargs: requests.append(request) or Response())
+    resolved = geocode.verify('4567 Lougheed Highway, Burnaby, BC V5C 3Z6, Canada', 'V5C 3Z6')
+    assert resolved == {'text': '4567 Lougheed Highway, Burnaby, BC V5C 3Z6, Canada', 'latitude': 49.267, 'longitude': -123.001,
+        'city': 'Burnaby', 'province': 'BC', 'postal_code': 'V5C 3Z6'}
+    assert requests[0].full_url == 'https://places.googleapis.com/v1/places:searchText'
 
 
 @pytest.mark.parametrize('supplied,expected', [('Bunaby', True), ('Buranby', True), ('burnaby', True),
