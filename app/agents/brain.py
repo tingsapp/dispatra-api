@@ -24,8 +24,8 @@ Do not include shell commands, customer data or secrets. Your proposal is adviso
 
 
 class Brain:
-    def __init__(self, budget=3):
-        self.remaining = budget
+    def __init__(self, budget=None):
+        self.remaining = budget if budget is not None else max(0, int(os.environ.get('TECHNICAL_DIAGNOSIS_BUDGET', '1')))
 
     def assess(self, kind, evidence, safe_mailbox_check=False):
         fallback = Assessment(recommendation='CHECK_MAILBOX' if safe_mailbox_check else 'ADMIN_REVIEW',
@@ -37,9 +37,10 @@ class Brain:
         self.remaining -= 1
         try:
             with openai.OpenAI(timeout=12, max_retries=0) as client:
-                result = client.responses.parse(model=os.environ.get('TECHNICAL_AGENT_MODEL', os.environ.get('ORDER_AGENT_MODEL', 'gpt-5.5')),
+                result = client.responses.parse(model=os.environ.get('TECHNICAL_AGENT_MODEL', 'gpt-6-astra'),
+                    reasoning={'effort': os.environ.get('TECHNICAL_AGENT_REASONING', 'low')},
                     instructions=INSTRUCTIONS, input=json.dumps({'kind': kind, 'evidence': evidence,
-                        'safe_mailbox_check': safe_mailbox_check}), text_format=Assessment, max_output_tokens=600, store=False)
+                        'safe_mailbox_check': safe_mailbox_check}), text_format=Assessment, max_output_tokens=350, store=False)
             plan = result.output_parsed
             if plan is None: return fallback, 'RULES'
             if plan.recommendation == 'CHECK_MAILBOX' and not safe_mailbox_check: return fallback, 'RULES'

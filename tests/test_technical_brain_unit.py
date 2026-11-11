@@ -27,6 +27,8 @@ class BrainTests(unittest.TestCase):
             self.assertEqual(client.responses.parse.call_count, 1)
             self.assertFalse(client.responses.parse.call_args.kwargs['store'])
             self.assertEqual(factory.call_args.kwargs['max_retries'], 0)
+            self.assertEqual(client.responses.parse.call_args.kwargs['max_output_tokens'], 350)
+            self.assertEqual(client.responses.parse.call_args.kwargs['reasoning'], {'effort': 'low'})
 
     def test_invalid_ai_output_falls_back_without_claiming_repair(self):
         client = Mock()

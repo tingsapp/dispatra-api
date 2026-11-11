@@ -7,6 +7,8 @@ from sqlalchemy import select
 from app.models import now
 from ..models import TechnicalIssue, RuntimeDiagnostic
 
+MIN_OCCURRENCES = max(1, int(os.environ.get('TECHNICAL_REPAIR_MIN_OCCURRENCES', '2')))
+
 
 def enabled():
     return os.environ.get('TECHNICAL_LOCAL_CODE_REPAIR') == '1' or os.environ.get('TECHNICAL_PRODUCTION_CODE_REPAIR') == '1'
@@ -29,7 +31,7 @@ def enqueue(db):
             TechnicalIssue.status == 'NEEDS_ADMIN', TechnicalIssue.repair_stage.is_(None),
             TechnicalIssue.notified_at.is_(None)).order_by(TechnicalIssue.created_at).limit(20)).all():
         evidence = diagnostic(db, row)
-        if evidence is None or evidence.source not in ('API', 'WEB'): continue
+        if evidence is None or evidence.source not in ('API', 'WEB') or evidence.occurrences < MIN_OCCURRENCES: continue
         row.status, row.repair_stage = 'APPLYING', 'QUEUED'
         row.repair_summary = 'Waiting for isolated diagnosis and tests. No live code has changed.'
         row.automatic = True; row.version += 1; row.updated_at = now()

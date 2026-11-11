@@ -20,6 +20,7 @@ def prepare(monkeypatch, source='WEB'):
     monkeypatch.setenv('OPENAI_API_KEY', '')
     monkeypatch.setenv('TECHNICAL_LOCAL_CODE_REPAIR', '1')
     diagnostics.record(source, 'RUNTIME_ERROR' if source == 'WEB' else 'HTTP_5XX')
+    diagnostics.record(source, 'RUNTIME_ERROR' if source == 'WEB' else 'HTTP_5XX')
     technical_worker.cycle(force=True)
 
 
