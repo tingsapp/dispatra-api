@@ -44,7 +44,7 @@ def result(lat=49.26,postal='V5C 3Y5'):
 
 
 def test_geocode_accepts_one_precise_address_and_rejects_ambiguity_or_postal_conflicts(monkeypatch):
-    monkeypatch.setattr(geocode,'provider',lambda:'google');monkeypatch.setenv('GOOGLE_GEOCODING_API_KEY','test')
+    monkeypatch.setenv('GOOGLE_GEOCODING_API_KEY','test')
     payload={'status':'OK','results':[result()]}
     class Response:
         def __enter__(self):return self

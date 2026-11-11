@@ -6,7 +6,6 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from app.operations.travel import provider
 
 PRECISE = {'ROOFTOP', 'RANGE_INTERPOLATED'}
 
@@ -29,9 +28,11 @@ def _postal(value):
 
 
 def verify(text, postal_code):
-    """Return {'text', 'latitude', 'longitude'} or None. No external call outside the Google provider."""
+    """Return one precise Canadian Google address match, or None."""
+    # Address completion is independent of the commercial/dispatch road-routing
+    # provider. A configured Google geocoding or Routes key is sufficient.
     key = os.environ.get('GOOGLE_GEOCODING_API_KEY') or os.environ.get('GOOGLE_ROUTES_API_KEY')
-    if provider() != 'google' or not key: return None
+    if not key: return None
     query = urllib.parse.urlencode({'address': text, 'components': 'country:CA', 'key': key})
     try:
         with urllib.request.urlopen('https://maps.googleapis.com/maps/api/geocode/json?' + query, timeout=15) as response:
