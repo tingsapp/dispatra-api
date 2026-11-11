@@ -23,7 +23,6 @@ from app.agents.telemetry import step
 
 MAX_ATTEMPTS = 3
 SYSTEM = SimpleNamespace(id=None, role=None)
-UNVERIFIED = 'Sender verification: confirm this email really came from the Shipper'
 
 
 def reopen(row):
@@ -242,7 +241,8 @@ def _settle(db,intake,result,draft,missing,ctx,verified):
         signal(db,'intake.unknown_sender',intake);return
     if ctx['shipper'].get('status', 'ACTIVE') != 'ACTIVE':
         missing=[f"Shipper account is {ctx['shipper']['status'].lower().replace('_', ' ')}",*missing]
-    if not verified: missing=[UNVERIFIED,*missing]
+    # A known company Shipper is authoritative for email intake. Mail authentication is
+    # retained as diagnostic metadata, but does not block its matched booking.
     if missing: _review(db,intake,draft,missing)
     else: _create(db,intake,draft)
 

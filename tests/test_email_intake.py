@@ -267,11 +267,11 @@ def test_contact_defaults_are_per_field_and_do_not_cross_unknown_shipper_boundar
     assert draft['stops'][0]['address'] is None
 
 
-def test_unverified_sender_never_creates_an_order_automatically(agent):
+def test_unverified_matched_shipper_can_create_an_order(agent):
     agent['inbox'].add(raw_email(verified=False))
     worker.cycle()
     [item] = queue(agent['client'])
-    assert item['status'] == 'NEEDS_REVIEW' and item['missing'] == [service.UNVERIFIED] and not item['sender_verified']
+    assert item['status'] == 'ORDER_CREATED' and item['missing'] == [] and not item['sender_verified']
 
 
 def test_unknown_sender_waits_until_dispatcher_links_a_shipper(agent):
