@@ -127,6 +127,13 @@ def routes(slug: str, db: DB, after: UUID | None = None, limit: int = Query(50,g
     return [dispatch.route_view(db,user,r) for r in db.scalars(query)]
 
 
+@router.get('/routes/{identity}/approach', response_model=RoadPathView)
+def route_approach(slug: str, identity: UUID, db: DB, user: User = Depends(auth.dispatcher)):
+    """Road segment from fresh driver GPS or vehicle parking to the next pending visit."""
+    from .route_approach import path
+    return path(db, user, identity)
+
+
 @router.post('/routes/{identity}/release', response_model=RouteView)
 def release(slug: str, identity: UUID, data: RouteCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
     return dispatch.release(db,user,identity,data,idempotency_key)

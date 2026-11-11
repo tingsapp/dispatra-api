@@ -73,7 +73,8 @@ def seed_pricing(db, actor, organization=None):
             apply_accessorials=source.get('applyAccessorials', True))
         if data.method == 'ZONE':
             data.zones = [Zone(id=z['id'], name=z['name'], postal_codes=z['postalCodes']) for z in SEED['pricing']['zones']]
-            data.weight_bands = [WeightBand(from_kg=0, to_kg=Decimal('99') * Decimal('0.45359237'), prices={'zone_1': Decimal('20')})]
+            data.weight_bands = [WeightBand(from_kg=0, to_kg=Decimal('99') * Decimal('0.45359237'),
+                prices={zone.id: Decimal('20') for zone in data.zones})]
         is_default = source['scope'] == 'ORGANIZATION' and source['status'] == 'ACTIVE'
         if is_default and db.scalar(select(RateCard.id).where(RateCard.organization_id == org_id, RateCard.is_default.is_(True))):
             is_default = False

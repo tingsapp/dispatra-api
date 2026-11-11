@@ -65,6 +65,11 @@ def test_public_chat_rate_limits_and_origin_boundary(client, monkeypatch):
     assert client.post(ROOT, json={'message': 'Hello'}, headers={**HEADERS, 'Origin': 'https://untrusted.example'}).status_code == 403
 
 
+def test_public_voice_endpoints_are_not_available(client):
+    assert client.post('/api/v1/public/assistant/voice', json={'sdp': 'v=0\r\n'}).status_code == 404
+    assert client.post('/api/v1/public/assistant/voice/end', json={'end_token': 'retired'}).status_code == 404
+
+
 def test_new_public_path_cannot_be_registered_as_company():
     with pytest.raises(ValueError):
         OrganizationCreate(name='Collision', slug='how-it-works', admin_login='test', password='Initial-password-123!')

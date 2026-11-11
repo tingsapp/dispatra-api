@@ -36,6 +36,17 @@ def test_all_pricing_methods_tax_minimum_discount_and_frozen_context():
     assert [line['label'] for line in price['lines'] if line['group']=='TAX']==['GST/HST','Provincial tax']
 
 
+def test_zone_postal_codes_are_stored_as_three_character_fsa_prefixes():
+    card = RateData(name='Zone', method='ZONE', zones=[
+        {'id': 'van', 'name': 'Zone 1', 'postal_codes': ['v6a 1e9', 'V5Y']},
+    ])
+    settings = SettingsData(dispatch_zones=[{'name': 'Vancouver', 'postal_codes': ['V6A 1E9']}])
+    assert card.zones[0].postal_codes == ['V6A', 'V5Y']
+    assert settings.dispatch_zones[0].postal_codes == ['V6A']
+    with pytest.raises(ValueError, match='Canadian three-character postal area'):
+        RateData(name='Zone', method='ZONE', zones=[{'id': 'bad', 'name': 'Bad', 'postal_codes': ['not-a-postal-code']}])
+
+
 def test_package_handling_accessorials_follow_item_quantities(monkeypatch):
     from types import SimpleNamespace
     from app.operations import pricing

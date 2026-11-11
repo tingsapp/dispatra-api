@@ -45,6 +45,12 @@ def test_signup_creates_isolated_dispatcher_and_thirty_day_defaults(client):
     default, = [card for card in cards if card['is_default']]
     assert default['active'] and default['data']['method'] == 'ZONE'
     assert default['data']['name'] == 'Zone to zone'
+    zones = {zone['name']: zone['postal_codes'] for zone in default['data']['zones']}
+    assert set(zones) == {'Zone 1', 'Zone 2', 'Zone 3'}
+    assert zones['Zone 1'] == ['V5K', 'V5L', 'V5M', 'V5N', 'V5P', 'V5R', 'V5S', 'V5T', 'V5V', 'V5W', 'V5X', 'V5Y', 'V5Z', 'V6A', 'V6B', 'V6C', 'V6E', 'V6G', 'V6H', 'V6J', 'V6K', 'V6L', 'V6M', 'V6N', 'V6P', 'V6R', 'V6S', 'V6T', 'V6Z', 'V7X', 'V7Y']
+    assert zones['Zone 2'] == ['V5A', 'V5B', 'V5C', 'V5E', 'V5G', 'V5H', 'V5J']
+    assert zones['Zone 3'] == ['V6V', 'V6W', 'V6X', 'V6Y', 'V7A', 'V7B', 'V7C', 'V7E']
+    assert default['data']['weight_bands'][0]['prices'] == {'zone_1': '20', 'zone_2': '20', 'zone_3': '20'}
     with owner_engine.connect() as db:
         dates = db.execute(text('SELECT trial_started_at, trial_ends_at FROM organizations WHERE id=:id'), {'id':org['id']}).one()
         assert dates[1] - dates[0] == timedelta(days=30)

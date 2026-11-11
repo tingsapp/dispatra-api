@@ -5,13 +5,26 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
-from pydantic import BaseModel, ConfigDict, Field, EmailStr, AwareDatetime, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, EmailStr, AwareDatetime, StrictBool, field_validator, model_validator
 from app.schemas import Input, Name, Password
 
 Money = Annotated[Decimal, Field(ge=0, le=10000000, max_digits=16, decimal_places=4)]
 Positive = Annotated[Decimal, Field(gt=0, le=10000000, allow_inf_nan=False)]
 Percent = Annotated[Decimal, Field(ge=0, le=100, allow_inf_nan=False)]
 Text = Annotated[str, Field(max_length=2000)]
+
+
+def normalize_fsa(value):
+    """Store Canadian pricing/dispatch areas as their three-character FSA."""
+    if not isinstance(value, str):
+        return value
+    compact = value.replace(' ', '').upper()
+    if len(compact) in {3, 6} and compact[0].isalpha() and compact[1].isdigit() and compact[2].isalpha() and (len(compact) == 3 or (compact[3].isdigit() and compact[4].isalpha() and compact[5].isdigit())):
+        return compact[:3]
+    raise ValueError('Use a Canadian three-character postal area, such as V6A.')
+
+
+Fsa = Annotated[str, BeforeValidator(normalize_fsa), Field(pattern=r'^[A-Za-z]\d[A-Za-z]$')]
 
 
 def validate_logo(value: str) -> str:
@@ -48,7 +61,7 @@ class Address(Input):
 
 class DispatchZone(Input):
     name: Name
-    postal_codes: list[Annotated[str, Field(pattern=r'^[A-Za-z]\d[A-Za-z]( ?\d[A-Za-z]\d)?$')]] = Field(min_length=1, max_length=200)
+    postal_codes: list[Fsa] = Field(min_length=1, max_length=200)
 
 
 class SettingsData(Input):
@@ -172,7 +185,7 @@ class CatalogUpdate(Version):
 class Zone(Input):
     id: Name
     name: Name
-    postal_codes: list[Annotated[str, Field(pattern=r'^[A-Za-z]\d[A-Za-z]( ?\d[A-Za-z]\d)?$')]] = Field(min_length=1)
+    postal_codes: list[Fsa] = Field(min_length=1)
 
 
 class WeightBand(Input):
@@ -939,7 +952,7 @@ class TrackingView(BaseModel):
 
 
 class RoadPathView(BaseModel):
-    """Driving path through an Order's stops as [latitude, longitude] points, for map display only."""
+    """Order road path or dispatcher route approach as [latitude, longitude] points, for map display only."""
     points: list[tuple[float, float]]
     preview: bool = Field(default=False, description='Unassigned map preview only; not truck feasibility or dispatch evidence.')
     provider: Literal['GOOGLE', 'TOMTOM', 'OPENROUTESERVICE'] = 'GOOGLE'

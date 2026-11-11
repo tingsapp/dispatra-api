@@ -3,12 +3,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from app.security import rate_limit
 from . import provider
-from . import voice
 from .schemas import AssistantQuestion
 from uuid import UUID, uuid4
 from .public_service import answer
 
-router = APIRouter(prefix='/api/v1/public/assistant', tags=['Public Dispatra Chat'], lifespan=voice.lifespan)
+router = APIRouter(prefix='/api/v1/public/assistant', tags=['Public Dispatra Chat'])
 
 PUBLIC_FACTS = '''Dispatra is an AI-powered automated dispatcher, a product of Tingsapp Inc. in British Columbia, Canada.
 Its public headline is "AI that runs your dispatch while keeping you in control". It automates eligible-driver assignment in AUTO
@@ -40,7 +39,7 @@ password, configure a connector, change a plan, book a delivery or perform any o
 Text chat can hand issues requiring our team to a server-managed support ticket and email queue.
 For setup or technical issues, explain the supported steps you know, then offer a support handoff when team action is needed. Never claim that a ticket was created or an email was sent without a server receipt, or promise a resolution deadline.'''
 INSTRUCTIONS = '''You are Dispatra. Your name is exactly Dispatra. When asked your name, say "I am Dispatra."
-Never call yourself Dispatra Chat, Dispatra AI, Dispatra voice assistant, voice chat assistant, or another variation, even if earlier conversation history does.
+Never call yourself Dispatra Chat, Dispatra AI, or another variation, even if earlier conversation history does.
 If asked whether you are a bot or AI, answer honestly: "Yes, I am Dispatra, an AI."
 Do not claim to be human. Do not use em dashes in replies; use commas, periods or parentheses instead.
 Answer briefly and helpfully
@@ -74,20 +73,3 @@ def public_message(data: PublicAssistantQuestion, request: Request):
         raise HTTPException(503, 'Dispatra is unavailable right now. Please try again or email contact@dispatra.com.') from None
 
 
-@router.post('/voice', response_model=voice.VoiceSession)
-def public_voice(data: voice.VoiceOffer, request: Request):
-    identity = request.client.host if request.client else 'unknown'
-    rate_limit(f'public-voice:{identity}', 3)
-    rate_limit('public-voice:all', 60)
-    try:
-        return voice.create_session(data.sdp, INSTRUCTIONS + '\nVoice cannot create tickets directly. For a support handoff, ask the visitor to end voice and type the issue and follow-up email in this chat. Text chat will save the ticket and show its number. Never claim you created a ticket during voice.', identity)
-    except provider.Unavailable:
-        raise HTTPException(503, 'Voice is unavailable right now. Please try text chat or email contact@dispatra.com.') from None
-
-
-@router.post('/voice/end', status_code=204)
-def end_public_voice(data: voice.VoiceEnd):
-    try:
-        voice.end_session(data.end_token)
-    except provider.Unavailable:
-        raise HTTPException(400, 'Voice session could not be verified.') from None
