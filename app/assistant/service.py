@@ -5,7 +5,7 @@ from app.models import now
 from app.agents.telemetry import monitor_run
 from app.agents.machine_events import WORKSPACE_RECORDS_READ
 from . import provider, search
-from .schemas import SearchPlan, GroundedAnswer, AssistantReply, BriefingCommentary
+from .schemas import SearchPlan, GroundedAnswer, AssistantReply, BriefingCommentary, BriefingTotals
 
 
 def ask(db, actor, question):
@@ -43,6 +43,12 @@ def ask(db, actor, question):
         message = f'AI answers are unavailable right now. Search found {count} matching record{"s" if count != 1 else ""}.'
         if facts['limited']: message += ' Showing the most recent matches; refine your search for more.'
         return AssistantReply(message=message, references=refs, mode='SEARCH', observed_at=observed, limited=facts['limited'])
+
+
+def totals(db, actor):
+    if actor.role != 'DISPATCHER' or not getattr(actor, 'id', None): raise HTTPException(403, 'Dispatcher access required.')
+    observed = now()
+    return BriefingTotals(briefing=search.daily_briefing(db, actor.organization_id, observed), observed_at=observed)
 
 
 def brief(db, actor):

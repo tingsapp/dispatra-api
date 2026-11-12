@@ -41,5 +41,16 @@ class DailyBriefingTests(unittest.TestCase):
             self.assertEqual(reply.briefing, data)
             self.assertEqual(reply.mode, 'SEARCH')
 
+    def test_live_totals_never_call_the_provider(self):
+        data = DailyBriefing(day='2026-11-04', time_zone='UTC', evening=False, received=2,
+            unassigned=1, assigned=1, in_progress=0, completed=0, open_incidents=0)
+        actor = SimpleNamespace(organization_id=uuid4(), role='DISPATCHER', id=uuid4())
+        with patch.object(search, 'daily_briefing', return_value=data), patch.object(provider, 'generate') as generate:
+            result = service.totals(Mock(), actor)
+        self.assertEqual(result.briefing, data)
+        generate.assert_not_called()
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException): service.totals(Mock(), SimpleNamespace(organization_id=uuid4(), role='SHIPPER', id=uuid4()))
+
 
 if __name__ == '__main__': unittest.main()

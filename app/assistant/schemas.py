@@ -72,6 +72,12 @@ class DailyBriefing(BaseModel):
     open_incidents: int
 
 
+class BriefingTotals(BaseModel):
+    """Deterministic daily totals the open briefing card refetches after workspace changes."""
+    briefing: DailyBriefing
+    observed_at: datetime
+
+
 class AssistantReply(BaseModel):
     briefing: DailyBriefing | None = None
     message: str

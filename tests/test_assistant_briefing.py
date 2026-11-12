@@ -33,3 +33,19 @@ def test_briefing_keeps_verified_counts_when_provider_is_unavailable(setup, monk
     assert reply['mode'] == 'SEARCH'
     assert 'unavailable' in reply['message'].lower()
     assert reply['references'] == []
+
+
+def test_live_briefing_totals_follow_saved_order_changes(setup, monkeypatch):
+    w = setup
+    def unexpected(*args): raise AssertionError('live totals must not call the AI provider')
+    monkeypatch.setattr(provider, 'generate', unexpected)
+    before = check(w['client'].get(BASE + '/assistant/briefing'))
+    order = new_order(w)
+    after = check(w['client'].get(BASE + '/assistant/briefing'))
+    assert after['briefing']['received'] == before['briefing']['received'] + 1
+    assert after['briefing']['unassigned'] == before['briefing']['unassigned'] + 1
+    assign(w, order)
+    assigned = check(w['client'].get(BASE + '/assistant/briefing'))
+    assert assigned['briefing']['unassigned'] == before['briefing']['unassigned']
+    assert assigned['briefing']['assigned'] == before['briefing']['assigned'] + 1
+    assert assigned['observed_at'] and assigned['briefing']['time_zone'] == 'America/Vancouver'
