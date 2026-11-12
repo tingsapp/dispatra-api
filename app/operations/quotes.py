@@ -4,7 +4,6 @@ from app.services import audit
 from .models import Quote
 from .common import command
 from .pricing import quote
-from .orders import check_package_types
 
 
 def create_quote(db, actor, booking, key):
@@ -12,7 +11,6 @@ def create_quote(db, actor, booking, key):
     if booking.shipper_id is not None or booking.rate_card_id is None:
         raise HTTPException(422, 'New Quote requires a Rate Card and no Shipper.')
     def run():
-        check_package_types(db, actor, booking)
         row = Quote(organization_id=actor.organization_id, facts=booking.model_dump(mode='json'), pricing=quote(db, actor, booking))
         db.add(row); db.flush(); audit(db, actor, 'quote.created', row.id, actor.organization_id)
         return {'id': str(row.id), 'version': row.version, 'created_at': row.created_at.isoformat(), 'facts': row.facts, 'pricing': row.pricing}

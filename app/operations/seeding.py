@@ -36,7 +36,7 @@ def seed_pricing(db, actor, organization=None):
             default_service_id=stable_id(org_id, next(s['id'] for s in SEED['catalogue']['services'] if s.get('code') == 'SAME_DAY')))
         db.add(Settings(id=stable_id(org_id, 'settings'), organization_id=org_id, data=data.model_dump(mode='json')))
     created = 0
-    groups = [('SERVICE', 'services'), ('VEHICLE_TYPE', 'vehicles'), ('ACCESSORIAL', 'accessorials'), ('PACKAGE_TYPE', 'packageTypes')]
+    groups = [('SERVICE', 'services'), ('VEHICLE_TYPE', 'vehicles'), ('ACCESSORIAL', 'accessorials')]
     for kind, group in groups:
         for source in SEED['catalogue'][group]:
             identity = stable_id(org_id, source['id'])
@@ -52,9 +52,6 @@ def seed_pricing(db, actor, organization=None):
                 payload.update(payload_kg=source['payloadCapacityKg'], volume_m3=source.get('cargoVolumeCbm'),
                     length_cm=source.get('cargoLengthCm'), width_cm=source.get('cargoWidthCm'), height_cm=source.get('cargoHeightCm'),
                     pallet_capacity=source['palletCapacity'], equipment=equipment, road_profile=source['roadProfile'])
-            if kind == 'PACKAGE_TYPE':
-                payload.update(fuel_eligible=False, default_weight_kg=source.get('defaultWeightKg'),
-                    length_cm=source.get('lengthCm'), width_cm=source.get('widthCm'), height_cm=source.get('heightCm'))
             if code == 'LIFTGATE': payload['required_equipment'] = ['LIFTGATE']
             if code == 'HELPER': payload['required_crew'] = 2
             db.add(Catalog(id=identity, organization_id=org_id, kind=kind, code=code,
