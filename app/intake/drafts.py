@@ -31,7 +31,8 @@ def validate_references(db, actor, draft):
     if draft.get('preferred_driver_id') and not bookable_drivers(db, actor, draft['preferred_driver_id']):
         raise HTTPException(422, 'Choose an available driver or no preference.')
     for identity, kind in [(draft.get('service_id'), 'SERVICE'), (draft.get('vehicle_type_id'), 'VEHICLE_TYPE'),
-                           *((item['id'], 'ACCESSORIAL') for item in draft.get('accessorials', []))]:
+                           *((item['id'], 'ACCESSORIAL') for item in draft.get('accessorials', [])),
+                           *((item.get('package_type_id'), 'PACKAGE_TYPE') for item in draft.get('items', []))]:
         if identity:
             entry = record(db, Catalog, actor, identity)
             if entry.kind != kind or not entry.active: raise HTTPException(422, 'Choose an active catalogue option.')

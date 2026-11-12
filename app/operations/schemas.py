@@ -160,6 +160,7 @@ class CatalogData(Input):
     length_cm: Positive | None = None
     width_cm: Positive | None = None
     height_cm: Positive | None = None
+    default_weight_kg: Positive | None = Field(default=None, description='Package Type only: per-piece weight that prefills a new package; its length, width and height prefill the dimensions.')
     pallet_capacity: int = Field(default=0, ge=0, le=100)
     equipment: list[Name] = Field(default_factory=list, max_length=30)
     required_equipment: list[Name] = Field(default_factory=list, max_length=30)
@@ -173,7 +174,7 @@ class CatalogData(Input):
 
 
 class CatalogCreate(Input):
-    kind: Literal['SERVICE', 'ACCESSORIAL', 'VEHICLE_TYPE']
+    kind: Literal['SERVICE', 'ACCESSORIAL', 'VEHICLE_TYPE', 'PACKAGE_TYPE']
     code: Annotated[str, Field(min_length=1, max_length=60)]
     data: CatalogData
 
@@ -392,6 +393,7 @@ class ItemInput(Input):
     fragile: bool = False
     dangerous_goods: bool = False
     description: Text = ''
+    package_type_id: UUID | None = Field(default=None, description='Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price.')
 
 
 class AccessorialSelection(Input):

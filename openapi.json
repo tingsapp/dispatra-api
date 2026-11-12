@@ -30603,7 +30603,8 @@
             "enum": [
               "SERVICE",
               "ACCESSORIAL",
-              "VEHICLE_TYPE"
+              "VEHICLE_TYPE",
+              "PACKAGE_TYPE"
             ],
             "title": "Kind"
           },
@@ -30766,6 +30767,24 @@
             ],
             "title": "Height Cm"
           },
+          "default_weight_kg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Weight Kg",
+            "description": "Package Type only: per-piece weight that prefills a new package; its length, width and height prefill the dimensions."
+          },
           "pallet_capacity": {
             "type": "integer",
             "maximum": 100.0,
@@ -30913,6 +30932,19 @@
               }
             ],
             "title": "Height Cm"
+          },
+          "default_weight_kg": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Weight Kg",
+            "description": "Package Type only: per-piece weight that prefills a new package; its length, width and height prefill the dimensions."
           },
           "pallet_capacity": {
             "type": "integer",
@@ -33925,6 +33957,19 @@
             "maxLength": 2000,
             "title": "Description",
             "default": ""
+          },
+          "package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Type Id",
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -34048,6 +34093,19 @@
             "maxLength": 2000,
             "title": "Description",
             "default": ""
+          },
+          "package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Type Id",
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -36650,6 +36708,19 @@
             "maxLength": 2000,
             "title": "Description",
             "default": ""
+          },
+          "package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Type Id",
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -36731,6 +36802,19 @@
             "maxLength": 2000,
             "title": "Description",
             "default": ""
+          },
+          "package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Type Id",
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
