@@ -1011,6 +1011,43 @@
         "minimumCharge": null,
         "maximumCharge": null
       }
+    ],
+    "packageTypes": [
+      {
+        "id": "pkg_envelope",
+        "code": "ENVELOPE",
+        "name": "Envelope",
+        "description": "Letters and documents.",
+        "defaultWeightKg": 0.5,
+        "lengthCm": 32,
+        "widthCm": 24,
+        "heightCm": 2,
+        "active": true
+      },
+      {
+        "id": "pkg_parcel",
+        "code": "PARCEL",
+        "name": "Parcel",
+        "description": "Boxes, bags and other regular packages.",
+        "active": true
+      },
+      {
+        "id": "pkg_pallet",
+        "code": "PALLET",
+        "name": "Pallet",
+        "description": "Goods stacked on a standard 48 x 40 in pallet.",
+        "lengthCm": 122,
+        "widthCm": 102,
+        "heightCm": 120,
+        "active": true
+      },
+      {
+        "id": "pkg_oversized",
+        "code": "OVERSIZED",
+        "name": "Oversized",
+        "description": "Long, bulky or irregular items such as furniture.",
+        "active": true
+      }
     ]
   },
   "billing": {

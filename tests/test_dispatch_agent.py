@@ -224,10 +224,8 @@ def test_no_candidate_alerts_keep_each_driver_reason_without_duplicate_operation
     with Session(engine) as db, db.begin():
         context(db, org)
         scan.scan_company(db, commands.system(org))
-        incident = db.scalar(select(Incident).where(Incident.order_id == order['id']))
-        evidence = '\n'.join(fact['value'] for fact in incident.evidence)
-        for item in excluded:
-            assert item['driver_name'] in evidence and item['reason'] in evidence
+        # The NO_DRIVER alert already carries every exclusion; the scan adds no incident.
+        assert db.scalar(select(Incident).where(Incident.order_id == order['id'])) is None
     attention = [item for item in check(client.get(BASE + '/monitor'))['needs_attention']
         if item['order_id'] == order['id']]
     assert [item['kind'] for item in attention] == ['NO_DRIVER']

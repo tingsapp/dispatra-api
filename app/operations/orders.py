@@ -6,7 +6,7 @@ from app.database import context
 from sqlalchemy import select, delete
 from app.models import now
 from app.services import audit
-from .models import Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
+from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
 from .schemas import Booking, OrderView
 from .common import record, command, version, changed, company_lock, operational_shipper
 from .pricing import quote
@@ -44,6 +44,15 @@ def check_preferred_driver(db, actor, booking, current=None):
     identity = booking.preferred_driver_id
     if identity is None or str(identity) == current: return
     if not bookable_drivers(db, actor, identity): raise HTTPException(422, 'Choose an available driver or no preference.')
+
+
+def check_package_types(db, actor, booking, current=None):
+    """Each newly chosen Package Type must be an active company entry; an edit may keep one deleted since booking."""
+    kept = {item.get('package_type_id') for item in (current or {}).get('items', [])}
+    for identity in {item.package_type_id for item in booking.items if item.package_type_id}:
+        if str(identity) in kept: continue
+        entry = db.scalar(select(Catalog).where(Catalog.organization_id == actor.organization_id, Catalog.id == identity))
+        if not entry or entry.kind != 'PACKAGE_TYPE' or not entry.active: raise HTTPException(422, 'Choose an active package type.')
 
 
 def visible_order(db, actor, identity, lock=False):
@@ -107,6 +116,7 @@ def create_order(db, actor, data, key, source=None):
     def run():
         company_lock(db, actor)
         check_preferred_driver(db, actor, booking)
+        check_package_types(db, actor, booking)
         identity = uuid4()
         row = Order(id=identity, organization_id=actor.organization_id, number=issue_number(db, actor, Order, 'O'),
             shipper_id=booking.shipper_id, billing_shipper_id=booking.billing_shipper_id or booking.shipper_id,
@@ -127,6 +137,7 @@ def update_order(db, actor, identity, data, key):
         row = visible_order(db, actor, identity, True); version(row, data.version)
         if row.status != 'NEW': raise HTTPException(409, 'Only unassigned Orders can be edited. Record an issue for active work.')
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
+        check_package_types(db, actor, booking, row.facts)
         from .pricing import retain_price
         retain_price(db, row)
         row.facts, row.booking = booking.model_dump(mode='json'), booking_snapshot(db, actor, booking, row.booking)
