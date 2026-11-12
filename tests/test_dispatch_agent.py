@@ -206,7 +206,7 @@ def test_dispatch_mode_values_and_access(fleet):
         assert post(other, f'/api/v1/companies/other/dispatch-decisions/{decision["id"]}/approve', dict(version=1, driver_id=w['driver']['id'])).status_code == 404
 
 
-def test_no_candidate_alerts_keep_each_driver_reason_and_watch_evidence(fleet):
+def test_no_candidate_alerts_keep_each_driver_reason_without_duplicate_operational_risk(fleet):
     from sqlalchemy.orm import Session
     from app.database import engine, context
     from app.order_watch import scan, commands
@@ -229,13 +229,12 @@ def test_no_candidate_alerts_keep_each_driver_reason_and_watch_evidence(fleet):
         for item in excluded:
             assert item['driver_name'] in evidence and item['reason'] in evidence
     attention = [item for item in check(client.get(BASE + '/monitor'))['needs_attention']
-        if item['order_id'] == order['id'] and item['kind'] in ('NO_DRIVER', 'OPERATIONAL')]
-    assert {item['kind'] for item in attention} == {'NO_DRIVER', 'OPERATIONAL'}
-    for alert in attention:
-        for item in excluded:
-            assert item['driver_name'] in alert['description']
-            assert item['driver_number'] in alert['description']
-            assert item['reason'] in alert['description']
+        if item['order_id'] == order['id']]
+    assert [item['kind'] for item in attention] == ['NO_DRIVER']
+    for item in excluded:
+        assert item['driver_name'] in attention[0]['description']
+        assert item['driver_number'] in attention[0]['description']
+        assert item['reason'] in attention[0]['description']
 
 
 def test_recorded_gps_and_shipper_restriction_reasons_are_not_replaced_by_capacity_guesses():
@@ -252,7 +251,12 @@ def test_recorded_gps_and_shipper_restriction_reasons_are_not_replaced_by_capaci
     assert 'capacity' not in text
     order = SimpleNamespace(id='order', route_id=None, status='NEW', version=1, scheduled_at=current+timedelta(hours=1))
     decision = SimpleNamespace(excluded=excluded*30, created_at=current)
-    [alert] = evaluate(order, None, [], {}, None, current, decision)
+    # A fresh failed dispatch check is fully represented by NO_DRIVER; it must
+    # not also manufacture an operational-risk incident for the same order.
+    assert evaluate(order, None, [], {}, None, current, decision) == []
+    [alert] = evaluate(order, None, [], {
+        'pickup': SimpleNamespace(order_id='order', data={'window_end': (current-timedelta(minutes=1)).isoformat()}),
+    }, None, current, decision)
     assert len(alert['description']) <= 1000 and 'See all driver eligibility checks' in alert['description']
     assert len([item for item in alert['evidence'] if item['label']=='Driver eligibility check']) == 60
     assert 'no active driver' in no_candidate_description([])

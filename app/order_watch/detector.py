@@ -16,10 +16,15 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
     if order.route_id is None:
         due=assignment_deadline(s for s in stops.values() if s.order_id==order.id)
         overdue=due is not None and due<=current
-        if overdue or no_candidate:
+        # The Dispatch agent already exposes a recorded NO_DRIVER alert (with
+        # every exclusion reason).  A failed candidate search by itself is not
+        # a second operational incident; creating one made the Monitor show
+        # the same unassigned order twice.  Operational monitoring adds value
+        # here only once the booked assignment deadline has actually passed.
+        if overdue:
             evidence=[fact('Assignment','Unassigned','Order record',current)]
             if due: evidence.insert(0,fact('Booked arrival deadline',due.isoformat(),'Booked stop window'))
-            description = 'A booked arrival deadline has passed without an assignment.' if overdue else 'The Dispatch agent recorded no feasible candidate. Review the assignment before pickup.'
+            description = 'A booked arrival deadline has passed without an assignment.'
             if no_candidate:
                 excluded = no_candidate.excluded
                 evidence.append(fact('Dispatch result','No candidate in the recorded dispatch screening; road feasibility requires validation','Dispatch agent decision',no_candidate.created_at))
