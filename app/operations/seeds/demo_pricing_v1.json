@@ -505,7 +505,7 @@
         "bookingCutoffTime": "17:00",
         "exclusiveVehicle": true,
         "active": true
-      },
+      }
     ],
     "vehicles": [
       {
