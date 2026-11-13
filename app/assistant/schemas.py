@@ -5,6 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Kind = Literal['ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER']
 Status = Literal['NEW', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+# Company records chat may change; `records.OPERATIONS` lists the allowed entity/operation pairs.
+Entity = Literal['NONE', 'ORDER', 'SHIPPER', 'DRIVER', 'VEHICLE', 'ISSUE', 'SERVICE', 'ACCESSORIAL', 'VEHICLE_TYPE', 'PACKAGE_TYPE',
+    'RATE_CARD', 'SETTINGS']
+Operation = Literal['NONE', 'CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'COMPLETE', 'UNASSIGN', 'RESOLVE']
 
 
 class AssistantTurn(BaseModel):
@@ -41,10 +45,23 @@ class SearchPlan(BaseModel):
     kinds: list[Kind] = Field(max_length=4)
     order_statuses: list[Status] = Field(max_length=5)
     # ASSIGN only when the dispatcher's latest message asks to give an Order to a driver; the server resolves and checks both.
+    # CHANGE asks to create, edit, delete, cancel, complete, unassign or resolve a company record; the server drafts and checks it.
     # No defaults: provider structured outputs require every field.
-    action: Literal['NONE', 'ASSIGN']
+    action: Literal['NONE', 'ASSIGN', 'CHANGE']
     order_number: str = Field(max_length=60)
     driver: str = Field(max_length=120)
+    entity: Entity
+    operation: Operation
+    # Existing record as written (order number, name, plate or code); for a new Order, its Shipper.
+    target: str = Field(max_length=160)
+    # Everything the dispatcher asked to set or change, restated from the conversation in plain words.
+    request: str = Field(max_length=4000)
+
+
+class DraftedRecord(BaseModel):
+    """AI draft of a workspace request body; the server resolves names and addresses and validates it."""
+    record_json: str = Field(max_length=60000)
+    missing: list[str] = Field(max_length=20)
 
 
 class GroundedAnswer(BaseModel):
@@ -117,9 +134,42 @@ class AssistantActionResult(BaseModel):
     order_version: int
 
 
+class ChangeLine(BaseModel):
+    field: str
+    before: str | None = None
+    after: str | None = None
+
+
+class AssistantChange(BaseModel):
+    """A drafted record change the dispatcher confirms. `body` is exactly the workspace request for `operation`."""
+    operation: str
+    title: str
+    subject: str
+    target_id: UUID | None = None
+    destructive: bool = False
+    lines: list[ChangeLine]
+    body: dict
+
+
+class AssistantChangeCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    operation: str = Field(max_length=40)
+    target_id: UUID | None = None
+    body: dict
+
+
+class AssistantChangeResult(BaseModel):
+    message: str
+    id: UUID | None = None
+    version: int | None = None
+    # Shown once on the confirmation card for a new driver or shipper; never part of chat text or history.
+    initial_password: str | None = None
+
+
 class AssistantReply(BaseModel):
     briefing: DailyBriefing | None = None
     action: AssistantAction | None = None
+    change: AssistantChange | None = None
     message: str
     references: list[AssistantReference]
     mode: Literal['AI', 'SEARCH']

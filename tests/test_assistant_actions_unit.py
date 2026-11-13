@@ -13,7 +13,8 @@ ACTOR = SimpleNamespace(organization_id=ORG, role='DISPATCHER', id=uuid4())
 
 
 def plan(order='1042', driver='Alex'):
-    return SearchPlan(include_records=False, query='', kinds=[], order_statuses=[], action='ASSIGN', order_number=order, driver=driver)
+    return SearchPlan(include_records=False, query='', kinds=[], order_statuses=[], action='ASSIGN', order_number=order, driver=driver,
+        entity='NONE', operation='NONE', target='', request='')
 
 
 def order(status='NEW', route_id=None, priced=True):

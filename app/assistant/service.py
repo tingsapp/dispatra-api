@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.models import now
 from app.agents.telemetry import monitor_run
 from app.agents.machine_events import WORKSPACE_RECORDS_READ
-from . import actions, provider, search
+from . import actions, changes, provider, search
 from .schemas import SearchPlan, GroundedAnswer, AssistantReply, BriefingCommentary, BriefingTotals
 
 
@@ -19,11 +19,16 @@ def ask(db, actor, question):
         except provider.Unavailable:
             ai = False
             query = re.sub(r'^(?:find|search(?: for)?|look up|show)\s+', '', question.message, flags=re.I)[:120]
-            plan = SearchPlan(include_records=True, query=query, kinds=[], order_statuses=[], action='NONE', order_number='', driver='')
+            plan = SearchPlan(include_records=True, query=query, kinds=[], order_statuses=[], action='NONE', order_number='', driver='', entity='NONE', operation='NONE', target='', request='')
         if plan.action == 'ASSIGN':
             progress.step('Checking a requested assignment.', 40, actor.organization_id)
             prepared = actions.prepare(db, actor, plan)
             progress.step('Assignment check prepared.', 95, actor.organization_id)
+            return AssistantReply(**prepared, mode='AI', observed_at=now(), limited=False)
+        if plan.action == 'CHANGE':
+            progress.step('Preparing a requested record change.', 40, actor.organization_id)
+            prepared = changes.prepare(db, actor, plan)
+            progress.step('Record change prepared for confirmation.', 95, actor.organization_id)
             return AssistantReply(**prepared, mode='AI', observed_at=now(), limited=False)
         progress.step('Searching authorized company records.', 40, actor.organization_id)
         refs, counts = search.collect(db, actor.organization_id, plan)

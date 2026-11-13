@@ -4,9 +4,10 @@ from app import auth
 from app.models import User
 from app.routes import DB, OperationKey
 from app.security import rate_limit
-from .schemas import WorkspaceAssistantQuestion, AssistantReply, BriefingTotals, AssistantActionCommand, AssistantActionResult
+from .schemas import (WorkspaceAssistantQuestion, AssistantReply, BriefingTotals, AssistantActionCommand, AssistantActionResult,
+    AssistantChangeCommand, AssistantChangeResult)
 from .service import ask, totals
-from . import actions
+from . import actions, changes
 
 router = APIRouter(prefix='/api/v1/companies/{slug}/assistant', tags=['Dispatra AI'])
 
@@ -28,3 +29,10 @@ def confirm_assignment(slug: str, data: AssistantActionCommand, db: DB, key: Ope
     """Save an assignment the dispatcher confirmed in chat. The shared assignment command re-checks every rule."""
     rate_limit(f'assistant-action:{user.id}', 60)
     return actions.confirm(db, user, data, key)
+
+
+@router.post('/actions/change', response_model=AssistantChangeResult)
+def confirm_change(slug: str, data: AssistantChangeCommand, db: DB, key: OperationKey, user: Annotated[User, Depends(auth.dispatcher)]):
+    """Save a record change the dispatcher confirmed in chat through its workspace command, as that dispatcher."""
+    rate_limit(f'assistant-action:{user.id}', 60)
+    return changes.confirm(db, user, data, key)
