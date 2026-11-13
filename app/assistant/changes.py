@@ -3,6 +3,7 @@
 A proposal's body is exactly that command's request, and confirmation runs the command as the signed-in dispatcher, so a
 chat change can do nothing their own workspace session could not. The command re-checks company, version, state,
 idempotency, audit and events; provider text never reaches a write without the dispatcher's confirmation."""
+import json
 from datetime import datetime
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -87,9 +88,19 @@ def context(db, actor):
 
 
 def schema(op):
+    """The request schema as the AI should write it: names for linked records and one-line addresses, no version."""
     shape = op.body.model_json_schema()
     shape.get('properties', {}).pop('version', None)
     shape['required'] = [field for field in shape.get('required', []) if field != 'version']
+    for name, definition in [('', shape), *shape.get('$defs', {}).items()]:
+        for key, field in definition.get('properties', {}).items():
+            entity = 'ACCESSORIAL' if name == 'AccessorialSelection' and key == 'id' else drafting.REFERENCES.get(key)
+            if entity:
+                optional = 'null' in json.dumps(field)
+                field.clear(); field.update(type=['string', 'null'] if optional else 'string',
+                    description=f'Name or code of the {records.NOUNS[entity]}, exactly as listed or written')
+            elif key in drafting.ADDRESSES and 'Address' in json.dumps(field):
+                field.clear(); field.update(type='string', description='One line: street, city, province, postal code')
     return shape
 
 
@@ -138,7 +149,10 @@ def new_order(db, actor, plan, op):
     shipper = shippers[0]
     ctx = booking_context(db, actor.organization_id, shipper)
     hint = {'name': shipper.company_name or shipper.name, 'warehouse_city': (shipper.warehouse or {}).get('city')}
-    try: result = extract.extract({'subject': 'Dispatcher chat booking', 'body': plan.request, 'received_at': now().isoformat()}, {**ctx, 'shipper': hint})
+    # Like the manual New Order form, a dispatcher who names no service level gets the company default.
+    default = next((s['name'] for s in ctx['services'] if s['id'] == ctx['default_service_id']), None)
+    body = plan.request + (f'\nIf no service level is stated, use {default}.' if default else '')
+    try: result = extract.extract({'subject': 'Dispatcher chat booking', 'body': body, 'received_at': now().isoformat()}, {**ctx, 'shipper': hint})
     except extract.Unavailable: return reply(UNAVAILABLE)
     if isinstance(result, extract.ExtractionBatch): return reply('That sounds like more than one order. Let’s create them one at a time.')
     if result.review_reasons: raise drafting.Incomplete(result.review_reasons)
@@ -227,7 +241,8 @@ def confirm(db, actor, data, key):
         password = result.pop('initial_password', None) if isinstance(result, dict) else None
         identity = (result.get('id') or result.get('order_id')) if isinstance(result, dict) else None
         audit(db, actor, 'assistant.change_confirmed', identity or data.target_id, actor.organization_id)
-        label = result.get('number') or result.get('name') if isinstance(result, dict) else None
+        label = (result.get('number') if entity == 'ORDER' else result.get('name') or (result.get('data') or {}).get('name')
+            or result.get('number')) if isinstance(result, dict) else None
         return {'message': done(entity, verb, op, label), 'id': str(identity) if identity else None,
             'version': result.get('version') if isinstance(result, dict) else None}
     # Only the public result is kept for retries; a new account's initial password is returned once and never stored.

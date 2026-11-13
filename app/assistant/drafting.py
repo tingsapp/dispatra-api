@@ -19,6 +19,9 @@ REFERENCES = {'shipper_id': 'SHIPPER', 'billing_shipper_id': 'SHIPPER', 'assigne
 ADDRESSES = {'warehouse', 'address', 'parking_address'}
 MOMENTS = {'scheduled_at', 'window_start', 'window_end', 'shift_start', 'shift_end', 'unavailable_from', 'unavailable_until'}
 HIDDEN = {'id', 'version', 'pickup_id', 'delivery_id', 'latitude', 'longitude', 'logo_url', 'avatar_url', 'country'}
+# New records list only fields with a value; unset flags and zero counts are noise on the card.
+EMPTY = {None, 'No', '0'}
+UNITS = {'kg': 'kg', 'cm': 'cm', 'm3': 'm³', 'km': 'km', 'minutes': 'minutes'}
 POSTAL = re.compile(r'[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d')
 LINES = 20
 
@@ -128,7 +131,11 @@ def explain(error):
 
 
 def title(key):
-    return str(key).replace('_', ' ').capitalize()
+    """`type_id` → 'Type', `payload_kg` → 'Payload (kg)'."""
+    words = str(key).split('_')
+    if len(words) > 1 and words[-1] == 'id': words = words[:-1]
+    if len(words) > 1 and words[-1] in UNITS: words[-1] = f'({UNITS[words[-1]]})'
+    return ' '.join(words).capitalize()
 
 
 def flatten(value, prefix=''):
@@ -145,7 +152,7 @@ def flatten(value, prefix=''):
     if isinstance(value, list):
         if all(not isinstance(item, (dict, list)) for item in value): return {prefix: ', '.join(map(shown, value)) or None}
         rows = {}
-        for index, item in enumerate(value, 1): rows.update(flatten(item, f'{prefix} {index}'))
+        for index, item in enumerate(value, 1): rows.update(flatten(item, f'{prefix.removesuffix("s")} {index}'))
         return rows
     return {prefix: shown(value)}
 
@@ -153,6 +160,7 @@ def flatten(value, prefix=''):
 def shown(value):
     if value is None or value == '': return None
     if isinstance(value, bool): return 'Yes' if value else 'No'
+    if isinstance(value, str) and re.fullmatch(r'[A-Z][A-Z_]{3,}', value): return value.replace('_', ' ').capitalize()
     if isinstance(value, str) and re.match(r'^\d{4}-\d\d-\d\dT', value):
         try: return datetime.fromisoformat(value).strftime('%b %-d, %Y %-I:%M %p')
         except ValueError: return value
@@ -160,10 +168,10 @@ def shown(value):
 
 
 def lines(before, after):
-    """Changed fields only for edits; every filled field for new records."""
+    """Changed fields only for edits; every field with a value for new records."""
     old, new = flatten(before or {}), flatten(after)
     changed = [{'field': key, 'before': old.get(key), 'after': new.get(key)} for key in dict.fromkeys([*old, *new])
-        if old.get(key) != new.get(key) and (before or new.get(key) is not None)]
+        if old.get(key) != new.get(key) and (before or new.get(key) not in EMPTY)]
     if len(changed) > LINES:
-        changed = changed[:LINES] + [{'field': f'And {len(changed) - LINES} more changes', 'before': None, 'after': None}]
+        changed = changed[:LINES] + [{'field': 'More', 'before': None, 'after': f'{len(changed) - LINES} more fields'}]
     return changed

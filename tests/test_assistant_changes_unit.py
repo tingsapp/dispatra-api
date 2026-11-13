@@ -79,6 +79,22 @@ class DraftingTests(unittest.TestCase):
         created = drafting.lines(None, {'name': 'Acme', 'phone': '', 'warehouse': ADDRESS})
         self.assertEqual([line['field'] for line in created], ['Name', 'Warehouse'])
 
+    def test_the_ai_schema_asks_for_names_and_one_line_addresses(self):
+        vehicle = changes.schema(records.OPERATIONS['VEHICLE']['CREATE'])
+        self.assertEqual(vehicle['properties']['type_id']['type'], 'string')
+        self.assertIn('vehicle type', vehicle['properties']['type_id']['description'])
+        self.assertEqual(vehicle['properties']['parking_address']['type'], 'string')
+        order = changes.schema(records.OPERATIONS['ORDER']['UPDATE'])['$defs']
+        self.assertIn('additional service', order['AccessorialSelection']['properties']['id']['description'])
+
+    def test_labels_and_values_read_plainly(self):
+        self.assertEqual([drafting.title(key) for key in ('type_id', 'payload_kg', 'volume_m3')], ['Type', 'Payload (kg)', 'Volume (m³)'])
+        self.assertEqual((drafting.shown('AVAILABLE'), drafting.shown('BC'), drafting.shown('CHT123')), ('Available', 'BC', 'CHT123'))
+        created = drafting.lines(None, {'booking': {'stops': [{'kind': 'PICKUP', 'photo_required': False}], 'items': [{'pallets': 0, 'quantity': 2}]}})
+        self.assertEqual([line['field'] for line in created], ['Stop 1 Kind', 'Item 1 Quantity'])
+        many = drafting.lines(None, {f'field_{n}': 'x' for n in range(25)})
+        self.assertEqual(many[-1], {'field': 'More', 'before': None, 'after': '5 more fields'})
+
     def test_missing_values_are_plain_questions(self):
         from app.operations.schemas import DriverData
         problems = drafting.Incomplete([])

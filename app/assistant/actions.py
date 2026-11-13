@@ -80,7 +80,11 @@ def prepare(db, actor, plan):
     from app.dispatch.candidates import blocker, evaluate
     org = actor.organization_id
     order_term, driver_term = plan.order_number.strip(), plan.driver.strip()
-    if not order_term: return reply('Which order should I assign? Tell me its order number.')
+    if not order_term:
+        # "Assign that order" after a count answer: the only unassigned order is unambiguous; the card names it for confirmation.
+        waiting = db.scalars(select(Order.number).where(Order.organization_id == org, Order.status == 'NEW').limit(2)).all()
+        if len(waiting) != 1: return reply('Which order should I assign? Tell me its order number.')
+        order_term = waiting[0]
     if not driver_term: return reply(f'Who should take order {order_term}? Tell me the driver’s name.')
     orders = matches(db, org, Order, [Order.number], order_term)
     if not orders: return reply(f'I couldn’t find an order matching “{order_term}”. Check the number and try again.')

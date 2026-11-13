@@ -36,8 +36,17 @@ class PrepareTests(unittest.TestCase):
             return actions.prepare(None, ACTOR, plan()), evaluate
 
     def test_missing_terms_ask_a_plain_question(self):
-        self.assertIn('order number', actions.prepare(None, ACTOR, plan(order=''))['message'])
+        from unittest.mock import Mock
+        db = Mock(); db.scalars.return_value.all.return_value = ['ORD-1', 'ORD-2']
+        self.assertIn('order number', actions.prepare(db, ACTOR, plan(order=''))['message'])
         self.assertIn('driver’s name', actions.prepare(None, ACTOR, plan(driver=' '))['message'])
+
+    def test_that_order_means_the_only_unassigned_order(self):
+        from unittest.mock import Mock
+        db = Mock(); db.scalars.return_value.all.return_value = ['ORD-1042']
+        with patch.object(actions, 'matches', return_value=[]) as found:
+            actions.prepare(db, ACTOR, plan(order=''))
+        self.assertEqual(found.call_args.args[4], 'ORD-1042')
 
     def test_ambiguous_driver_lists_names_and_proposes_nothing(self):
         result, _ = self.run_prepare([order()], [driver('Alex Chen'), driver('Alex Park')])
