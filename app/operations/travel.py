@@ -80,6 +80,22 @@ def matrix(db, actor, stops, *, vehicle=None, departure=None, hazardous=False):
     return table
 
 
+def confirm(db, actor, stops, plan, replan, *, vehicle=None, origin=None, hazardous=False):
+    """openrouteservice ranks stop orders without the truck's dimensions and weight, so one restricted route
+    re-times the chosen order through `replan(table, origin_minutes)`. Other providers keep the plan."""
+    if dispatch_provider() != 'openrouteservice': return plan
+    from . import openrouteservice
+    table = openrouteservice.confirm(stops, plan['stops'], vehicle, origin=origin, hazardous=hazardous,
+        cache_scope=str(actor.organization_id) if actor is not None else None)
+    origins = {s['id']: table.get(('__driver__', s['id'])) for s in stops} if origin else None
+    try:
+        checked = replan(table, origins)
+    except HTTPException as error:
+        if error.status_code != 409: raise
+        raise HTTPException(409, 'With this truck’s size and weight limits, the best stop order misses a time window or the work limit. Review the route.') from None
+    return {**checked, 'search_complete': plan['search_complete'], 'explored': plan['explored']}
+
+
 def order_route(db, actor, booking, mask):
     """One Routes call over the Order's own stops in precedence order (pickups before the deliveries they supply)."""
     pending=list(booking.stops);ordered=[];visited=set()

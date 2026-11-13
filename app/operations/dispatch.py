@@ -7,7 +7,7 @@ from sqlalchemy import select, delete, or_
 from app.models import User, now
 from app.services import audit
 from .models import Order, Driver, Vehicle, Route, RouteStop, OrderStop, DutySession
-from .common import record, company_lock, version, changed, command, settings, dump
+from .common import record, company_lock, version, changed, command, dump
 from .routing import optimize
 
 
@@ -40,10 +40,8 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_
     if driver.vehicle_id != vehicle.id: raise HTTPException(409, 'Vehicle is not attached to this driver.')
     duty = db.scalar(select(DutySession).where(DutySession.organization_id == actor.organization_id, DutySession.driver_id == driver.id, DutySession.ended_at.is_(None)))
     if not duty and not allow_off_duty: raise HTTPException(409, 'Driver must be On Duty before assignment.')
-    _, config = settings(db, actor)
+    # No per-driver order count limit: vehicle Maximum stops, capacity, windows and route work time bound a Route.
     active_orders = [o for o in orders if o.status not in {'COMPLETED', 'CANCELLED'}]
-    if len(active_orders) > config.maximum_active_orders:
-        raise HTTPException(409, 'Driver maximum active Orders exceeded.')
     start = driver.data.get('shift_start'); end = driver.data.get('shift_end')
     if start and planned_at < datetime.fromisoformat(start): raise HTTPException(409, 'Route begins before the driver shift.')
     for order in orders:
@@ -81,11 +79,15 @@ def plan_route(db, actor, orders, driver, vehicle, planned_at, road=True, origin
                 stop['window_start'] = max(requested, order.scheduled_at).isoformat()
             stops.append(stop)
     items = [i for order in orders for i in order.facts['items']]
-    from .travel import matrix, dispatch_provider
+    from .travel import matrix, confirm, dispatch_provider
     travel_table = matrix(db, actor, ([{'id': '__driver__', 'address': origin}] if origin else []) + stops,
         vehicle=vehicle_data(db, actor.organization_id, vehicle), departure=planned_at, hazardous=any(i['dangerous_goods'] for i in items)) if road else None
     origins = {s['id']: travel_table.get(('__driver__',s['id'])) for s in stops} if origin and travel_table is not None else None
     result = optimize(stops, items, vehicle.data, planned_at, end, driver.data['maximum_work_minutes'], travel_table, origin=origin, origin_minutes=origins)
+    if travel_table is not None:
+        result = confirm(db, actor, stops, result, lambda table, minutes: optimize(stops, items, vehicle.data, planned_at, end,
+            driver.data['maximum_work_minutes'], table, origin=origin, origin_minutes=minutes),
+            vehicle=vehicle_data(db, actor.organization_id, vehicle), origin=origin, hazardous=any(i['dangerous_goods'] for i in items))
     if road and dispatch_provider() == 'tomtom': result['travel_basis'] = 'TOMTOM_TRUCK_TRAFFIC'
     if road and dispatch_provider() == 'openrouteservice': result['travel_basis'] = 'ORS_TRUCK_NO_LIVE_TRAFFIC'
     return result

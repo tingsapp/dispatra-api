@@ -1,6 +1,5 @@
-"""Four assigned Orders: explicit arrival, individual POD completion, final route finish."""
+"""Four assigned Orders on one Route (above the legacy, unenforced 3-order setting): explicit arrival, individual POD completion, final route finish."""
 import base64
-from uuid import uuid4
 from datetime import datetime, timezone
 from test_manual_operations import setup, new_order, assign, check, post, BASE
 
@@ -12,9 +11,6 @@ def stamp():
 def test_four_orders_arrival_and_pod_are_scoped_before_final_route_completion(setup):
     w = setup
     client, mobile = w['client'], w['mobile']
-    settings = check(client.get(BASE + '/settings'))
-    settings['data']['maximum_active_orders'] = 4
-    check(client.put(BASE + '/settings', json={'version': settings['version'], 'data': settings['data']}, headers={'Idempotency-Key': str(uuid4())}))
     orders = [new_order(w) for _ in range(4)]
     route = None
     for order in orders:

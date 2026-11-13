@@ -85,6 +85,7 @@ class SettingsData(Input):
     provincial_percent: Percent = Decimal('0')
     fuel_enabled: bool = True
     fuel_percent: Percent = Decimal('28.5')
+    # Legacy, not enforced: kept so saved settings and older clients still validate. Vehicle Maximum stops limits Routes.
     maximum_active_orders: int = Field(default=3, ge=1, le=100)
     quote_validity_days: int = Field(default=14, ge=1, le=365)
     # AUTO: the Dispatch agent assigns priced, unassigned Orders inside its horizon; MANUAL: dispatchers assign, the agent only recommends.

@@ -101,9 +101,14 @@ def plan(db, actor, route, orders, driver, vehicle, *, road=True):
     if vehicle.data.get('maximum_stops') and len(stops)+len(completed) > vehicle.data['maximum_stops']:
         raise HTTPException(409, 'Route exceeds vehicle Maximum stops.')
     items = [i for o in orders for i in o.facts['items'] if i['delivery_id'] not in done]
-    result = optimize(stops, items, vehicle.data, start, deadline, driver.data['maximum_work_minutes'], table,
+    replan = lambda travel_table, minutes: optimize(stops, items, vehicle.data, start, deadline, driver.data['maximum_work_minutes'], travel_table,
         initial_load=load, visited=done, first_stop=first['id'] if pending[0].arrived_at else None,
-        origin=origin, origin_minutes=origins)
+        origin=origin, origin_minutes=minutes)
+    result = replan(table, origins)
+    if table is not None:
+        from .travel import confirm
+        result = confirm(db, actor, stops, result, replan,
+            vehicle=vehicle_data(db, actor.organization_id, vehicle), origin=origin, hazardous=any(i['dangerous_goods'] for o in orders for i in o.facts['items']))
     from .travel import dispatch_provider
     if road and dispatch_provider() == 'tomtom': result['travel_basis'] = 'TOMTOM_TRUCK_TRAFFIC'
     if road and dispatch_provider() == 'openrouteservice': result['travel_basis'] = 'ORS_TRUCK_NO_LIVE_TRAFFIC'
