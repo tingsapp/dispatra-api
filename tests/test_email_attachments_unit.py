@@ -78,7 +78,7 @@ def test_ai_receives_body_and_attachment_without_persisting_provider_files(monke
 def test_unsupported_attachment_routes_to_review_without_ai_or_order_creation(monkeypatch):
     row=SimpleNamespace(status='RECEIVED',draft=None,missing=[],error_code=None)
     monkeypatch.setattr(service,'step',lambda *a,**k:None)
-    monkeypatch.setattr(service,'_claim',lambda *a:{'email':{'attachments':[{'error':'Unsupported attachment'}]}})
+    monkeypatch.setattr(service,'_claim',lambda *a:{'email':{'attachments':[{'error':'Unsupported attachment'}]},'context':{'shipper':{'name':'Fresh','warehouse':None}}})
     monkeypatch.setattr(service,'_finish',lambda org,id,apply:apply(None,row))
     monkeypatch.setattr(service,'signal',lambda *a:None)
     monkeypatch.setattr(extract,'extract',lambda *a:pytest.fail('Must not invoke AI on unsupported input'))
