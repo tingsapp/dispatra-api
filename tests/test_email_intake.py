@@ -324,20 +324,88 @@ def test_unverified_matched_shipper_can_create_an_order(agent):
     assert item['status'] == 'ORDER_CREATED' and item['missing'] == [] and not item['sender_verified']
 
 
-def test_unknown_sender_waits_until_dispatcher_links_a_shipper(agent):
+def counted_extract(agent, monkeypatch):
+    calls, original = [], extract.extract
+    def counting(email, context):
+        calls.append(email)
+        return original(email, context)
+    monkeypatch.setattr(extract, 'extract', counting)
+    return calls
+
+
+def test_emails_from_non_shippers_are_never_stored_or_read(agent, monkeypatch):
+    calls = counted_extract(agent, monkeypatch)
+    agent['inbox'].add(raw_email(sender='team@bark.com', subject='Leila urgently needs a Man and Van Service'))
+    agent['inbox'].add(raw_email(sender='no-sender', verified=False))
+    agent['inbox'].add(raw_email(sender='ALICE@Example.com'))
+    assert worker.cycle() == (1, 1)
+    [item] = queue(agent['client'])
+    assert item['status'] == 'ORDER_CREATED' and item['from_address'] == 'alice@example.com' and len(calls) == 1
+    with owner_engine.connect() as db:
+        assert db.scalar(text('SELECT count(*) FROM email_intakes')) == 1
+    assert not any('unknown' in n['title'].lower() for n in notifications(agent['client']))
+    # The mailbox cursor moved past ignored mail: it is not fetched again.
+    assert worker.cycle() == (0, 0) and len(calls) == 1
+
+
+def test_queued_email_whose_shipper_was_archived_is_ignored_without_ai(agent, monkeypatch):
+    calls = counted_extract(agent, monkeypatch)
+    with owner_engine.connect() as db:
+        organization = db.scalar(text('SELECT organization_id FROM shippers WHERE id = :id'), {'id': agent['shipper']['id']})
+    agent['inbox'].add(raw_email())
+    assert service.poll_mailbox(organization) == 1
+    with owner_engine.begin() as db:
+        db.execute(text('UPDATE shippers SET archived_at = now() WHERE id = :id'), {'id': agent['shipper']['id']})
+    service.process_pending(organization)
+    [item] = queue(agent['client'])
+    assert item['status'] == 'DISCARDED' and item['draft'] is None and item['missing'] == [] and not calls
+
+
+def test_existing_unknown_sender_draft_can_still_be_linked_to_a_shipper(agent):
     client = agent['client']
-    agent['inbox'].add(raw_email(sender='new.customer@elsewhere.test'))
-    worker.cycle()
+    with owner_engine.connect() as db:
+        organization = db.scalar(text('SELECT organization_id FROM shippers WHERE id = :id'), {'id': agent['shipper']['id']})
+    agent['inbox'].add(raw_email())
+    assert service.poll_mailbox(organization) == 1
+    # A draft saved before non-Shipper mail was ignored.
+    with owner_engine.begin() as db:
+        db.execute(text("UPDATE email_intakes SET status = 'UNKNOWN_SENDER', from_address = 'new.customer@elsewhere.test'"))
     [item] = queue(client)
-    assert item['status'] == 'UNKNOWN_SENDER' and item['shipper_id'] is None and item['summary']
-    assert item['draft']['shipper_id'] is None and item['draft']['stops'][0]['address'] is None and item['draft']['stops'][1]['address']['city'] == 'Vancouver'
-    assert item['missing'] == ['No Shipper in this company matches the sender email', "Stop 1: the Shipper's warehouse address"]
-    assert 'Email from unknown sender' in {n['title'] for n in notifications(client)}
     linked = check(post(client, INTAKE + f'/messages/{item["id"]}/shipper', dict(version=item['version'], shipper_id=agent['shipper']['id'])), 202)
     assert linked['status'] == 'RECEIVED' and linked['sender_verified']
     worker.cycle()
     [item] = queue(client)
     assert item['status'] == 'ORDER_CREATED'
+
+
+def test_shipper_non_order_email_never_becomes_a_draft_even_with_review_reasons(agent):
+    client = agent['client']
+    agent['extracted']['value'] = facts(is_order_request=False, stops=[], items=[], service=None,
+        review_reasons=['Service is unclear: subject says urgently but gives no timing.'])
+    agent['inbox'].add(raw_email(subject='Our holiday hours'))
+    worker.cycle()
+    [item] = queue(client)
+    assert item['status'] == 'NOT_AN_ORDER' and item['draft'] is None and item['missing'] == []
+    assert not any('Email' in n['title'] for n in notifications(client))
+
+
+class FakeResponses:
+    def __init__(self, parsed): self.parsed = parsed
+
+    def parse(self, **_): return type('Response', (), {'output_parsed': self.parsed})()
+
+
+def test_extraction_with_no_bookings_is_not_an_order_unless_a_booking_is_unreadable(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
+    email = {'subject': 'Hello', 'body': 'Thanks', 'received_at': '2026-10-05T16:00:00+00:00'}
+    context = {'time_zone': 'America/Vancouver', 'shipper': None, 'services': [], 'vehicle_types': []}
+    def returning(parsed):
+        monkeypatch.setattr(extract.openai, 'OpenAI', lambda **_: type('Client', (), {'responses': FakeResponses(parsed)})())
+        return extract.extract(email, context)
+    quiet = returning(extract.ExtractionBatch(summary='A thank-you note', orders=[]))
+    assert isinstance(quiet, extract.Extraction) and not quiet.is_order_request and quiet.review_reasons == []
+    unclear = returning(extract.ExtractionBatch(summary='Scanned booking', orders=[], review_reasons=['The attached booking is unreadable.']))
+    assert isinstance(unclear, extract.ExtractionBatch) and unclear.review_reasons == ['The attached booking is unreadable.']
 
 
 def test_not_an_order_and_discard(agent):

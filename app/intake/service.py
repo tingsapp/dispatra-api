@@ -96,14 +96,17 @@ def poll_mailbox(organization_id: UUID, *, expected_target: tuple[UUID, int] | N
         context(db, organization_id)
         row = _poll_target(db, organization_id)
         if row is None or (row.id, row.version, row.last_polled_at) != observed: return 0
+        senders = _shipper_addresses(db, organization_id)
         for message in fetched:
             parsed = mailbox.parse(message.raw)
+            # Mail from anyone but a company Shipper is never stored or sent to the AI; it stays in the mailbox.
+            if parsed.from_address not in senders: continue
             values = dict(organization_id=organization_id, message_id=parsed.message_id, mailbox_uid=message.uid,
                 received_at=parsed.received_at, from_address=parsed.from_address, from_name=parsed.from_name, subject=parsed.subject,
                 body='' if message.too_large else parsed.body, sender_verified=parsed.sender_verified,
                 attachment_secret=vault.seal(json.dumps(parsed.attachments)) if parsed.attachments and not message.too_large else None,
-                status='FAILED' if message.too_large or not parsed.from_address else 'RECEIVED', missing=[], summary='',
-                error_code='MESSAGE_TOO_LARGE' if message.too_large else None if parsed.from_address else 'NO_SENDER', attempts=0)
+                status='FAILED' if message.too_large else 'RECEIVED', missing=[], summary='',
+                error_code='MESSAGE_TOO_LARGE' if message.too_large else None, attempts=0)
             identity = db.scalar(insert(EmailIntake).values(id=uuid4(), version=1, created_at=now(), updated_at=now(), **values)
                 .on_conflict_do_nothing(constraint='email_intakes_message').returning(EmailIntake.id))
             if identity:
@@ -123,9 +126,15 @@ def _choices(db, organization_id, kind):
         **({field: row.data.get(field) for field in ('payload_kg', 'volume_m3', 'length_cm', 'width_cm', 'height_cm', 'pallet_capacity', 'equipment')} if kind == 'VEHICLE_TYPE' else {})} for row in rows]
 
 
+def _shipper_addresses(db, organization_id):
+    emails = db.scalars(select(Shipper.email).where(Shipper.organization_id == organization_id, Shipper.archived_at.is_(None)))
+    return {email.strip().lower() for email in emails if email and email.strip()}
+
+
 def _match(db, intake):
     if intake.shipper_id: return db.get(Shipper, intake.shipper_id)
-    return db.scalar(select(Shipper).where(Shipper.organization_id == intake.organization_id, func.lower(func.trim(Shipper.email)) == intake.from_address.strip().lower()).order_by(Shipper.created_at).limit(1))
+    return db.scalar(select(Shipper).where(Shipper.organization_id == intake.organization_id, Shipper.archived_at.is_(None),
+        func.lower(func.trim(Shipper.email)) == intake.from_address.strip().lower()).order_by(Shipper.created_at).limit(1))
 
 
 def _claim(organization_id, intake_id):
@@ -195,10 +204,17 @@ def process(organization_id: UUID, intake_id: UUID):
     step('Claiming the next queued email.', organization_id)
     claimed = _claim(organization_id, intake_id)
     if claimed is None: return
+    ctx = claimed['context']
+    if ctx['shipper'] is None:
+        # Queued before its Shipper was archived or its address changed: ignore it without calling the AI.
+        step('Email is not from a company Shipper; ignored.', organization_id)
+        def ignore(db, intake):
+            intake.status, intake.draft, intake.missing = 'DISCARDED', None, []
+            intake.summary, intake.error_code = 'Ignored: the sender is not a company Shipper.', None
+        return _finish(organization_id, intake_id, ignore)
     issues=[file['error'] for file in claimed['email'].get('attachments',[]) if file.get('error')]
     if issues: return _finish(organization_id, intake_id, lambda db,intake: _review(db,intake,None,list(dict.fromkeys(issues))))
-    ctx = claimed['context']
-    prompt_shipper = {'name': ctx['shipper'].get('company_name') or ctx['shipper']['name'], 'warehouse_city': (ctx['shipper']['warehouse'] or {}).get('city')} if ctx['shipper'] else None
+    prompt_shipper = {'name': ctx['shipper'].get('company_name') or ctx['shipper']['name'], 'warehouse_city': (ctx['shipper']['warehouse'] or {}).get('city')}
     step('Extracting booking facts with the Order agent.', organization_id)
     try: result = extract.Extraction.model_validate(claimed['saved_booking']) if claimed.get('saved_booking') else extract.extract(claimed['email'], {**ctx, 'shipper': prompt_shipper})
     except extract.Unavailable as error:
@@ -240,12 +256,10 @@ def _settle(db,intake,result,draft,missing,ctx,verified):
     if metadata: intake.extraction['_email_batch']=metadata
     intake.summary=result.summary[:500];intake.error_code=None
     if metadata: intake.summary=f"Order {metadata['index']} of {metadata['total']}: {intake.summary}"[:500]
-    if result.review_reasons: return _review(db,intake,draft,result.review_reasons)
+    # Not an order wins over review reasons: a Shipper's non-booking email never becomes a draft.
     if not result.is_order_request:
-        intake.status='NOT_AN_ORDER';return
-    if ctx['shipper'] is None:
-        intake.status,intake.draft,intake.missing='UNKNOWN_SENDER',draft,['No Shipper in this company matches the sender email',*missing]
-        signal(db,'intake.unknown_sender',intake);return
+        intake.status,intake.draft,intake.missing='NOT_AN_ORDER',None,[];return
+    if result.review_reasons: return _review(db,intake,draft,result.review_reasons)
     if ctx['shipper'].get('status', 'ACTIVE') != 'ACTIVE':
         missing=[f"Shipper account is {ctx['shipper']['status'].lower().replace('_', ' ')}",*missing]
     # A known company Shipper is authoritative for email intake. Mail authentication is
