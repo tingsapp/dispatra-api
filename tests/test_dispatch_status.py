@@ -55,7 +55,7 @@ def test_explicit_pickup_deadline_and_delivery_deadline_still_warn():
     assert evaluate(order,route,[visit],stops,None,current)==[]
     stops['p'].data.pop('window_end');stops['d'].data['window_end']=(current-timedelta(minutes=1)).isoformat()
     order.route_id=None;order.status='NEW'
-    assert flags(order,{},current)==[('AT_RISK','A delivery deadline is missed or the planned arrival is late.')]
+    assert flags(order,{},current)==[('AT_RISK','Delivery deadline missed or arrival late.')]
     assert evaluate(order,None,[],stops,None,current)[0]['kind']=='UNASSIGNED'
 
 

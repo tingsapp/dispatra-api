@@ -63,7 +63,7 @@ def brief(db, actor):
     mode = 'AI'
     try:
         answer = provider.generate(BriefingCommentary, provider.ANSWER +
-            '\nWrite only ONE short recommendation, at most 25 words and 180 characters. '
+            '\nWrite only ONE short recommendation, at most 12 words and 90 characters. '
             'No greeting, heading, date, timezone, counts, status recap or introductory text. '
             'The visual card shows all totals; do not repeat them. Suggest the most useful next step. '
             'The card already shows counts, the auto dispatch setting and how many of today\'s orders each driver has. '

@@ -37935,13 +37935,19 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
           }
         },
         "type": "object",
         "required": [
           "order_id",
           "kind",
-          "description"
+          "description",
+          "at"
         ],
         "title": "MonitorIssue"
       },

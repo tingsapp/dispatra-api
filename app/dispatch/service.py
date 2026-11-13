@@ -22,7 +22,7 @@ from app.operations.schemas import Assignment
 from . import rank
 from .policy import priority, prefer_proposal, ordered as policy_ordered
 from .candidates import blocker, evaluate
-from .explanations import no_candidate_description
+from .explanations import no_candidate_summary
 from .models import DispatchDecision
 from .schemas import DecisionView
 from app.agents.telemetry import monitor_run, step
@@ -149,7 +149,7 @@ def no_driver(db, organization_id, orders):
     result = {}
     for row in rows:
         if row.status != 'NO_CANDIDATE' or row.mode != 'AUTO' or row.order_version != waiting[row.order_id].version: continue
-        result[row.order_id] = no_candidate_description(row.excluded)
+        result[row.order_id] = (no_candidate_summary(row.excluded), row.created_at)
     return result
 
 

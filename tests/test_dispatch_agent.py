@@ -206,7 +206,7 @@ def test_dispatch_mode_values_and_access(fleet):
         assert post(other, f'/api/v1/companies/other/dispatch-decisions/{decision["id"]}/approve', dict(version=1, driver_id=w['driver']['id'])).status_code == 404
 
 
-def test_no_candidate_alerts_keep_each_driver_reason_without_duplicate_operational_risk(fleet):
+def test_no_candidate_alert_is_one_line_without_duplicate_operational_risk(fleet):
     from sqlalchemy.orm import Session
     from app.database import engine, context
     from app.order_watch import scan, commands
@@ -224,26 +224,24 @@ def test_no_candidate_alerts_keep_each_driver_reason_without_duplicate_operation
     with Session(engine) as db, db.begin():
         context(db, org)
         scan.scan_company(db, commands.system(org))
-        # The NO_DRIVER alert already carries every exclusion; the scan adds no incident.
+        # The NO_DRIVER alert already covers the failed check; the scan adds no incident.
         assert db.scalar(select(Incident).where(Incident.order_id == order['id'])) is None
     attention = [item for item in check(client.get(BASE + '/monitor'))['needs_attention']
         if item['order_id'] == order['id']]
     assert [item['kind'] for item in attention] == ['NO_DRIVER']
-    for item in excluded:
-        assert item['driver_name'] in attention[0]['description']
-        assert item['driver_number'] in attention[0]['description']
-        assert item['reason'] in attention[0]['description']
+    # The list stays one line; each driver's reason remains on the dispatch decision.
+    assert attention[0]['description'] == f'No eligible driver ({len(excluded)} checked).'
 
 
 def test_recorded_gps_and_shipper_restriction_reasons_are_not_replaced_by_capacity_guesses():
-    from app.dispatch.explanations import no_candidate_description
+    from app.dispatch.explanations import exclusion_lines, no_candidate_summary
     from app.order_watch.detector import evaluate
     current = service.now()
     excluded = [
         dict(driver_id='alex', driver_name='Alex', driver_number='DZD-2009', reason='Live assignment requires accurate driver GPS captured within two minutes.'),
         dict(driver_id='jordan', driver_name='Jordan', driver_number='DZD-9480', reason='This Order requires the shipper’s assigned driver: Alex.'),
     ]
-    text = no_candidate_description(excluded)
+    text = '\n'.join(exclusion_lines(excluded))
     assert 'Alex (DZD-2009): Live assignment' in text
     assert 'Jordan (DZD-9480): This Order requires' in text
     assert 'capacity' not in text
@@ -255,6 +253,6 @@ def test_recorded_gps_and_shipper_restriction_reasons_are_not_replaced_by_capaci
     [alert] = evaluate(order, None, [], {
         'pickup': SimpleNamespace(order_id='order', data={'window_end': (current-timedelta(minutes=1)).isoformat()}),
     }, None, current, decision)
-    assert len(alert['description']) <= 1000 and 'See all driver eligibility checks' in alert['description']
+    assert alert['description'] == 'Deadline passed with no driver. No eligible driver (60 checked).'
     assert len([item for item in alert['evidence'] if item['label']=='Driver eligibility check']) == 60
-    assert 'no active driver' in no_candidate_description([])
+    assert no_candidate_summary([]) == 'No active drivers.'

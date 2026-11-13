@@ -16,7 +16,7 @@ def flags(order, visits: dict[str, object], observed_at: datetime) -> list[tuple
             if (stop['kind'] == 'PICKUP' and stop.get('window_end')
                 and datetime.fromisoformat(stop['window_end']) < observed_at
                 and not (visit and (visit.arrived_at is not None or visit.status == 'COMPLETED'))):
-                result.append(('LATE_START', 'A booked pickup deadline has passed without recorded arrival.'))
+                result.append(('LATE_START', 'Pickup deadline passed; no arrival.'))
                 break
     for stop in order.facts['stops']:
         if stop['kind'] != 'DROPOFF' or not stop.get('window_end'):
@@ -26,6 +26,6 @@ def flags(order, visits: dict[str, object], observed_at: datetime) -> list[tuple
             continue
         deadline = datetime.fromisoformat(stop['window_end'])
         if deadline < observed_at or visit and visit.planned_at > deadline:
-            result.append(('AT_RISK', 'A delivery deadline is missed or the planned arrival is late.'))
+            result.append(('AT_RISK', 'Delivery deadline missed or arrival late.'))
             break
     return result

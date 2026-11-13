@@ -219,7 +219,7 @@ def follow_up_ready_time(db,actor,row,route,current):
     previous=q.estimated_ready_at
     q.status='OPEN';q.version+=1;q.updated_at=current
     q.prompt='Your estimated readiness time has passed, but this stop is still incomplete. When safely stopped, update your progress and expected ready time.'
-    row.description=(row.description+' The reported ready time has passed; a progress update has been requested.')[:1000]
+    row.description=(row.description+' Ready time passed; update requested.')[:1000]
     row.evidence=[fact('Reported ready time passed without stop completion',previous.isoformat(),'Driver estimate and stop execution',current)]+row.evidence
     touch(db,actor,row,'watch.update_requested')
     db.flush();audit(db,actor,'watch.question_created',q.id,actor.organization_id)

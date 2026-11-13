@@ -1,6 +1,6 @@
 """Pure, contextual signals from authoritative milestones and qualified provider estimates."""
 from datetime import timedelta
-from app.dispatch.explanations import no_candidate_description, exclusion_lines
+from app.dispatch.explanations import no_candidate_summary, exclusion_lines
 from .evidence import assignment_deadline,deadline,fact,instant
 from .playbooks import suggestions
 
@@ -24,15 +24,14 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
         if overdue:
             evidence=[fact('Assignment','Unassigned','Order record',current)]
             if due: evidence.insert(0,fact('Booked arrival deadline',due.isoformat(),'Booked stop window'))
-            description = 'A booked arrival deadline has passed without an assignment.'
+            description = 'Deadline passed with no driver.'
             if no_candidate:
                 excluded = no_candidate.excluded
                 evidence.append(fact('Dispatch result','No candidate in the recorded dispatch screening; road feasibility requires validation','Dispatch agent decision',no_candidate.created_at))
                 for line in exclusion_lines(excluded):
                     evidence.append(fact('Driver eligibility check',line,'Dispatch agent decision',no_candidate.created_at))
-                description += '\n' + no_candidate_description(excluded)
-                # Incidents have a 1000-character description; full driver checks remain in JSON evidence.
-                if len(description)>1000: description = description[:944] + '… See all driver eligibility checks in the evidence.'
+                # Lists show one line; every driver check remains in the evidence.
+                description += ' ' + no_candidate_summary(excluded)
             result.append(signal(f'unassigned:{order.id}:{order.version}','UNASSIGNED','Order needs an assignment',
                 description,
                 evidence,severity='CRITICAL' if overdue else 'WARNING',due=due))
@@ -41,7 +40,7 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
     mine=[v for v in visits if stops[v.stop_id].order_id==order.id and v.status!='COMPLETED']
     if route.status=='PLANNED' and current>route.planned_at and mine:
         result.append(signal(f'start:{order.id}:{route.id}:{route.generation}','START_OVERDUE','Route start needs confirmation',
-            'The planned route start has passed. No route-start event is recorded; departure cause is unconfirmed.',
+            'Planned start passed; route not started.',
             [fact('Planned route start',route.planned_at.isoformat(),'Published route plan'),fact('Route state','Planned; start not recorded','Route record',current)],
             certainty='NEEDS_CONFIRMATION',due=min([deadline(order,stops[v.stop_id]) for v in mine if deadline(order,stops[v.stop_id])] or [route.planned_at])))
     next_visit=next((v for v in visits if v.status!='COMPLETED'),None)
@@ -49,7 +48,7 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
         stop=stops[visit.stop_id];due=deadline(order,stop)
         if visit.arrived_at is None and due and current>due:
             result.append(signal(f'arrival:{visit.id}:{route.generation}','ARRIVAL_OVERDUE','Arrival deadline passed',
-                'The booked arrival deadline has passed and arrival is not recorded. Confirm the driver\'s actual progress.',
+                'Arrival deadline passed; arrival not recorded.',
                 [fact('Arrival deadline',due.isoformat(),'Booked stop window'),fact('Arrival','Not recorded','Stop execution',current)],
                 stop.id,'CRITICAL','NEEDS_CONFIRMATION',due))
         if visit.arrived_at is not None and next_visit and visit.id==next_visit.id:
@@ -61,7 +60,7 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
             # Exceeding the recorded plan triggers clarification, never an invented waiting/loading cause.
             if planned_minutes and elapsed>planned_minutes:
                 result.append(signal(f'stop:{visit.id}:{route.generation}','STOP_OVERRUN','Stop progress needs clarification',
-                    f'{elapsed} minutes have elapsed since arrival and the earliest booked service time; the published stop plan allows {planned_minutes} minutes. Waiting versus handling and its cause are unconfirmed.',
+                    f'At stop {elapsed} min; plan allows {planned_minutes} min.',
                     [fact('Recorded arrival',visit.arrived_at.isoformat(),'Stop execution',visit.arrived_at),fact('Elapsed service-eligible time at stop',f'{elapsed} minutes','Recorded arrival and booked service window',current),
                      fact('Planned stop service',f'{planned_minutes} minutes','Booked stop plan')],stop.id,certainty='NEEDS_CONFIRMATION',due=due))
         if visit.arrived_at is not None or not estimate:continue
@@ -72,7 +71,7 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
                 traffic=prediction['traffic_added_seconds']
                 kind='TRAFFIC_RISK' if traffic>0 else 'ARRIVAL_RISK'
                 result.append(signal(f'prediction:{visit.id}:{route.generation}',kind,'Arrival window at risk',
-                    'The traffic-aware road estimate and booked remaining service times exceed the arrival window. This is a prediction; vehicle-specific access is not verified.',
+                    f'Expected about {max(1,round((eta-due).total_seconds()/60))} min late.',
                     [fact('Predicted arrival',eta.isoformat(),estimate.data['source'],estimate.observed_at),
                      fact('Arrival deadline',due.isoformat(),'Booked stop window'),
                      fact('Extra travel against provider baseline',f'{round(traffic/60,1)} minutes','Traffic delay reported or derived from provider baseline',estimate.observed_at),

@@ -11,6 +11,6 @@ def exclusion_lines(excluded):
     return result
 
 
-def no_candidate_description(excluded):
-    lines = exclusion_lines(excluded)
-    return 'Recorded dispatch check found no eligible driver:\n' + '\n'.join(lines) if lines else 'The recorded dispatch check found no active driver.'
+def no_candidate_summary(excluded):
+    """One short line for lists; per-driver reasons stay on the dispatch decision and incident evidence."""
+    return f'No eligible driver ({len(excluded)} checked).' if excluded else 'No active drivers.'

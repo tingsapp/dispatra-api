@@ -15,14 +15,13 @@ from .attention import flags as attention_flags
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Operations reporting'])
 
 
-def add_no_driver_attention(attention, candidates):
-    """Add a dispatch alert unless an operational incident already explains it."""
-    for order_id, description in candidates.items():
-        # An overdue-assignment incident already includes the dispatch agent's
-        # no-candidate result. Showing its separate NO_DRIVER row repeats the
-        # same practical issue in the Monitor.
-        if any(kind == 'OPERATIONAL' and description in detail for kind, detail in attention[order_id]): continue
-        attention[order_id].append(('NO_DRIVER', description))
+def add_no_driver_attention(attention, candidates, explained=frozenset()):
+    """Add a dispatch alert unless an overdue-assignment incident already explains it."""
+    for order_id, (description, at) in candidates.items():
+        # The overdue-assignment incident already includes the no-candidate result;
+        # a separate NO_DRIVER row would repeat the same issue in the Monitor.
+        if order_id in explained: continue
+        attention[order_id].append(('NO_DRIVER', description, at))
 
 
 def dated_orders(db, user, date_from, date_to):
@@ -149,13 +148,20 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     observed_at = now()
     from app.order_watch.estimates import collect as collect_estimates
     estimates = collect_estimates(db, user.organization_id, routes, observed_at)
-    attention = {order.id: attention_flags(order, visits_by_stop, observed_at) for order in orders}
+    attention = {order.id: [(flag, text, order.created_at) for flag, text in attention_flags(order, visits_by_stop, observed_at)] for order in orders}
     from app.order_watch.models import Incident as OperationalIncident
     watched = db.scalars(select(OperationalIncident).where(OperationalIncident.organization_id == user.organization_id,
         OperationalIncident.status.in_(('OPEN','ACKNOWLEDGED')), OperationalIncident.source_issue_id.is_(None))).all()
+    explained = set()
     for incident in watched:
-        if incident.order_id in attention: attention[incident.order_id].append(('OPERATIONAL', incident.title + ': ' + incident.description))
-    add_no_driver_attention(attention, no_driver(db, user.organization_id, orders))
+        if incident.order_id not in attention: continue
+        attention[incident.order_id].append(('OPERATIONAL', incident.title + ': ' + incident.description, incident.created_at))
+        if incident.kind == 'UNASSIGNED': explained.add(incident.order_id)
+    add_no_driver_attention(attention, no_driver(db, user.organization_id, orders), explained)
+    # Newest first, matching every other Monitor list.
+    needs_attention = sorted([{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues] +
+        [{'id':None,'order_id':str(o.id),'kind':flag,'description':description,'at':at}
+            for o in orders for flag,description,at in attention[o.id]], key=lambda item: item['at'], reverse=True)
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,
         'location':points[d.id].data if d.id in points else None,
@@ -165,10 +171,8 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
                    'estimate':estimates.get(r.id)} for r in routes],
         'orders':[{'id':str(o.id),'number':o.number,'status':o.status,'route_id':str(o.route_id) if o.route_id else None,
                    'pricing_status':o.pricing.get('status'),'review_reason':o.pricing.get('review_reason'),
-                   'attention_flags':[flag for flag,_ in attention[o.id]]} for o in orders],
-        'needs_attention':[{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description} for i in issues] +
-            [{'id':None,'order_id':str(o.id),'kind':flag,'description':description}
-                for o in orders for flag,description in attention[o.id]]}
+                   'attention_flags':[flag for flag,_,_ in attention[o.id]]} for o in orders],
+        'needs_attention':needs_attention}
 
 
 

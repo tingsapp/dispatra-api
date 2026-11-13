@@ -37,7 +37,7 @@ def scan_company(db,actor):
             row=apply(db,actor,order,observation);seen.add(row.id)
             if row.certainty=='REPORTED':follow_up_ready_time(db,actor,row,route,current)
             if row.status in OPEN and row.certainty=='NEEDS_CONFIRMATION':
-                ask(db,actor,row,route,f'Order {order.number}: {row.description} When safely stopped, tell us what is happening. Select a reason or describe the situation, and give an expected ready time if known.')
+                ask(db,actor,row,route,f'{order.number}: {row.description} When safe, tell us what is happening.')
     reconcile(db,actor,seen)
     return len(orders)
 
@@ -92,7 +92,7 @@ def reconcile(db,actor,seen):
                         close(db,actor,row,'A current qualified estimate fits the booked arrival window.');continue
                 # Missing estimates never prove recovery; preserve the incident with explicit uncertainty.
                 if row.certainty!='NEEDS_CONFIRMATION':
-                    row.certainty='NEEDS_CONFIRMATION';row.description='A previous arrival prediction needs review. No current qualified estimate confirms recovery.'
+                    row.certainty='NEEDS_CONFIRMATION';row.description='Earlier delay prediction needs review.'
                     from .commands import touch
                     touch(db,actor,row,'watch.updated')
     for q in db.scalars(select(Question).where(Question.organization_id==actor.organization_id,Question.status=='OPEN')):

@@ -837,6 +837,8 @@ class MonitorIssue(BaseModel):
     order_id: UUID
     kind: str
     description: str
+    # When the condition was recorded; the list is sorted newest first.
+    at: datetime
 
 
 class MonitorView(BaseModel):
