@@ -70,6 +70,6 @@ def public_message(data: PublicAssistantQuestion, request: Request):
     try:
         return answer(data, identity, INSTRUCTIONS)
     except provider.Unavailable:
-        raise HTTPException(503, 'Dispatra is unavailable right now. Please try again or email contact@dispatra.com.') from None
+        raise HTTPException(503, 'Dispatra is unavailable. Try again or email contact@dispatra.com.') from None
 
 

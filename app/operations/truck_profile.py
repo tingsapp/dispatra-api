@@ -24,11 +24,11 @@ def point(address):
 
 def profile(vehicle, *, hazardous=False):
     if hazardous:
-        raise HTTPException(409, 'Dangerous goods need a classified routing profile; dispatcher review is required.')
+        raise HTTPException(409, 'Dangerous goods need dispatcher review for routing.')
     try:
         profile = TruckRoutingProfile.model_validate((vehicle or {}).get('road_profile'))
     except (ValidationError, TypeError):
-        raise HTTPException(409, 'Save exterior dimensions and loaded gross weight in the vehicle’s selected Vehicle Type for truck routing.') from None
+        raise HTTPException(409, 'Add size and loaded weight to this vehicle’s Vehicle Type.') from None
     if (vehicle or {}).get('payload_kg') is not None and profile.gross_weight_kg < number(vehicle['payload_kg']):
         raise HTTPException(409, 'Loaded gross weight must cover the vehicle payload capacity.')
     return profile

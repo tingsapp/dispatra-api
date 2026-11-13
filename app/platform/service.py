@@ -196,7 +196,7 @@ def set_dispatcher_active(db, actor, organization_id, user_id, active, data, key
         if not active:
             others = db.scalar(select(func.count()).select_from(User).where(User.organization_id == organization_id,
                 User.role == 'DISPATCHER', User.active.is_(True), User.id != account.id))
-            if not others: raise HTTPException(409, 'Keep the company dispatcher active. Suspend the company to block workspace access.')
+            if not others: raise HTTPException(409, 'Keep the dispatcher active. Suspend the company to block access.')
             revoke(db, account.id)
         account.active = active
         return touched(db, actor, account, 'dispatcher.activated' if active else 'dispatcher.deactivated')

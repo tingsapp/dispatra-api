@@ -135,7 +135,7 @@ def update_order(db, actor, identity, data, key):
     def run():
         company_lock(db, actor)
         row = visible_order(db, actor, identity, True); version(row, data.version)
-        if row.status != 'NEW': raise HTTPException(409, 'Only unassigned Orders can be edited. Record an issue for active work.')
+        if row.status != 'NEW': raise HTTPException(409, 'Only unassigned orders can be edited. Report an issue instead.')
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
         check_package_types(db, actor, booking, row.facts)
         from .pricing import retain_price
@@ -157,7 +157,7 @@ def cancel_order(db, actor, identity, data, key):
     def run():
         company_lock(db, actor)
         row = visible_order(db, actor, identity, True); version(row, data.version)
-        if row.status != 'NEW': raise HTTPException(409, 'Only an unassigned Order can be cancelled; release planned assignment first.')
+        if row.status != 'NEW': raise HTTPException(409, 'Only unassigned orders can be cancelled. Unassign it first.')
         row.status = 'CANCELLED'; changed(db, actor, row, 'order.cancelled')
         return order_view(row, actor)
     return command(db, actor, key, 'order-cancel:' + str(identity), data.model_dump(), run)

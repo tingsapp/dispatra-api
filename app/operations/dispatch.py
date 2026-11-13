@@ -58,7 +58,7 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_
         if required and order.facts['vehicle_type_id'] != str(vehicle.type_id):
             needs = {equipment_key(item) for item in required.get('equipment', [])} & BODY_EQUIPMENT
             if not needs <= {equipment_key(item) for item in vehicle.data.get('equipment', [])}:
-                raise HTTPException(409, 'Vehicle lacks the refrigeration or open deck the booking requires.')
+                raise HTTPException(409, 'Vehicle lacks the needed refrigeration or open deck.')
         if order in active_orders and context['service'].get('exclusive_vehicle') and len(active_orders) > 1:
             raise HTTPException(409, 'Exclusive service cannot share a Route.')
         for accessory in context['accessorials']:
@@ -98,7 +98,7 @@ def plan_route(db, actor, orders, driver, vehicle, planned_at, road=True, origin
 def rebuild(db, actor, route, orders, driver, vehicle, planned_at):
     from app.dispatch.candidates import position
     origin, _ = position(db, actor, driver, vehicle)
-    if origin is None: raise HTTPException(409, 'Select a vehicle parking address with map coordinates or provide fresh driver GPS before planning.')
+    if origin is None: raise HTTPException(409, 'No vehicle location. Set a parking address or get fresh driver GPS.')
     plan = plan_route(db, actor, orders, driver, vehicle, planned_at, origin=origin)
     existing = {str(s.stop_id): s for s in db.scalars(select(RouteStop).where(RouteStop.route_id == route.id, RouteStop.organization_id == actor.organization_id))}
     # Move positions temporarily to avoid unique collisions while preserving stable visit IDs.
@@ -127,7 +127,7 @@ def mergeable_route(db, actor, driver, vehicle, lock=False, allow_live=False):
         raise HTTPException(409, 'The driver or vehicle already belongs to another active Route.')
     if active.status == 'PLANNED' and not active.locked: return active
     if allow_live and active.status == 'IN_PROGRESS': return active
-    raise HTTPException(409, 'Driver already has a locked or in-progress Route; finish it before assigning another Order.')
+    raise HTTPException(409, 'Driver’s route is locked or underway. Finish it first.')
 
 
 def assign(db, actor, identity, data, key):
@@ -147,7 +147,7 @@ def assign(db, actor, identity, data, key):
             if route.driver_id != driver.id or route.vehicle_id != vehicle.id: raise HTTPException(409, 'Route custody does not match the selection.')
         else:
             if mergeable_route(db, actor, driver, vehicle, True):
-                raise HTTPException(409, 'Driver already has a planned Route; include its Route ID and version to add this Order.')
+                raise HTTPException(409, 'Driver has a planned route. Add the order to that route.')
             route = Route(organization_id=actor.organization_id, driver_id=driver.id, vehicle_id=vehicle.id,
                 status='PLANNED', planned_at=data.planned_at, plan={})
             db.add(route); db.flush()

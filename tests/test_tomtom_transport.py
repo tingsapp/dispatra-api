@@ -27,4 +27,4 @@ def test_other_provider_errors_remain_sanitized(monkeypatch):
     with pytest.raises(HTTPException) as caught:
         tomtom.request('/routing/matrix/2', {}, {})
     assert caught.value.status_code == 503
-    assert caught.value.detail == 'TomTom routing is unavailable. Retry or request dispatcher review.'
+    assert caught.value.detail == 'TomTom routing is unavailable. Try again.'

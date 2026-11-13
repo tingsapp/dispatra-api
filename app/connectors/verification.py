@@ -11,7 +11,7 @@ def verify(provider, profile, credentials, expected_account=None):
             verified['access_token'] = transport.token(profile, {'grant_type': 'client_credentials'}, credentials)['access_token']
         account, label = transport.identity(provider, profile, verified)
         if expected_account and account != expected_account:
-            raise HTTPException(409, 'These credentials belong to a different account. Disconnect before changing accounts.')
+            raise HTTPException(409, 'These credentials are for another account. Disconnect first.')
         return verified, account, label
     except transport.Error as failure:
         message = {

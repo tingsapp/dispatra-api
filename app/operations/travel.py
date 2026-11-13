@@ -30,14 +30,14 @@ def waypoint(address):
 
 def google(db, actor, method, payload, mask):
     key = os.environ.get('GOOGLE_ROUTES_API_KEY')
-    if provider() != 'google' or not key: raise HTTPException(409,'Road routing is not configured. Dispatcher pricing review is required.')
+    if provider() != 'google' or not key: raise HTTPException(409,'Road routing is not set up. Review the price manually.')
     request = urllib.request.Request('https://routes.googleapis.com/' + method,data=json.dumps(payload).encode(),
         headers={'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':mask},method='POST')
     try:
         with urllib.request.urlopen(request,timeout=15) as response:
             result=json.loads(response.read(2_000_000))
     except (OSError,ValueError):
-        raise HTTPException(503,'Road routing provider is unavailable. Retry or request dispatcher review.') from None
+        raise HTTPException(503,'Road routing is unavailable. Try again.') from None
     return result
 
 
@@ -92,7 +92,7 @@ def confirm(db, actor, stops, plan, replan, *, vehicle=None, origin=None, hazard
         checked = replan(table, origins)
     except HTTPException as error:
         if error.status_code != 409: raise
-        raise HTTPException(409, 'With this truck’s size and weight limits, the best stop order misses a time window or the work limit. Review the route.') from None
+        raise HTTPException(409, 'With truck size and weight limits, no stop order fits the windows or work limit.') from None
     return {**checked, 'search_complete': plan['search_complete'], 'explored': plan['explored']}
 
 
@@ -103,7 +103,7 @@ def order_route(db, actor, booking, mask):
         ready=next((s for s in pending if all(i.pickup_id in visited for i in booking.items if i.delivery_id==s.id)),None)
         if ready is None: raise HTTPException(422,'Order stop precedence is invalid.')
         ordered.append(ready);visited.add(ready.id);pending.remove(ready)
-    if len(ordered)>27: raise HTTPException(409,'Standalone road pricing supports at most 27 stops; review the booking.')
+    if len(ordered)>27: raise HTTPException(409,'Road pricing allows up to 27 stops. Review the booking.')
     return google(db,actor,'directions/v2:computeRoutes',
         {'origin':waypoint(ordered[0].address.model_dump()),'destination':waypoint(ordered[-1].address.model_dump()),
          'intermediates':[waypoint(s.address.model_dump()) for s in ordered[1:-1]],'travelMode':'DRIVE','routingPreference':'TRAFFIC_UNAWARE'},

@@ -90,7 +90,7 @@ def request_details(db, actor, identity, data, key):
             raise HTTPException(503, 'The public website address must be configured before sending a completion link.')
         duplicate = db.scalar(select(EmailDelivery.id).where(EmailDelivery.organization_id == actor.organization_id,
             EmailDelivery.intake_id == row.id, EmailDelivery.status.in_(['PENDING', 'SENDING', 'UNKNOWN'])))
-        if duplicate: raise HTTPException(409, 'A completion email is pending or its delivery is uncertain. Check its delivery before requesting another.')
+        if duplicate: raise HTTPException(409, 'A completion email is pending or unconfirmed. Check it before sending another.')
         company = db.get(Organization, actor.organization_id)
         link = f'{base}/{company.slug}/shipper?draft={row.id}'
         body = f'{company.name} needs a few details to finish your order draft. Sign in to your shipper account to complete it. Your changes will be returned to dispatch for review.'

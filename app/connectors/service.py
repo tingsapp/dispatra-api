@@ -100,7 +100,7 @@ def begin(db,user,slug,provider,data,key):
         if provider == 'samsara':
             account,label=samsara.identity(credentials);verified=credentials
             if row and row.status != 'DISCONNECTED' and row.account_id and row.account_id != account:
-                raise HTTPException(409, 'This token belongs to a different Samsara account. Disconnect before changing accounts.')
+                raise HTTPException(409, 'This token is for another Samsara account. Disconnect first.')
         else:
             verified, account, label = verification.verify(provider, profile, credentials, row.account_id if row else None)
         if row is None:

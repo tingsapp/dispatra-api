@@ -23,7 +23,7 @@ def route_revision(route, data):
     version(route, data.version)
     if route.generation != data.generation: raise HTTPException(409, 'Assignment generation changed. Sync the Route.')
     if route.plan.get('requires_acknowledgement'):
-        raise HTTPException(409, 'Route updated. Review and acknowledge the latest route before continuing.')
+        raise HTTPException(409, 'Route updated. Review and accept it to continue.')
 
 
 def start_duty(db, actor, data, key):
@@ -99,7 +99,7 @@ def start_route(db, actor, identity, data, key):
             stop = stops[visit['stop_id']]
             arrival = datetime.fromisoformat(visit['planned_at']) + delay
             if stop.get('window_end') and arrival > datetime.fromisoformat(stop['window_end']):
-                raise HTTPException(409,'Route is too late for a delivery window; request dispatcher replanning.')
+                raise HTTPException(409,'Route is too late for a delivery window. Ask dispatch to replan.')
             if shift_end and arrival + timedelta(minutes=stop['service_minutes']) > shift_end:
                 raise HTTPException(409,'Route would exceed the driver shift.')
         route.plan = {**route.plan, 'live_updates_supported': data.supports_live_updates}

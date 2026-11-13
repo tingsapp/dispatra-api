@@ -60,7 +60,7 @@ def save_catalog(db, actor, data, key, identity=None):
             values.pop('road_profile', None)
             if row and 'road_profile' in row.data: values['road_profile'] = row.data['road_profile']
         if kind == 'VEHICLE_TYPE' and not values.get('road_profile'):
-            raise HTTPException(422, 'Outside length, width, height and loaded gross weight are required for a Vehicle Type.')
+            raise HTTPException(422, 'Enter outside length, width, height and loaded weight.')
         if values.get('road_profile') and kind != 'VEHICLE_TYPE':
             raise HTTPException(422, 'Truck routing measurements belong to a Vehicle Type.')
         if values.get('road_profile'):
@@ -70,7 +70,7 @@ def save_catalog(db, actor, data, key, identity=None):
                 Vehicle.archived_at.is_(None))).all() if identity else []
             from decimal import Decimal
             if any(Decimal(payload) > gross for payload in payloads) or (values.get('payload_kg') and Decimal(values['payload_kg']) > gross):
-                raise HTTPException(422, 'Loaded gross weight must cover this type and its registered vehicles’ payload capacities.')
+                raise HTTPException(422, 'Loaded weight must cover this type’s vehicle payloads.')
         if row:
             profile_changed = values.get('road_profile') != row.data.get('road_profile')
             legacy_disabled = 'road_profile' in values and 'road_profile' not in row.data
@@ -88,7 +88,7 @@ def save_catalog(db, actor, data, key, identity=None):
                         and dispatch_provider() not in {'tomtom', 'openrouteservice'}
                         and not db.scalar(active.where(Vehicle.data['road_profile'].astext.is_not(None)).limit(1)))
                     if not first_setup:
-                        raise HTTPException(409, 'Vehicles of this type have active Routes; finish them before changing existing truck routing measurements.')
+                        raise HTTPException(409, 'Vehicles of this type are on active routes. Finish them before changing sizes.')
         if row:
             row.data = values
             changed(db, actor, row, 'catalog.updated')
@@ -233,7 +233,7 @@ def save_vehicle(db, actor, data, key, identity=None):
         duplicate = select(Vehicle.id).where(Vehicle.organization_id == actor.organization_id,
             func.upper(func.btrim(Vehicle.data['unit_number'].astext)) == payload.unit_number)
         if identity: duplicate = duplicate.where(Vehicle.id != identity)
-        if db.scalar(duplicate) is not None: raise HTTPException(409, 'Unit number already exists in this company, including archived vehicles.')
+        if db.scalar(duplicate) is not None: raise HTTPException(409, 'Unit number is already used (archived vehicles included).')
         company = db.get(Organization, actor.organization_id)
         row.number = vehicle_number(payload.unit_number, company.name, company.slug, row.number if identity else None)
         if not identity: db.add(row)
@@ -248,14 +248,14 @@ def save_vehicle(db, actor, data, key, identity=None):
             from app.intake.geocode import verify
             located = verify(payload.parking_address.text, payload.parking_address.postal_code)
             if not located:
-                raise HTTPException(422, 'Parking address could not be located. Select a full address from the address suggestions.')
+                raise HTTPException(422, 'Address not found. Pick one from the suggestions.')
             values['parking_address'] = {**values['parking_address'], 'latitude': located['latitude'], 'longitude': located['longitude']}
         if identity and 'road_profile' not in payload.model_fields_set:
             values['road_profile'] = None if type_changed else row.data.get('road_profile')
             if values['road_profile'] and values['road_profile']['gross_weight_kg'] < payload.payload_kg:
                 raise HTTPException(422, 'Update loaded gross weight before increasing payload capacity.')
         if vehicle_type.data.get('road_profile') and vehicle_type.data['road_profile']['gross_weight_kg'] < payload.payload_kg:
-            raise HTTPException(422, 'Update loaded gross weight in Vehicle Types before increasing this vehicle’s payload capacity.')
+            raise HTTPException(422, 'Raise the loaded weight in Vehicle Types first.')
         row.active, row.data = payload.active, values
         if identity: changed(db, actor, row, 'vehicle.updated')
         else:
@@ -300,7 +300,7 @@ def save_driver(db, actor, data, key, identity=None):
                     DutySession.organization_id == actor.organization_id,
                     DutySession.driver_id == row.id, DutySession.ended_at.is_(None))) is not None
                 if current_duty != data.expected_on_duty:
-                    raise HTTPException(409, 'Driver duty changed since this form was opened. Reload and try again.')
+                    raise HTTPException(409, 'Driver duty changed. Reload and try again.')
         else:
             row = Driver(id=uuid4(), organization_id=actor.organization_id, number=issue_number(db, actor, Driver, 'D')); db.add(row)
             password = secrets.token_urlsafe(18)

@@ -119,9 +119,9 @@ def prepare(db, actor, plan):
     action = AssistantAction(kind='ASSIGN', order_id=order.id, order_version=order.version, order_number=order.number,
         driver_id=driver.id, driver_name=driver.name, vehicle_name=vehicle_name(vehicle), current_driver_name=current.name if current else None)
     if current:
-        message = f'Order {order.number} is with {current.name} now. I can move it to {driver.name} ({action.vehicle_name}). Confirm below and I’ll make the change.'
+        message = f'Move order {order.number} from {current.name} to {driver.name} ({action.vehicle_name})? Confirm below.'
     else:
-        message = f'{driver.name} can take order {order.number} in {action.vehicle_name}. Confirm below and I’ll assign it.'
+        message = f'{driver.name} can take order {order.number} ({action.vehicle_name}). Confirm below.'
     return reply(message, refs, action)
 
 

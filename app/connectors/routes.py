@@ -38,7 +38,7 @@ def test_connection(slug:str,provider:str,data:ConnectInput,db:DB,user:Dispatche
     service.guard(row,data.version)
     account,label=samsara.identity({name:value.get_secret_value() for name,value in data.credentials.items()})
     if row and row.status != 'DISCONNECTED' and row.account_id and row.account_id != account:
-        raise HTTPException(409,'This token belongs to a different Samsara account. Disconnect before changing accounts.')
+        raise HTTPException(409,'This token is for another Samsara account. Disconnect first.')
     return {'account_id':account,'account':label}
 
 @router.post('/{provider}/connect',response_model=ConnectResult)

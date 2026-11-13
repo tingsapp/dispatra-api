@@ -23,12 +23,12 @@ def fixes(db, actor, driver):
 
 def state(db, actor, route, orders, driver):
     if not route.plan.get('live_updates_supported'):
-        raise HTTPException(409, 'Driver must review this route using an updated app before live assignment.')
+        raise HTTPException(409, 'Driver must update the app before live changes.')
     if route.plan.get('requires_acknowledgement'):
-        raise HTTPException(409, 'Driver must review the latest route before another Order is added.')
+        raise HTTPException(409, 'Driver must review the latest route first.')
     points = fixes(db, actor, driver)
     if not points:
-        raise HTTPException(409, 'Live assignment requires accurate driver GPS captured within two minutes.')
+        raise HTTPException(409, 'Live assignment needs driver GPS from the last 2 minutes.')
     if db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id,
             Issue.order_id.in_([o.id for o in orders]), Issue.resolved.is_(False)).limit(1)):
         raise HTTPException(409, 'Resolve the route cargo or delivery issue before adding work.')
@@ -124,7 +124,7 @@ def apply(db, actor, route, orders, driver, vehicle):
     result = plan(db, actor, route, orders, driver, vehicle)
     baseline = plan(db, actor, route, [o for o in orders if o.route_id == route.id], driver, vehicle)
     if now()-datetime.fromisoformat(result['live_origin_at']) > GPS_AGE:
-        raise HTTPException(409, 'Driver GPS became stale during road planning. Refresh before assigning.')
+        raise HTTPException(409, 'Driver GPS went stale. Refresh and try again.')
     remaining = result['travel_minutes']
     result['remaining_travel_minutes'] = remaining
     result['travel_minutes'] = round(max(0, route.plan.get('travel_minutes', baseline['travel_minutes']) + remaining-baseline['travel_minutes']), 2)

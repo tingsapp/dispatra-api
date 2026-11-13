@@ -65,7 +65,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
                 DutySession.driver_id==driver.id,DutySession.ended_at.is_(None)))
             expected = bool(include_expected and not duty and shift_start and now()<shift_start<=now()+timedelta(hours=1) and (route is None or route.status=='PLANNED'))
             here, source = position(db, actor, driver, vehicle)
-            if here is None: raise HTTPException(409, 'Select a vehicle parking address with map coordinates or provide fresh driver GPS before planning.')
+            if here is None: raise HTTPException(409, 'No vehicle location. Set a parking address or get fresh driver GPS.')
             pickups = [s for s in order.facts['stops'] if s['kind']=='PICKUP']
             direction, bearing = movement(fixes(db, actor, driver), pickups[0]['address'])
             origin = {**here, **({'heading':bearing} if bearing is not None else {})} if here else None
@@ -91,20 +91,20 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             active = sum(o.status not in {'COMPLETED','CANCELLED'} for o in on_route)
             score = extra + (8 if on_route and not same_area else 0) + min(utilization*15,30) + (completed+active)*0.5 + (0 if exact else 2) - (1 if preferred else 0)
             facts = []
-            if expected: facts.append(f'Tentative: driver expected On Duty at {shift_start.isoformat()}; no assignment before duty confirmation')
+            if expected: facts.append(f'Expected on duty at {shift_start.isoformat()}; assign once on duty')
             if (order.booking or {}).get('assigned_driver'): facts.append('Shipper’s assigned driver')
             elif preferred: facts.append('Shipper requested this driver')
-            if live: facts.append(f'Joins the remaining route, adding about {round(extra)} min of driving; driver review required')
-            elif route: facts.append(f'Joins the planned route with {active} orders, adding about {round(extra)} min of driving')
-            else: facts.append(f'Starts a new route, about {round(extra)} min of driving including the trip to pickup')
+            if live: facts.append(f'Joins the live route, +{round(extra)} min driving; driver must review')
+            elif route: facts.append(f'Joins the planned route ({active} orders), +{round(extra)} min driving')
+            else: facts.append(f'New route, about {round(extra)} min driving with the trip to pickup')
             if area:
                 label = area if any(z.name == area for z in config.dispatch_zones) else 'Nearby delivery area'
                 facts.append(label + (' · compatible delivery area' if same_area else ' · delivery area'))
-            facts.append(f'{round(worked)} min worked today; about {round(remaining)} min committed; {completed} orders completed')
-            if live: facts.append({'APPROACHING':'Approaching the new pickup', 'MOVING_AWAY':'Moving away; remaining-route detour considered',
-                'CROSSING':'Travelling across the pickup direction', 'STATIONARY':'Stationary; planned route used', 'UNKNOWN':'Movement direction unavailable; planned route used'}[direction])
-            elif source == 'PARKING': facts.append('Starting position estimated from vehicle parking address, not live GPS')
-            if slack: facts.append(f'Planned delivery slack: {round(min(slack))} min')
+            facts.append(f'Today: {round(worked)} min worked, about {round(remaining)} min booked, {completed} done')
+            if live: facts.append({'APPROACHING':'Approaching the new pickup', 'MOVING_AWAY':'Moving away; detour counted',
+                'CROSSING':'Travelling across the pickup direction', 'STATIONARY':'Stationary; planned route used', 'UNKNOWN':'Direction unknown; planned route used'}[direction])
+            elif source == 'PARKING': facts.append('Start estimated from parking address, not live GPS')
+            if slack: facts.append(f'Delivery slack: {round(min(slack))} min')
             candidates.append({**base, 'vehicle_id':str(vehicle.id), 'vehicle_name':vehicle.data.get('name') or vehicle.number,
                 'route_id':str(route.id) if route and route.id else None, 'route_version':getattr(route,'version',None),
                 'planned_at':start.isoformat(), 'first_arrival':visits[0]['planned_at'], 'score':round(score,2), 'reason':'', 'facts':facts,

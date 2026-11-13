@@ -30,7 +30,7 @@ def restrictions(vehicle, hazardous=False):
 def request(payload, url=BASE):
     key = os.environ.get('ORS_API_KEY', '').strip()
     if not key:
-        raise HTTPException(409, 'openrouteservice is not configured. Add the server API key before assigning orders.')
+        raise HTTPException(409, 'openrouteservice is not set up. Add its API key on the server.')
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
         headers={'Authorization': key, 'Content-Type': 'application/json', 'Accept': 'application/geo+json' if url == BASE else 'application/json'})
     try:
@@ -47,10 +47,10 @@ def request(payload, url=BASE):
             code = None
         if code == 2009: raise NoTruckRoute() from None
         if error.code in (403, 429):
-            raise HTTPException(503, 'openrouteservice rejected the request or its free quota is exhausted. Check the API key and quota in the HeiGIT dashboard, then retry.') from None
-        raise HTTPException(503, 'openrouteservice truck routing is unavailable. Retry or request dispatcher review.') from None
+            raise HTTPException(503, 'openrouteservice refused the request or its quota is used up. Check the key and quota.') from None
+        raise HTTPException(503, 'Truck routing is unavailable. Try again.') from None
     except (OSError, ValueError):
-        raise HTTPException(503, 'openrouteservice truck routing is unavailable. Retry or request dispatcher review.') from None
+        raise HTTPException(503, 'Truck routing is unavailable. Try again.') from None
 
 
 def route(addresses, vehicle, *, departure=None, hazardous=False, geometry=False, cache_scope=None):
@@ -107,7 +107,7 @@ def matrix(db, stops, vehicle, *, departure=None, hazardous=False, cache_scope=N
     dimensions and weight, so `confirm` re-checks the chosen order with a restricted route."""
     restrictions(vehicle, hazardous)
     if len(stops) > MAX_LOCATIONS:
-        raise HTTPException(409, f'openrouteservice truck routing supports at most {MAX_LOCATIONS} locations including the driver. Split the route.')
+        raise HTTPException(409, f'Truck routing plans up to {MAX_LOCATIONS} locations, driver included. Split the route.')
     verified = {s['id']: (point(s['address'])['longitude'], point(s['address'])['latitude']) for s in stops}
     places = list(dict.fromkeys(verified.values()))
     durations = [[0]]

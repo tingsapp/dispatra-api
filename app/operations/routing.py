@@ -82,6 +82,6 @@ def optimize(stops, items, vehicle, start, end, max_work_minutes, travel_table=N
     if any(value < 0 or value > capacity for value, capacity in zip(load, capacities)):
         raise HTTPException(409, 'Confirmed cargo exceeds vehicle capacity.')
     visit([], set(stop_map), start, load, 0, [])
-    if best is None: raise HTTPException(409, 'No feasible Route found within the planning limit; review capacity, windows and shift.')
+    if best is None: raise HTTPException(409, 'No route fits the capacity, time windows and shift.')
     return {'stops': best, 'travel_minutes': round(best_score,2), 'travel_basis': 'GOOGLE_ROADS_NO_TRAFFIC' if travel_table is not None else 'DEMO_GEODESIC_35_KPH',
         'is_road_eta': travel_table is not None, 'search_complete': explored <= budget, 'explored': min(explored,budget), 'planned_at': start.isoformat()}

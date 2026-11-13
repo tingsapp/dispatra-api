@@ -26,7 +26,7 @@ def path(db, actor, identity):
     from app.dispatch.candidates import position
     origin, _ = position(db, actor, driver, vehicle)
     if origin is None:
-        raise HTTPException(409, 'Vehicle location unavailable. Set its parking address or provide fresh driver GPS.')
+        raise HTTPException(409, 'No vehicle location. Set a parking address or get fresh driver GPS.')
     stop = record(db, OrderStop, actor, visit.stop_id)
     addresses = [origin, stop.data['address']]
     if point(addresses[0]) == point(addresses[1]):

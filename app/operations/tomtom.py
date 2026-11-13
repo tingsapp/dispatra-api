@@ -29,7 +29,7 @@ def options(vehicle, *, hazardous=False):
 def request(path, params, payload=None):
     key = os.environ.get('TOMTOM_API_KEY', '').strip()
     if not key:
-        raise HTTPException(409, 'TomTom is not configured. Add the server API key before enabling truck routing.')
+        raise HTTPException(409, 'TomTom is not set up. Add its API key on the server.')
     query = urllib.parse.urlencode({k: str(v).lower() if isinstance(v, bool) else v for k, v in {**params, 'key': key}.items()})
     req = urllib.request.Request(BASE + path + '?' + query,
         data=json.dumps(payload).encode() if payload is not None else None,
@@ -50,11 +50,11 @@ def request(path, params, payload=None):
         except (OSError, ValueError, AttributeError):
             code = None
         if error.code == 403 and code == 'InsufficientFunds':
-            raise HTTPException(503, 'TomTom routing credits are exhausted. Ask your administrator to add credits to the TomTom account before assigning this order.') from None
-        raise HTTPException(503, 'TomTom routing is unavailable. Retry or request dispatcher review.') from None
+            raise HTTPException(503, 'TomTom routing credits are exhausted. Ask your admin to add credits.') from None
+        raise HTTPException(503, 'TomTom routing is unavailable. Try again.') from None
     except (OSError, ValueError):
         # Never propagate URLs, credentials, coordinates, provider bodies or quota text.
-        raise HTTPException(503, 'TomTom routing is unavailable. Retry or request dispatcher review.') from None
+        raise HTTPException(503, 'TomTom routing is unavailable. Try again.') from None
 
 
 def departure_value(departure):
@@ -100,14 +100,14 @@ def route(addresses, vehicle, *, departure=None, hazardous=False, geometry=False
                for section in row.get('sections', [])): raise ValueError()
         return {'legs': output, 'points': shape}
     except (KeyError, IndexError, ValueError, TypeError, AttributeError, HTTPException):
-        raise HTTPException(503, 'TomTom returned an incomplete truck route; dispatcher review is required.') from None
+        raise HTTPException(503, 'TomTom returned an incomplete route. Review it.') from None
 
 
 def matrix(db, stops, vehicle, *, departure=None, hazardous=False):
     params = options(vehicle, hazardous=hazardous)
     # Bound cost and latency before issuing any provider request. Each cell is a route calculation.
     if len(stops) > 50:
-        raise HTTPException(409, 'TomTom planning supports at most 50 locations including the driver origin; split the route.')
+        raise HTTPException(409, 'TomTom plans up to 50 locations, driver included. Split the route.')
     points = [dict(point=point(stop['address'])) for stop in stops]
     opts = {**params, 'traffic': 'live', 'routeType': 'fastest',
         'departAt': departure_value(departure)}

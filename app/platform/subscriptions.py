@@ -24,7 +24,7 @@ def subscription(db, organization_id, lock=False):
     company(db, organization_id)
     query = select(CompanySubscription).where(CompanySubscription.organization_id == organization_id)
     row = db.scalar(query.with_for_update() if lock else query)
-    if row is None: raise HTTPException(503, 'Company subscription has not been initialized. Apply migrations or seed the company.')
+    if row is None: raise HTTPException(503, 'Subscription is not set up. Run migrations or seed the company.')
     return row
 
 
