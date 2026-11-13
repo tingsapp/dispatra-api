@@ -22,6 +22,10 @@ def save_settings(db, actor, data, key):
             service = db.get(Catalog, data.data.default_service_id)
             if service is None or service.organization_id != actor.organization_id or service.kind != 'SERVICE' or not service.active:
                 raise HTTPException(422, 'Choose an active service level as the default.')
+        if data.data.default_package_type_id:
+            package = db.get(Catalog, data.data.default_package_type_id)
+            if package is None or package.organization_id != actor.organization_id or package.kind != 'PACKAGE_TYPE' or not package.active:
+                raise HTTPException(422, 'Choose an active package type as the default.')
         values = data.data.model_dump(mode='json')
         if 'tms_workspace' not in data.data.model_fields_set:
             values['tms_workspace'] = row.data.get('tms_workspace', False)
@@ -128,6 +132,8 @@ def remove_catalog(db, actor, identity, data, key):
         version(row, data.version)
         if str(row.id) == str(settings(db, actor)[1].default_service_id):
             raise HTTPException(409, 'Set another service level as Default before deleting this one.')
+        if str(row.id) == str(settings(db, actor)[1].default_package_type_id):
+            raise HTTPException(409, 'Set another package type as Default before deleting this one.')
         row.active = False
         changed(db, actor, row, 'catalog.deleted')
         return {'id': str(row.id), 'version': row.version}

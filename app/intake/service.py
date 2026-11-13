@@ -141,14 +141,18 @@ def _claim(organization_id, intake_id):
         _, config = settings(db, actor)
         services = _choices(db, organization_id, 'SERVICE')
         default = str(config.default_service_id) if config.default_service_id else None
+        package_types = _choices(db, organization_id, 'PACKAGE_TYPE')
+        package = str(config.default_package_type_id) if config.default_package_type_id else None
         try: files=json.loads(vault.unseal(intake.attachment_secret,'email attachments')) if intake.attachment_secret else []
         except (HTTPException, ValueError): files=[{'error':'Saved email attachments could not be read and require review.'}]
         return {'email': {'subject': intake.subject, 'body': intake.body, 'received_at': intake.received_at.isoformat(), 'attachments': files},
             'saved_booking': intake.extraction if intake.extraction and intake.extraction.get('_email_batch') else None,
             'verified': intake.sender_verified,
             'context': {'time_zone': config.time_zone, 'services': services, 'vehicle_types': _choices(db, organization_id, 'VEHICLE_TYPE'),
-                'accessorials': _choices(db, organization_id, 'ACCESSORIAL'), 'dimension_unit': config.dimension_unit, 'weight_unit': config.weight_unit,
+                'accessorials': _choices(db, organization_id, 'ACCESSORIAL'), 'package_types': package_types,
+                'dimension_unit': config.dimension_unit, 'weight_unit': config.weight_unit,
                 'default_service_id': default if any(s['id'] == default for s in services) else None,
+                'default_package_type_id': package if any(p['id'] == package for p in package_types) else None,
                 'shipper': {'id': str(shipper.id), 'name': shipper.name, 'company_name': shipper.company_name,
                     'contact_name': shipper.contact_name, 'phone': shipper.phone,
                     'warehouse': shipper.warehouse, 'status': shipper.status} if shipper else None}}

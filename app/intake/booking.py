@@ -66,6 +66,16 @@ def best_vehicle_type(items, options, requested=None):
     return cargo_van['id'] if cargo_van else (general[0]['id'] if general else (options[0]['id'] if options else None))
 
 
+def package_type(item, options, default=None):
+    """The extracted catalogue match; otherwise a palletized item is the Pallet type, then the company Default.
+
+    The type only describes the item: the email's quantity, weight, size and pallet count stay authoritative."""
+    selected = pick(item.package_type, options)
+    if selected: return selected
+    pallet = next((o['id'] for o in options if o['code'].upper() == 'PALLET'), None) if (item.pallets_each or 0) > 0 else None
+    return pallet or (default if any(o['id'] == default for o in options) else None)
+
+
 def address(stop, number, context, verify, missing):
     label = 'Pickup address' if stop.kind == 'PICKUP' else 'Delivery address'
     if stop.use_shipper_warehouse and stop.kind == 'PICKUP':
@@ -138,9 +148,11 @@ def build(extraction, context, verify):
         if not item.quantity or item.quantity < 1: missing.append(f'{label}: quantity')
         if weight is None: missing.append(f'{label}: weight')
         if None in sizes: missing.append(f'{label}: length, width and height')
+        type_id = package_type(item, context.get('package_types', []), context.get('default_package_type_id'))
+        pallet_type = any(o['id'] == type_id and o['code'].upper() == 'PALLET' for o in context.get('package_types', []))
         items.append({'id': str(uuid4()), 'pickup_id': pickup_id, 'delivery_id': delivery_id, 'quantity': item.quantity,
             'weight_kg': weight, 'length_cm': sizes[0], 'width_cm': sizes[1], 'height_cm': sizes[2],
-            'pallets': max(0, item.pallets_each or 0), 'fragile': item.fragile, 'dangerous_goods': item.dangerous_goods,
+            'pallets': max(1 if pallet_type else 0, item.pallets_each or 0), 'package_type_id': type_id, 'fragile': item.fragile, 'dangerous_goods': item.dangerous_goods,
             'description': (item.description or '')[:2000]})
     if not items: missing.append('Items: quantity, weight and dimensions')
     linked = {i['pickup_id'] for i in items} | {i['delivery_id'] for i in items}

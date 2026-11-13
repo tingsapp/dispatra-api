@@ -76,6 +76,7 @@ def agent(client, monkeypatch):
         if isinstance(value, Exception): raise value
         assert context['shipper'] is None or set(context['shipper']) == {'name', 'warehouse_city'}
         assert all('description' in entry for entry in context['services'])
+        assert {entry['code'] for entry in context['package_types']} >= {'ENVELOPE', 'PARCEL', 'PALLET', 'OVERSIZED'}
         return value
     monkeypatch.setattr(extract, 'extract', fake_extract)
     monkeypatch.setattr(geocode, 'verify', lambda text_, postal: {'text': text_, 'latitude': 49.28, 'longitude': -123.12})
@@ -237,6 +238,9 @@ def test_complete_verified_email_becomes_an_order_once(agent):
     assert order['facts']['stops'][0]['phone'] == '6045550101'
     assert order['facts']['stops'][1]['contact_name'] == 'Bob'
     assert order['facts']['stops'][1]['phone'] == '6045550199'
+    # The extraction named no package type and the boxes are not palletized: the company Default (Parcel) applies.
+    parcel = next(c['id'] for c in check(client.get(BASE + '/catalog')) if c['kind'] == 'PACKAGE_TYPE' and c['code'] == 'PARCEL')
+    assert order['facts']['items'][0]['package_type_id'] == parcel
     assert worker.cycle() == (0, 0)
     with owner_engine.connect() as db:
         assert db.execute(text("SELECT count(*) FROM orders")).scalar() == 1
@@ -296,6 +300,8 @@ def test_books_email_draft_resolves_address_defaults_contacts_and_keeps_local_de
         assert datetime.fromisoformat(value).astimezone(zone).strftime('%Y-%m-%d %H:%M') == '2026-11-10 ' + clock
     assert [draft['items'][0][key] for key in ('length_cm', 'width_cm', 'height_cm')] == ['121.92'] * 3
     assert draft['items'][0]['pallets'] == 1 and draft['items'][0]['weight_kg'] is None
+    pallet = next(c['id'] for c in check(agent['client'].get(BASE + '/catalog')) if c['kind'] == 'PACKAGE_TYPE' and c['code'] == 'PALLET')
+    assert draft['items'][0]['package_type_id'] == pallet
 
 
 def test_contact_defaults_are_per_field_and_do_not_cross_unknown_shipper_boundary():

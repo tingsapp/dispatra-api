@@ -37,3 +37,20 @@ def test_only_active_company_package_types_are_accepted_and_edits_keep_a_deleted
     facts = {**order['facts'], 'internal_notes': 'Kept tube'}
     edited = check(client.put(BASE+f"/orders/{order['id']}", json=dict(version=order['version'], booking=facts), headers={'Idempotency-Key': str(uuid4())}))
     assert edited['facts']['items'][0]['package_type_id'] == created['id']
+
+
+def test_company_default_package_type_is_seeded_validated_and_protected_from_delete(setup):
+    w = setup
+    client = w['client']
+    types = {row['code']: row for row in w['catalog'] if row['kind'] == 'PACKAGE_TYPE'}
+    settings = check(client.get(BASE+'/settings'))
+    assert settings['data']['default_package_type_id'] == types['PARCEL']['id']
+    def save(identity):
+        current = check(client.get(BASE+'/settings'))
+        return client.put(BASE+'/settings', json={'version': current['version'], 'data': current['data'] | {'default_package_type_id': identity}}, headers={'Idempotency-Key': str(uuid4())})
+    assert save(w['service']).status_code == 422
+    assert save(str(uuid4())).status_code == 422
+    assert check(save(types['PALLET']['id']))['data']['default_package_type_id'] == types['PALLET']['id']
+    pallet = types['PALLET']
+    assert client.request('DELETE', BASE+f"/catalog/{pallet['id']}", json=dict(version=pallet['version']), headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+    check(client.request('DELETE', BASE+f"/catalog/{types['PARCEL']['id']}", json=dict(version=types['PARCEL']['version']), headers={'Idempotency-Key': str(uuid4())}))

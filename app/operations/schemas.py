@@ -92,6 +92,8 @@ class SettingsData(Input):
     dispatch_zones: list[DispatchZone] = Field(default_factory=list, max_length=100)
     # Manual new-order forms start on this active SERVICE; email intake resolves service from requested facts.
     default_service_id: UUID | None = None
+    # Email intake falls back to this active PACKAGE_TYPE when it cannot infer an item's type.
+    default_package_type_id: UUID | None = None
 
     @model_validator(mode='after')
     def dispatch_zone_unique(self):

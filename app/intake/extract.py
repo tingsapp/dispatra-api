@@ -26,6 +26,7 @@ For every item, set fragile true when the email says fragile, handle with care, 
 Service need not be named explicitly: compare the requested pickup/delivery schedule and urgency with the catalogue names AND descriptions. A normal scheduled pickup at 14:00 with delivery by 17:00 that same date matches Same-Day when offered. "Tomorrow" describes the pickup date, not next-day transit: pickup and delivery tomorrow are still same-day service. Preserve explicit rush/direct requests; do not infer rush merely from a closing-time deadline. If no service can be determined, leave it null and explain why in review_reasons.
 For dimensions such as 48x48x48, capture all three numbers. If units are absent, leave dimension_unit null; the application applies the company's saved dimension unit. Never invent a missing measurement. Preserve partial addresses as written; the application can resolve missing province/postal code from a precise map match.
 If a relative date and an explicit date disagree, report the conflict in review_reasons instead of silently choosing.
+Give every item a package_type from the supplied package_types catalogue codes, even when the email never names one: infer what the item physically is from its wording, packaging, pallet count, weight and size, and match it to the catalogue names AND descriptions (for example a pallet or skid of goods is a pallet type, letters or documents an envelope type, boxes, cartons or bags a parcel type, furniture or long, bulky or irregular items an oversized type). Leave package_type null only when no catalogue option reasonably fits, or when two fit equally well. The package type describes the item only; never change quantities, weights, dimensions or pallet counts to match it.
 For "2 pallets of books", quantity is 2 and pallets_each is 1: each quantity unit is one pallet. For loose boxes without pallets, pallets_each is 0. Do not multiply pallet count by quantity.
 Link each item to the index of its pickup stop and its delivery stop in your stops list.
 Set is_order_request true only when the email asks this company to carry out a new pickup or delivery, even if details are missing.
@@ -68,6 +69,7 @@ class ExtractedItem(BaseModel):
     height: float | None
     dimension_unit: Literal['cm', 'in'] | None
     pallets_each: int | None = Field(description='Pallets per quantity unit: "2 pallets" means quantity 2 and pallets_each 1; loose boxes without pallets means 0')
+    package_type: str | None = Field(default=None, description='Package Type code from the supplied package_types catalogue, inferred from the item when the email names none')
     fragile: bool
     dangerous_goods: bool
     description: str | None
@@ -103,7 +105,8 @@ def prompt(email, context):
     return json.dumps({'company_time_zone': context['time_zone'], 'received_at': email['received_at'],
         'received_at_company_local': received.isoformat(),
         'shipper': context['shipper'], 'services': context['services'], 'vehicle_types': context['vehicle_types'],
-        'accessorials': context.get('accessorials', []), 'default_dimension_unit': context.get('dimension_unit'),
+        'accessorials': context.get('accessorials', []), 'package_types': context.get('package_types', []),
+        'default_dimension_unit': context.get('dimension_unit'),
         'default_weight_unit': context.get('weight_unit'),
         'email': {'subject': email['subject'], 'body': email['body']}}, ensure_ascii=False)
 

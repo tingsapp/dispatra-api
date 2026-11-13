@@ -40196,6 +40196,18 @@
               }
             ],
             "title": "Default Service Id"
+          },
+          "default_package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Package Type Id"
           }
         },
         "additionalProperties": false,
@@ -40385,6 +40397,18 @@
               }
             ],
             "title": "Default Service Id"
+          },
+          "default_package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Package Type Id"
           }
         },
         "additionalProperties": false,

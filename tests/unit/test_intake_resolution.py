@@ -31,6 +31,39 @@ def test_books_example_uses_company_units_and_verified_partial_address():
     assert missing
 
 
+def test_package_type_is_inferred_from_the_catalogue_and_never_overrides_email_measurements():
+    parcel, pallet = str(uuid4()), str(uuid4())
+    types=[{'id':parcel,'code':'PARCEL','name':'Parcel','description':'Boxes, bags and other regular packages.'},
+        {'id':pallet,'code':'PALLET','name':'Pallet','description':'Goods stacked on a standard 48 x 40 in pallet.'}]
+    ctx={'time_zone':'America/Vancouver','dimension_unit':'in','weight_unit':'lb','services':[],'vehicle_types':[],'package_types':types,
+        'shipper':{'id':str(uuid4()),'warehouse':{'text':'100 Warehouse St, Vancouver, BC V5Y 1V4','city':'Vancouver','province':'BC','postal_code':'V5Y 1V4'}}}
+    def books(**changes):
+        return extract.Extraction.model_validate({'is_order_request':True,'summary':'One pallet of books.','service':None,'vehicle_type':None,'scheduled_at':None,'reference':None,
+            'stops':[{'kind':'PICKUP','use_shipper_warehouse':True,'address':None,'contact_name':None,'phone':None,'instructions':None,'window_start':None,'window_end':None},
+                {'kind':'DROPOFF','use_shipper_warehouse':False,'address':None,'contact_name':None,'phone':None,'instructions':None,'window_start':None,'window_end':None}],
+            'items':[{'pickup_index':0,'delivery_index':1,'quantity':1,'weight_each':200,'weight_unit':'lb','length':48,'width':48,'height':48,'dimension_unit':None,
+                'pallets_each':1,'fragile':False,'dangerous_goods':False,'description':'Books',**changes}]})
+    def item(value): return booking.build(value,ctx,lambda *_:None)[0]['items'][0]
+    chosen=item(books(package_type='PALLET'))
+    assert chosen['package_type_id']==pallet
+    assert (chosen['weight_kg'],chosen['length_cm'],chosen['width_cm'],chosen['height_cm'],chosen['pallets'])==('90.72','121.92','121.92','121.92',1)
+    # Palletized cargo with no extracted type still becomes the company's Pallet type.
+    assert item(books())['package_type_id']==pallet
+    assert item(books(package_type='Parcel',pallets_each=0))['package_type_id']==parcel
+    # Choosing Pallet counts one pallet per piece, as the order form does.
+    assert item(books(package_type='PALLET',pallets_each=0))['pallets']==1
+    assert item(books(package_type='CRATE',pallets_each=0))['package_type_id'] is None
+    assert booking.build(books(),{**ctx,'package_types':[]},lambda *_:None)[0]['items'][0]['package_type_id'] is None
+    # When the guess fails, the company Default applies; a palletized item still prefers Pallet.
+    defaulted={**ctx,'default_package_type_id':parcel}
+    assert booking.build(books(package_type='CRATE',pallets_each=0),defaulted,lambda *_:None)[0]['items'][0]['package_type_id']==parcel
+    assert booking.build(books(package_type=None),defaulted,lambda *_:None)[0]['items'][0]['package_type_id']==pallet
+    assert booking.build(books(package_type='CRATE',pallets_each=0),{**defaulted,'default_package_type_id':str(uuid4())},lambda *_:None)[0]['items'][0]['package_type_id'] is None
+    prompt=json.loads(extract.prompt({'subject':'','body':'','received_at':'2026-11-13T10:00:00+00:00'},{**ctx,'shipper':None}))
+    assert prompt['package_types']==types
+    assert 'package_type' in extract.INSTRUCTIONS
+
+
 def test_review_reasons_keep_extracted_facts(monkeypatch):
     from app.intake import service
     value=extract.Extraction(is_order_request=True,summary='Date conflict',service=None,vehicle_type=None,scheduled_at=None,stops=[],items=[],reference=None,review_reasons=['Conflicting date'])

@@ -33,7 +33,8 @@ def seed_pricing(db, actor, organization=None):
             provincial_enabled=billing['companyTax']['provincialEnabled'], provincial_percent=billing['companyTax']['provincialRatePercent'],
             fuel_enabled=billing['fuelSurcharge']['enabled'], fuel_percent=billing['fuelSurcharge']['percent'],
             maximum_active_orders=billing['dispatch']['maxActiveOrdersPerDriver'],
-            default_service_id=stable_id(org_id, next(s['id'] for s in SEED['catalogue']['services'] if s.get('code') == 'SAME_DAY')))
+            default_service_id=stable_id(org_id, next(s['id'] for s in SEED['catalogue']['services'] if s.get('code') == 'SAME_DAY')),
+            default_package_type_id=stable_id(org_id, next(p['id'] for p in SEED['catalogue']['packageTypes'] if p.get('code') == 'PARCEL')))
         db.add(Settings(id=stable_id(org_id, 'settings'), organization_id=org_id, data=data.model_dump(mode='json')))
     created = 0
     groups = [('SERVICE', 'services'), ('VEHICLE_TYPE', 'vehicles'), ('ACCESSORIAL', 'accessorials'), ('PACKAGE_TYPE', 'packageTypes')]
