@@ -15,18 +15,33 @@ class DailyBriefingTests(unittest.TestCase):
 
     def test_company_day_counts_and_tenant_filters(self):
         db = Mock()
-        db.scalar.side_effect = [{'time_zone': 'America/Vancouver'}, 3]
-        db.execute.return_value.all.return_value = [('NEW', 12), ('COMPLETED', 1)]
+        db.scalar.side_effect = [{'time_zone': 'America/Vancouver', 'dispatch_mode': 'AUTO'}, 3]
+        statuses, drivers = Mock(), Mock()
+        statuses.all.return_value = [('NEW', 12), ('COMPLETED', 1)]
+        drivers.all.return_value = [('Alex Chen', 1)]
+        db.execute.side_effect = [statuses, drivers]
         org = uuid4()
         result = search.daily_briefing(db, org, datetime(2026, 11, 5, 2, tzinfo=timezone.utc))
         self.assertEqual(result.day, '2026-11-04')
         self.assertTrue(result.evening)
         self.assertEqual((result.received, result.unassigned, result.completed, result.open_incidents), (13, 12, 1, 3))
-        query = db.execute.call_args.args[0]
+        self.assertEqual(result.dispatch_mode, 'AUTO')
+        self.assertEqual([(row.driver_name, row.orders) for row in result.assigned_by_driver], [('Alex Chen', 1)])
+        query = db.execute.call_args_list[0].args[0]
         params = query.compile().params
         self.assertIn(org, params.values())
         self.assertIn('CANCELLED', params.values())
+        per_driver = db.execute.call_args_list[1].args[0].compile().params
+        self.assertEqual(list(per_driver.values()).count(org), 3, 'orders, routes and drivers are each company-filtered')
         self.assertIn(org, db.scalar.call_args.args[0].compile().params.values())
+
+    def test_dispatch_mode_defaults_to_manual(self):
+        db = Mock()
+        db.scalar.side_effect = [{}, 0]
+        empty = Mock(); empty.all.return_value = []
+        db.execute.side_effect = [empty, empty]
+        result = search.daily_briefing(db, uuid4(), datetime(2026, 11, 5, 18, tzinfo=timezone.utc))
+        self.assertEqual((result.dispatch_mode, result.assigned_by_driver), ('MANUAL', []))
 
     def test_ai_and_unavailable_keep_authoritative_card(self):
         data = DailyBriefing(day='2026-11-04', time_zone='UTC', evening=False, received=1,

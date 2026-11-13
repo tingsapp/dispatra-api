@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Kind = Literal['ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER']
@@ -39,6 +40,11 @@ class SearchPlan(BaseModel):
     query: str = Field(max_length=120)
     kinds: list[Kind] = Field(max_length=4)
     order_statuses: list[Status] = Field(max_length=5)
+    # ASSIGN only when the dispatcher's latest message asks to give an Order to a driver; the server resolves and checks both.
+    # No defaults: provider structured outputs require every field.
+    action: Literal['NONE', 'ASSIGN']
+    order_number: str = Field(max_length=60)
+    driver: str = Field(max_length=120)
 
 
 class GroundedAnswer(BaseModel):
@@ -60,6 +66,11 @@ class BriefingCommentary(BaseModel):
     message: str = Field(min_length=1, max_length=180)
 
 
+class DriverAssignments(BaseModel):
+    driver_name: str
+    orders: int
+
+
 class DailyBriefing(BaseModel):
     day: str
     time_zone: str
@@ -70,6 +81,9 @@ class DailyBriefing(BaseModel):
     in_progress: int
     completed: int
     open_incidents: int
+    dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
+    # Today's orders that have a driver (assigned, in progress or completed), most orders first.
+    assigned_by_driver: list[DriverAssignments] = Field(default_factory=list)
 
 
 class BriefingTotals(BaseModel):
@@ -78,8 +92,34 @@ class BriefingTotals(BaseModel):
     observed_at: datetime
 
 
+class AssistantAction(BaseModel):
+    """A checked assignment the dispatcher confirms; the shared assignment command re-validates it."""
+    kind: Literal['ASSIGN']
+    order_id: UUID
+    order_version: int
+    order_number: str
+    driver_id: UUID
+    driver_name: str
+    vehicle_name: str
+    current_driver_name: str | None = None
+
+
+class AssistantActionCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    order_id: UUID
+    order_version: int = Field(ge=1)
+    driver_id: UUID
+
+
+class AssistantActionResult(BaseModel):
+    message: str
+    order_id: UUID
+    order_version: int
+
+
 class AssistantReply(BaseModel):
     briefing: DailyBriefing | None = None
+    action: AssistantAction | None = None
     message: str
     references: list[AssistantReference]
     mode: Literal['AI', 'SEARCH']

@@ -298,9 +298,11 @@ def test_web_projections_quotes_and_stop_issue_scope(setup):
     route=assign(w,order)
     issue=check(post(mobile,BASE+f'/driver/stops/{stop}/issue',{'kind':'OTHER','description':'Gate is temporarily closed'}),201)
     assert issue['order_id']==order['id'] and issue['stop_id']==stop
-    monitor=check(client.get(BASE+'/monitor'));assert monitor['needs_attention'][0]['id']==issue['id']
+    monitor=check(client.get(BASE+'/monitor'));reported=monitor['needs_attention'][0]
+    assert (reported['id'],reported['version'])==(issue['id'],issue['version']),'the Monitor carries what Resolve needs'
     assert next(row for row in monitor['drivers'] if row['id']==w['driver']['id'])['on_duty'] is True
-    check(post(client,BASE+f'/issues/{issue["id"]}/resolve',{'version':issue['version'],'resolution':'Gate opened'}))
+    check(post(client,BASE+f'/issues/{reported["id"]}/resolve',{'version':reported['version'],'resolution':'Gate opened'}))
+    assert all(row['id']!=issue['id'] for row in check(client.get(BASE+'/monitor'))['needs_attention'])
     finish(w,route)
     proof=check(client.get(BASE+f'/orders/{order["id"]}/delivery-proof'))
     assert len(proof)==1 and proof[0]['recipient_name']=='Receiver'

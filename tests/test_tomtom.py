@@ -184,13 +184,13 @@ def test_monitor_and_assistant_show_only_fresh_same_route_estimates(setup,monkey
     assert 'duty_id' not in estimate
     facts=[]
     def answer(schema,instructions,messages):
-        if schema is SearchPlan: return SearchPlan(include_records=True,query=order['number'],kinds=['ORDER'],order_statuses=[])
+        if schema is SearchPlan: return SearchPlan(include_records=True,query=order['number'],kinds=['ORDER'],order_statuses=[], action='NONE', order_number='', driver='')
         facts.append(messages[-1]['content']);return GroundedAnswer(message='Estimated arrival from recorded facts.',references=[])
     monkeypatch.setattr(provider,'generate',answer)
     check(client.post(BASE+'/assistant/messages',json={'message':f'ETA for {order["number"]}'}))
     assert 'TomTom truck route with traffic' in facts[0] and 'traffic delay 3.0 min' in facts[0]
     def driver_answer(schema,instructions,messages):
-        if schema is SearchPlan: return SearchPlan(include_records=True,query='',kinds=['DRIVER'],order_statuses=[])
+        if schema is SearchPlan: return SearchPlan(include_records=True,query='',kinds=['DRIVER'],order_statuses=[], action='NONE', order_number='', driver='')
         facts.append(messages[-1]['content']);return GroundedAnswer(message='Driver arrival estimate from recorded facts.',references=[])
     monkeypatch.setattr(provider,'generate',driver_answer)
     check(client.post(BASE+'/assistant/messages',json={'message':'What is the driver arrival time?'}))

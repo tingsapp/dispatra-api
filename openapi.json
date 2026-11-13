@@ -26976,6 +26976,141 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/assistant/actions/assign": {
+      "post": {
+        "tags": [
+          "Dispatra AI"
+        ],
+        "summary": "Confirm Assignment",
+        "description": "Save an assignment the dispatcher confirmed in chat. The shared assignment command re-checks every rule.",
+        "operationId": "confirm_assignment_api_v1_companies__slug__assistant_actions_assign_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantActionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/billing/payment-method": {
       "get": {
         "tags": [
@@ -29634,6 +29769,115 @@
         ],
         "title": "AssignmentView"
       },
+      "AssistantAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ASSIGN",
+            "title": "Kind"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "order_version": {
+            "type": "integer",
+            "title": "Order Version"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "driver_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Driver Id"
+          },
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "vehicle_name": {
+            "type": "string",
+            "title": "Vehicle Name"
+          },
+          "current_driver_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Driver Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "order_id",
+          "order_version",
+          "order_number",
+          "driver_id",
+          "driver_name",
+          "vehicle_name"
+        ],
+        "title": "AssistantAction",
+        "description": "A checked assignment the dispatcher confirms; the shared assignment command re-validates it."
+      },
+      "AssistantActionCommand": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "order_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Order Version"
+          },
+          "driver_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Driver Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "order_id",
+          "order_version",
+          "driver_id"
+        ],
+        "title": "AssistantActionCommand"
+      },
+      "AssistantActionResult": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "order_version": {
+            "type": "integer",
+            "title": "Order Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "order_id",
+          "order_version"
+        ],
+        "title": "AssistantActionResult"
+      },
       "AssistantReference": {
         "properties": {
           "key": {
@@ -29701,6 +29945,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DailyBriefing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistantAction"
               },
               {
                 "type": "null"
@@ -32960,6 +33214,22 @@
           "open_incidents": {
             "type": "integer",
             "title": "Open Incidents"
+          },
+          "dispatch_mode": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ],
+            "title": "Dispatch Mode",
+            "default": "MANUAL"
+          },
+          "assigned_by_driver": {
+            "items": {
+              "$ref": "#/components/schemas/DriverAssignments"
+            },
+            "type": "array",
+            "title": "Assigned By Driver"
           }
         },
         "type": "object",
@@ -34439,6 +34709,24 @@
           "current_route"
         ],
         "title": "DriverActivityView"
+      },
+      "DriverAssignments": {
+        "properties": {
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_name",
+          "orders"
+        ],
+        "title": "DriverAssignments"
       },
       "DriverData": {
         "properties": {
@@ -37623,6 +37911,17 @@
               }
             ],
             "title": "Id"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
           },
           "order_id": {
             "type": "string",

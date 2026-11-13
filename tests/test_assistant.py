@@ -19,7 +19,7 @@ def test_grounded_search_references_and_chat_monitor_keep_private_text_out_of_lo
     calls = []
     def generate(schema, instructions, messages):
         calls.append(messages)
-        if schema is SearchPlan: return SearchPlan(include_records=True, query=order['number'], kinds=['ORDER'], order_statuses=[])
+        if schema is SearchPlan: return SearchPlan(include_records=True, query=order['number'], kinds=['ORDER'], order_statuses=[], action='NONE', order_number='', driver='')
         facts = json.loads(messages[-1]['content'].split('\n', 1)[1])
         assert facts['matched_counts']['ORDER'] == 1
         return GroundedAnswer(message='The order is New.', references=[facts['records'][0]['key'], 'ORDER:foreign'])
@@ -99,7 +99,7 @@ def test_chat_monitor_keeps_a_live_request_visible_when_a_later_request_finished
 
 def test_count_only_queries_keep_exact_matching_totals_without_contact_records(client, accounts, monkeypatch):
     def generate(schema, instructions, messages):
-        if schema is SearchPlan: return SearchPlan(include_records=False, query='ABC', kinds=['SHIPPER'], order_statuses=[])
+        if schema is SearchPlan: return SearchPlan(include_records=False, query='ABC', kinds=['SHIPPER'], order_statuses=[], action='NONE', order_number='', driver='')
         facts=json.loads(messages[-1]['content'].split('\n',1)[1])
         assert facts['matched_counts']['SHIPPER']==2 and facts['records']==[]
         assert 'email' not in json.dumps(facts) and 'phone' not in json.dumps(facts)
@@ -108,3 +108,26 @@ def test_count_only_queries_keep_exact_matching_totals_without_contact_records(c
     result=client.post(ROOT,json={'message':'How many ABC shippers do we have?'})
     assert result.status_code==200, result.text
     assert result.json()['message']=='Two matching shippers.' and result.json()['references']==[]
+
+
+def test_chat_assignment_is_proposed_then_saved_only_on_dispatcher_confirmation(client, setup, monkeypatch):
+    from conftest import post
+    order = new_order(setup)
+    def generate(schema, instructions, messages):
+        return SearchPlan(include_records=False, query='', kinds=[], order_statuses=[], action='ASSIGN', order_number=order['number'], driver='dana')
+    monkeypatch.setattr(provider, 'generate', generate)
+    proposal = client.post(ROOT, json={'message': f'Assign {order["number"]} to Dana'})
+    assert proposal.status_code == 200, proposal.text
+    action = proposal.json()['action']
+    assert action and action['driver_name'] == 'Dana Driver' and action['order_version'] == order['version']
+    assert client.get(f'/api/v1/companies/acme/orders/{order["id"]}').json()['status'] == 'NEW', 'a proposal never writes'
+    body = {key: action[key] for key in ('order_id', 'order_version', 'driver_id')}
+    actions_path = ROOT.replace('/messages', '/actions/assign')
+    key = str(uuid4())
+    done = post(client, actions_path, body, key)
+    assert done.status_code == 200, done.text
+    assert 'now assigned to Dana Driver' in done.json()['message']
+    assert post(client, actions_path, body, key).json() == done.json(), 'a retried confirmation is idempotent'
+    assert client.get(f'/api/v1/companies/acme/orders/{order["id"]}').json()['status'] == 'ASSIGNED'
+    assert post(client, actions_path, body).status_code == 409, 'a stale proposal is rechecked'
+    assert post(setup['mobile'], actions_path, body).status_code == 403

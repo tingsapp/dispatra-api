@@ -166,7 +166,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
         'orders':[{'id':str(o.id),'number':o.number,'status':o.status,'route_id':str(o.route_id) if o.route_id else None,
                    'pricing_status':o.pricing.get('status'),'review_reason':o.pricing.get('review_reason'),
                    'attention_flags':[flag for flag,_ in attention[o.id]]} for o in orders],
-        'needs_attention':[{'id':str(i.id),'order_id':str(i.order_id),'kind':i.kind,'description':i.description} for i in issues] +
+        'needs_attention':[{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description} for i in issues] +
             [{'id':None,'order_id':str(o.id),'kind':flag,'description':description}
                 for o in orders for flag,description in attention[o.id]]}
 

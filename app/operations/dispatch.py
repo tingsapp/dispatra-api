@@ -63,7 +63,9 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_
             raise HTTPException(409, 'Exclusive service cannot share a Route.')
         for accessory in context['accessorials']:
             if not set(accessory.get('required_equipment',[])).issubset(vehicle.data['equipment']): raise HTTPException(409, 'Vehicle lacks required equipment.')
-            if accessory.get('required_crew',1) > driver.data['crew_size']: raise HTTPException(409, 'Required crew is unavailable.')
+            crew = accessory.get('required_crew', 1)
+            if crew > driver.data['crew_size']:
+                raise HTTPException(409, f'This order includes {accessory.get("name") or "an extra"}, which needs a {crew}-person team. Choose a driver set as a {crew}-person team.')
     return datetime.fromisoformat(end) if end else None
 
 

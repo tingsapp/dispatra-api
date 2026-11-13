@@ -28,11 +28,20 @@ def blocker(order):
     return None
 
 
-def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=False):
-    """The same planner is used for recommendations, fleet proposals and actual assignment checks."""
+def planned_start(order, driver, route):
+    """When the driver's Route would begin with this Order: an existing Route keeps its time; a new one waits for the schedule and shift."""
+    start = route.planned_at if route else max(order.scheduled_at, now())
+    shift_start = datetime.fromisoformat(driver.data['shift_start']) if driver.data.get('shift_start') else None
+    if (route is None or route.id is None) and shift_start: start = max(start, shift_start)
+    return start
+
+
+def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=False, driver_id=None):
+    """The same planner is used for recommendations, fleet proposals and actual assignment checks; `driver_id` checks one driver."""
     _, config = settings(db, actor)
-    drivers = db.scalars(select(Driver).where(Driver.organization_id == actor.organization_id,
-        Driver.active.is_(True), Driver.archived_at.is_(None)).order_by(Driver.number)).all()
+    query = select(Driver).where(Driver.organization_id == actor.organization_id, Driver.active.is_(True), Driver.archived_at.is_(None))
+    if driver_id: query = query.where(Driver.id == driver_id)
+    drivers = db.scalars(query.order_by(Driver.number)).all()
     candidates, excluded = [], []
     for driver in drivers:
         base = {'driver_id': str(driver.id), 'driver_name': driver.name, 'driver_number': driver.number}
@@ -50,9 +59,8 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
                 raise HTTPException(409, 'Review the first live route update before adding another Order.')
             if route is None and additions:
                 route = SimpleNamespace(id=None, status='PLANNED', planned_at=max(now(),min(o.scheduled_at for o in additions)), plan={})
-            start = route.planned_at if route else max(order.scheduled_at, now())
+            start = planned_start(order, driver, route)
             shift_start = datetime.fromisoformat(driver.data['shift_start']) if driver.data.get('shift_start') else None
-            if (route is None or route.id is None) and shift_start: start = max(start, shift_start)
             duty = db.scalar(select(DutySession.id).where(DutySession.organization_id==actor.organization_id,
                 DutySession.driver_id==driver.id,DutySession.ended_at.is_(None)))
             expected = bool(include_expected and not duty and shift_start and now()<shift_start<=now()+timedelta(hours=1) and (route is None or route.status=='PLANNED'))

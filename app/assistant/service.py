@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.models import now
 from app.agents.telemetry import monitor_run
 from app.agents.machine_events import WORKSPACE_RECORDS_READ
-from . import provider, search
+from . import actions, provider, search
 from .schemas import SearchPlan, GroundedAnswer, AssistantReply, BriefingCommentary, BriefingTotals
 
 
@@ -19,7 +19,12 @@ def ask(db, actor, question):
         except provider.Unavailable:
             ai = False
             query = re.sub(r'^(?:find|search(?: for)?|look up|show)\s+', '', question.message, flags=re.I)[:120]
-            plan = SearchPlan(include_records=True, query=query, kinds=[], order_statuses=[])
+            plan = SearchPlan(include_records=True, query=query, kinds=[], order_statuses=[], action='NONE', order_number='', driver='')
+        if plan.action == 'ASSIGN':
+            progress.step('Checking a requested assignment.', 40, actor.organization_id)
+            prepared = actions.prepare(db, actor, plan)
+            progress.step('Assignment check prepared.', 95, actor.organization_id)
+            return AssistantReply(**prepared, mode='AI', observed_at=now(), limited=False)
         progress.step('Searching authorized company records.', 40, actor.organization_id)
         refs, counts = search.collect(db, actor.organization_id, plan)
         progress.step(WORKSPACE_RECORDS_READ, 60, actor.organization_id)
@@ -40,8 +45,8 @@ def ask(db, actor, question):
             except provider.Unavailable: pass
         progress.step('AI answers unavailable; company search results returned.', 95, actor.organization_id, level='ERROR')
         count = sum(counts.values())
-        message = f'AI answers are unavailable right now. Search found {count} matching record{"s" if count != 1 else ""}.'
-        if facts['limited']: message += ' Showing the most recent matches; refine your search for more.'
+        message = f'I can’t give a full answer right now, but here {"is the 1 record" if count == 1 else f"are {count} records"} that matched your search.'
+        if facts['limited']: message += ' These are the most recent ones; add more detail to narrow it down.'
         return AssistantReply(message=message, references=refs, mode='SEARCH', observed_at=observed, limited=facts['limited'])
 
 
@@ -61,7 +66,8 @@ def brief(db, actor):
             '\nWrite only ONE short recommendation, at most 25 words and 180 characters. '
             'No greeting, heading, date, timezone, counts, status recap or introductory text. '
             'The visual card shows all totals; do not repeat them. Suggest the most useful next step. '
-            'The card already shows counts. All status counts refer to non-cancelled orders created today; '
+            'The card already shows counts, the auto dispatch setting and how many of today\'s orders each driver has. '
+            'All status counts refer to non-cancelled orders created today; '
             'open_incidents covers the whole workspace. Zero recorded incidents does not establish absence of risk. '
             'Do not claim dispatch eligibility or perform actions.',
             [{'role': 'user', 'content': 'Give me the current daily briefing using these fresh authorized facts: ' + json.dumps(facts)}])

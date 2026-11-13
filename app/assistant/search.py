@@ -9,10 +9,17 @@ LIMIT = 8
 STATUS_LABELS = {'NEW': 'New', 'ASSIGNED': 'Assigned', 'IN_PROGRESS': 'In progress', 'COMPLETED': 'Completed', 'CANCELLED': 'Cancelled'}
 
 
-def company_zone(db, org):
-    settings = db.scalar(select(Settings.data).where(Settings.organization_id == org)) or {}
+def company_settings(db, org):
+    return db.scalar(select(Settings.data).where(Settings.organization_id == org)) or {}
+
+
+def settings_zone(settings):
     try: return ZoneInfo(settings.get('time_zone') or 'UTC')
     except (ZoneInfoNotFoundError, ValueError, TypeError): return ZoneInfo('UTC')
+
+
+def company_zone(db, org):
+    return settings_zone(company_settings(db, org))
 
 
 def pattern(query):
@@ -112,16 +119,25 @@ def collect(db, org, plan):
 def daily_briefing(db, org, observed):
     from datetime import datetime, time, timedelta
     from app.order_watch.models import Incident
-    from .schemas import DailyBriefing
-    zone = company_zone(db, org)
+    from .schemas import DailyBriefing, DriverAssignments
+    settings = company_settings(db, org)
+    zone = settings_zone(settings)
     local = observed.astimezone(zone)
     start = datetime.combine(local.date(), time.min, zone)
     end = datetime.combine(local.date() + timedelta(days=1), time.min, zone)
-    counts = dict(db.execute(select(Order.status, func.count()).where(
-        Order.organization_id == org, Order.created_at >= start, Order.created_at < end,
+    today = (Order.organization_id == org, Order.created_at >= start, Order.created_at < end)
+    counts = dict(db.execute(select(Order.status, func.count()).where(*today,
         Order.status != 'CANCELLED').group_by(Order.status)).all())
     incidents = db.scalar(select(func.count()).select_from(Incident).where(
         Incident.organization_id == org, Incident.status.in_(['OPEN', 'ACKNOWLEDGED'])))
+    orders = func.count(Order.id)
+    drivers = db.execute(select(Driver.name, orders)
+        .join(Route, (Route.organization_id == org) & (Route.id == Order.route_id))
+        .join(Driver, (Driver.organization_id == org) & (Driver.id == Route.driver_id))
+        .where(*today, Order.status.in_(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED']))
+        .group_by(Driver.id, Driver.name).order_by(orders.desc(), Driver.name)).all()
     return DailyBriefing(day=local.date().isoformat(), time_zone=str(zone), evening=local.hour >= 18,
         received=sum(counts.values()), unassigned=counts.get('NEW', 0), assigned=counts.get('ASSIGNED', 0),
-        in_progress=counts.get('IN_PROGRESS', 0), completed=counts.get('COMPLETED', 0), open_incidents=incidents)
+        in_progress=counts.get('IN_PROGRESS', 0), completed=counts.get('COMPLETED', 0), open_incidents=incidents,
+        dispatch_mode='AUTO' if settings.get('dispatch_mode') == 'AUTO' else 'MANUAL',
+        assigned_by_driver=[DriverAssignments(driver_name=name, orders=count) for name, count in drivers])

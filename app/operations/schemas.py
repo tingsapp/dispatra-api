@@ -831,7 +831,9 @@ class MonitorRoute(BaseModel):
 
 
 class MonitorIssue(BaseModel):
+    # `id` and `version` are set only for reported Issues, which a dispatcher resolves with POST /issues/{id}/resolve.
     id: UUID | None = None
+    version: int | None = None
     order_id: UUID
     kind: str
     description: str
