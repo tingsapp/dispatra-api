@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
+from app.events.routes import unread
 from app.models import now
 from app.services import audit
 from app.operations import orders
@@ -19,6 +20,8 @@ from .schemas import AssistantChange, AssistantReference
 from .search import company_zone
 
 UNAVAILABLE = 'I can’t prepare changes right now. Try again in a moment, or make the change in the workspace.'
+WARNINGS = 'Order warnings in Needs Attention (no driver, late start, price review) clear when the order is fixed.'
+SHOWN = 10  # issue lines on a bulk card; the rest are counted
 STATUS = {'NEW': 'Unassigned', 'ASSIGNED': 'Assigned', 'IN_PROGRESS': 'On the road', 'COMPLETED': 'Completed', 'CANCELLED': 'Cancelled'}
 
 
@@ -33,7 +36,7 @@ def ask(problems, noun):
 
 def proposal(name, op, subject, body, lines, target_id=None, references=()):
     entity, _, _ = name.partition('.')
-    change = AssistantChange(operation=name, title=f'{op.verb} {records.NOUNS[entity]}', subject=subject, target_id=target_id,
+    change = AssistantChange(operation=name, title=op.title or f'{op.verb} {records.NOUNS[entity]}', subject=subject, target_id=target_id,
         destructive=op.destructive, lines=lines, body=body)
     return reply(f'Here’s the change for {subject}. Nothing is saved until you confirm below.', references, change)
 
@@ -58,6 +61,8 @@ def prepare(db, actor, plan):
         if name == 'ORDER.CREATE': return new_order(db, actor, plan, op)
         if verb == 'CREATE': return create(db, actor, entity, name, op, plan)
         if entity == 'SETTINGS': return update(db, actor, entity, name, op, plan, settings(db, actor)[0], 'company settings')
+        if name == 'NOTIFICATION.READ_ALL': return read_notifications(db, actor, name, op)
+        if name == 'ISSUE.RESOLVE_ALL': return resolve_issues(db, actor, name, op, plan)
         if entity == 'ISSUE': return resolve_issue(db, actor, name, op, plan)
         term = plan.target.strip()
         if not term: return reply(f'Which {noun}? Tell me its {"number" if entity == "ORDER" else "name"}.')
@@ -224,12 +229,44 @@ def resolve_issue(db, actor, name, op, plan):
     return proposal(name, op, f'the issue on order {order.number}', body, lines, issue.id, reference('ORDER', order))
 
 
+def read_notifications(db, actor, name, op):
+    count = unread(db, actor)
+    if not count: return reply('All your notifications are already read.')
+    return proposal(name, op, 'your notifications', {}, [{'field': 'Unread notifications', 'before': str(count), 'after': '0'},
+        {'field': 'Note', 'after': 'They stay in your inbox as read history.'}])
+
+
+def resolve_issues(db, actor, name, op, plan):
+    """Every open reported issue in the company, or on one named Order, closed with one note after confirmation."""
+    term, order, refs = plan.target.strip(), None, []
+    if term:
+        found = records.find(db, actor.organization_id, 'ORDER', term)
+        if len(found) != 1:
+            return reply(f'I couldn’t find an order matching “{term}”.' if not found else f'More than one order matches “{term}”. Which one?',
+                [ref for row in found for ref in reference('ORDER', row)])
+        order = found[0]; refs = reference('ORDER', order)
+    rows = records.open_issues(db, actor.organization_id, order)
+    if not rows:
+        return reply(f'{f"Order {order.number} has" if order else "There are"} no open reported issues. {WARNINGS}', refs)
+    numbers = dict(db.execute(select(Order.id, Order.number).where(Order.organization_id == actor.organization_id,
+        Order.id.in_({row.order_id for row in rows}))).all())
+    note = plan.request.strip()[:2000]
+    body = drafting.validate(op.body, {'issues': [{'id': str(row.id), 'version': row.version} for row in rows],
+        'resolution': note if len(note) >= 3 else 'Resolved from Dispatra chat.'})
+    lines = [{'field': f'{numbers.get(row.order_id, "Order")} {row.kind.replace("_", " ").lower()}', 'before': 'Open', 'after': 'Resolved'}
+        for row in rows[:SHOWN]]
+    if len(rows) > SHOWN: lines.append({'field': 'More', 'after': f'{len(rows) - SHOWN} more issues'})
+    lines += [{'field': 'Resolution', 'after': body['resolution']}, {'field': 'Note', 'after': WARNINGS}]
+    subject = f'{len(rows)} open issue{"" if len(rows) == 1 else "s"}' + (f' on order {order.number}' if order else '')
+    return proposal(name, op, subject, body, lines, references=refs)
+
+
 def confirm(db, actor, data, key):
     """Run a confirmed change through its workspace command as the signed-in dispatcher; every rule is checked again."""
     entity, op = records.named(data.operation)
     if op is None: raise HTTPException(422, 'This change can’t be made from chat.')
     verb = data.operation.split('.')[1]
-    if (data.target_id is None) != (verb == 'CREATE' or entity == 'SETTINGS'): raise HTTPException(422, 'This change needs the record it applies to.')
+    if (data.target_id is None) != (verb == 'CREATE' or entity == 'SETTINGS' or bool(op.title)): raise HTTPException(422, 'This change needs the record it applies to.')
     try: body = op.body.model_validate(data.body)
     except ValidationError as error: raise HTTPException(422, ' '.join(drafting.explain(error))) from None
     if verb == 'CREATE' and entity in records.CATALOG and body.kind != entity: raise HTTPException(422, 'This change can’t be made from chat.')
@@ -243,7 +280,8 @@ def confirm(db, actor, data, key):
         audit(db, actor, 'assistant.change_confirmed', identity or data.target_id, actor.organization_id)
         label = (result.get('number') if entity == 'ORDER' else result.get('name') or (result.get('data') or {}).get('name')
             or result.get('number')) if isinstance(result, dict) else None
-        return {'message': done(entity, verb, op, label), 'id': str(identity) if identity else None,
+        message = done_many(entity, op, result['updated']) if op.title else done(entity, verb, op, label)
+        return {'message': message, 'id': str(identity) if identity else None,
             'version': result.get('version') if isinstance(result, dict) else None}
     # Only the public result is kept for retries; a new account's initial password is returned once and never stored.
     result = command(db, actor, key, 'assistant-change', data.model_dump(mode='json'), run)
@@ -254,5 +292,11 @@ def done(entity, verb, op, label):
     noun = records.NOUNS[entity]
     subject = f'{noun} {label}' if label else ('the company settings' if entity == 'SETTINGS' else f'the {noun}')
     past = {'Create': 'created', 'Add': 'added', 'Edit': 'updated', 'Cancel': 'cancelled', 'Complete': 'completed',
-        'Unassign': 'unassigned', 'Resolve': 'resolved', 'Archive': 'archived', 'Delete': 'deleted'}[op.verb]
+        'Unassign': 'unassigned', 'Resolve': 'resolved', 'Archive': 'archived', 'Delete': 'deleted', 'Mark read': 'marked read'}[op.verb]
     return f'Done. {subject[:1].upper()}{subject[1:]} {"is" if entity != "SETTINGS" else "are"} {past}.'
+
+
+def done_many(entity, op, count):
+    past = {'Resolve': 'resolved', 'Mark read': 'marked read'}[op.verb]
+    noun = records.NOUNS[entity] + ('' if count == 1 else 's')
+    return f'Done. {count} {noun} {"is" if count == 1 else "are"} {past}.'

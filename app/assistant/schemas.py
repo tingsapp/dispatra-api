@@ -7,8 +7,13 @@ Kind = Literal['ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER']
 Status = Literal['NEW', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
 # Company records chat may change; `records.OPERATIONS` lists the allowed entity/operation pairs.
 Entity = Literal['NONE', 'ORDER', 'SHIPPER', 'DRIVER', 'VEHICLE', 'ISSUE', 'SERVICE', 'ACCESSORIAL', 'VEHICLE_TYPE', 'PACKAGE_TYPE',
-    'RATE_CARD', 'SETTINGS']
-Operation = Literal['NONE', 'CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'COMPLETE', 'UNASSIGN', 'RESOLVE']
+    'RATE_CARD', 'SETTINGS', 'NOTIFICATION']
+Operation = Literal['NONE', 'CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'COMPLETE', 'UNASSIGN', 'RESOLVE', 'RESOLVE_ALL', 'READ_ALL']
+
+
+class NoFields(BaseModel):
+    """Request body of a chat change that needs no values, such as marking every notification read."""
+    model_config = ConfigDict(extra='forbid')
 
 
 class AssistantTurn(BaseModel):

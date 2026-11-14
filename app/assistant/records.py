@@ -1,21 +1,25 @@
 """What dispatcher chat may change. Each entry is an existing workspace command with its request schema, so a confirmed
 chat change runs the same authorization, validation, idempotency, audit and events as the workspace form. Records outside
-this table (dispatcher accounts, passwords, company billing, integrations, mailboxes) cannot be reached from chat."""
+this table (dispatcher accounts, passwords, company billing, integrations, mailboxes) cannot be reached from chat.
+Notifications are only marked read, never deleted."""
 from dataclasses import dataclass
 from typing import Callable
 from pydantic import BaseModel
+from app.events.routes import mark_all_read
 from sqlalchemy import select, func, or_
 from app.operations import orders, directory, archive, dispatch, issues
 from app.operations.common import settings
 from app.operations.models import Order, Shipper, Driver, Vehicle, Catalog, RateCard, Issue
-from app.operations.schemas import (Booking, OrderUpdate, Version, RouteCommand, IssueResolve, ShipperData, ShipperUpdate,
+from app.operations.schemas import (Booking, OrderUpdate, Version, RouteCommand, IssueResolve, IssueBatch, ShipperData, ShipperUpdate,
     DriverData, DriverUpdate, VehicleData, VehicleUpdate, CatalogCreate, CatalogUpdate, RateCreate, RateUpdate, SettingsUpdate)
+from .schemas import NoFields
 from .search import pattern
 
 CHOICES = 5
+BATCH = 200  # most issues one chat confirmation resolves; IssueBatch accepts no more
 CATALOG = {'SERVICE': 'service level', 'ACCESSORIAL': 'additional service', 'VEHICLE_TYPE': 'vehicle type', 'PACKAGE_TYPE': 'package type'}
 NOUNS = {'ORDER': 'order', 'SHIPPER': 'shipper', 'DRIVER': 'driver', 'VEHICLE': 'vehicle', 'ISSUE': 'issue',
-    'RATE_CARD': 'rate card', 'SETTINGS': 'company settings', **CATALOG}
+    'RATE_CARD': 'rate card', 'SETTINGS': 'company settings', 'NOTIFICATION': 'notification', **CATALOG}
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,7 @@ class Operation:
     run: Callable  # (db, actor, target_id, body, key) -> workspace response
     drafted: bool = False  # the dispatcher supplies field values, so the AI drafts the body
     destructive: bool = False
+    title: str = ''  # set for changes to many records at once: no target record, and the reply gives a count
 
 
 def _directory(save, archive_command, create, update):
@@ -42,7 +47,9 @@ OPERATIONS = {
     'SHIPPER': _directory(directory.save_shipper, archive.archive_shipper, ShipperData, ShipperUpdate),
     'DRIVER': _directory(directory.save_driver, archive.archive_driver, DriverData, DriverUpdate),
     'VEHICLE': _directory(directory.save_vehicle, archive.archive_vehicle, VehicleData, VehicleUpdate),
-    'ISSUE': {'RESOLVE': Operation('Resolve', IssueResolve, issues.resolve, True)},
+    'ISSUE': {'RESOLVE': Operation('Resolve', IssueResolve, issues.resolve, True),
+        'RESOLVE_ALL': Operation('Resolve', IssueBatch, lambda db, a, t, b, k: issues.resolve_many(db, a, b, k), title='Resolve open issues')},
+    'NOTIFICATION': {'READ_ALL': Operation('Mark read', NoFields, lambda db, a, t, b, k: mark_all_read(db, a, k), title='Mark all notifications read')},
     **{kind: {'CREATE': Operation('Add', CatalogCreate, lambda db, a, t, b, k: directory.save_catalog(db, a, b, k), True),
         'UPDATE': Operation('Edit', CatalogUpdate, lambda db, a, t, b, k: directory.save_catalog(db, a, b, k, t), True),
         'DELETE': Operation('Delete', Version, directory.remove_catalog, destructive=True)} for kind in CATALOG},
@@ -114,9 +121,11 @@ def by_id(db, org, entity, identity):
     return db.scalar(base.where(base.column_descriptions[0]['entity'].id == identity))
 
 
-def open_issues(db, org, order):
-    return db.scalars(select(Issue).where(Issue.organization_id == org, Issue.order_id == order.id, Issue.resolved.is_(False))
-        .order_by(Issue.created_at.desc())).all()
+def open_issues(db, org, order=None):
+    """Unresolved reported issues, newest first: one Order's, or the company's (at most BATCH)."""
+    query = select(Issue).where(Issue.organization_id == org, Issue.resolved.is_(False))
+    if order is not None: query = query.where(Issue.order_id == order.id)
+    return db.scalars(query.order_by(Issue.created_at.desc(), Issue.id).limit(BATCH)).all()
 
 
 def editable(db, actor, entity, row):

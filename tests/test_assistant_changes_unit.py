@@ -1,4 +1,5 @@
 """Chat record changes without a database: the allowed operations, drafting, proposals and the confirmed command."""
+import dataclasses
 import json
 import unittest
 from types import SimpleNamespace
@@ -29,6 +30,8 @@ class OperationTests(unittest.TestCase):
         self.assertEqual(records.operation('DRIVER', 'UPDATE')[0], 'DRIVER.UPDATE')
         self.assertEqual(records.operation('ORDER', 'DELETE')[0], 'ORDER.CANCEL')
         self.assertIsNone(records.operation('ISSUE', 'CREATE'))
+        self.assertEqual(records.operation('NOTIFICATION', 'READ_ALL')[0], 'NOTIFICATION.READ_ALL')
+        self.assertIsNone(records.operation('NOTIFICATION', 'DELETE'))
         self.assertIsNone(records.operation('NONE', 'NONE'))
         self.assertEqual(records.named('ORDER.DELETE'), (None, None))
         self.assertEqual(records.named('USER.UPDATE'), (None, None))
@@ -143,6 +146,33 @@ class PrepareTests(unittest.TestCase):
             result = changes.prepare(None, ACTOR, plan('VEHICLE', 'CREATE', '', 'add van'))
         self.assertIsNone(result['change'])
 
+    def test_notifications_are_marked_read_never_deleted(self):
+        with patch.object(changes, 'unread', return_value=4):
+            change = changes.prepare(None, ACTOR, plan('NOTIFICATION', 'READ_ALL'))['change']
+        self.assertEqual((change.operation, change.title, change.target_id, change.body, change.destructive),
+            ('NOTIFICATION.READ_ALL', 'Mark all notifications read', None, {}, False))
+        self.assertEqual(change.lines[0].model_dump(), {'field': 'Unread notifications', 'before': '4', 'after': '0'})
+        with patch.object(changes, 'unread', return_value=0):
+            self.assertIsNone(changes.prepare(None, ACTOR, plan('NOTIFICATION', 'READ_ALL'))['change'])
+
+    def test_all_open_issues_are_proposed_with_their_versions(self):
+        order = uuid4()
+        rows = [SimpleNamespace(id=uuid4(), order_id=order, kind='DAMAGED_GOODS', version=2 + n) for n in range(12)]
+        db = Mock(); db.execute.return_value.all.return_value = [(order, 'DTO-2559')]
+        with patch.object(records, 'open_issues', return_value=rows) as found:
+            result = changes.prepare(db, ACTOR, plan('ISSUE', 'RESOLVE_ALL'))
+        change = result['change']
+        self.assertIsNone(found.call_args.args[2], 'no order named means every open issue in the company')
+        self.assertEqual((change.operation, change.target_id, change.subject), ('ISSUE.RESOLVE_ALL', None, '12 open issues'))
+        self.assertEqual(change.body['issues'][0], {'id': str(rows[0].id), 'version': 2})
+        self.assertEqual(change.body['resolution'], 'Resolved from Dispatra chat.')
+        fields = [line.field for line in change.lines]
+        self.assertEqual(fields[0], 'DTO-2559 damaged goods')
+        self.assertEqual(fields[10:], ['More', 'Resolution', 'Note'])
+        with patch.object(records, 'open_issues', return_value=[]):
+            empty = changes.prepare(db, ACTOR, plan('ISSUE', 'RESOLVE_ALL'))
+        self.assertIsNone(empty['change']); self.assertIn('clear when the order is fixed', empty['message'])
+
     def test_chat_routes_change_requests_to_prepare(self):
         prepared = {'message': 'Which driver?', 'references': [], 'action': None, 'change': None}
         with patch.object(provider, 'generate', return_value=plan('DRIVER', 'UPDATE')), patch.object(changes, 'prepare', return_value=prepared) as prepare, \
@@ -164,7 +194,7 @@ class ConfirmTests(unittest.TestCase):
         op = records.OPERATIONS[entity][verb]
         runner = Mock(return_value=result or {'id': str(uuid4()), 'version': 1})
         with patch.object(changes, 'command', side_effect=command), patch.object(changes, 'audit') as audit, \
-             patch.dict(records.OPERATIONS[entity], {verb: records.Operation(op.verb, op.body, runner, op.drafted, op.destructive)}):
+             patch.dict(records.OPERATIONS[entity], {verb: dataclasses.replace(op, run=runner)}):
             response = changes.confirm(None, ACTOR, AssistantChangeCommand(operation=operation, target_id=target_id, body=body), 'chat-key-0123456789')
         return response, runner, stored, audit
 
@@ -182,9 +212,20 @@ class ConfirmTests(unittest.TestCase):
         self.assertEqual(response['initial_password'], 'secret-once')
         self.assertNotIn('initial_password', stored['result'])
 
+    def test_bulk_changes_have_no_target_and_report_a_count(self):
+        response, runner, _, _ = self.confirm('NOTIFICATION.READ_ALL', {}, None, {'updated': 3})
+        self.assertEqual(response['message'], 'Done. 3 notifications are marked read.')
+        self.assertEqual(runner.call_args.args[4], 'chat-key-0123456789')
+        issues = {'issues': [{'id': str(uuid4()), 'version': 1}], 'resolution': 'Customer called back'}
+        response, runner, _, _ = self.confirm('ISSUE.RESOLVE_ALL', issues, None, {'updated': 1})
+        self.assertEqual(response['message'], 'Done. 1 issue is resolved.')
+        self.assertEqual(runner.call_args.args[3].resolution, 'Customer called back')
+
     def test_unknown_mismatched_or_invalid_changes_are_refused(self):
         for operation, target, body in [('USER.UPDATE', None, {}), ('ORDER.DELETE', uuid4(), {'version': 1}),
-                ('ORDER.CANCEL', None, {'version': 1}), ('SETTINGS.UPDATE', uuid4(), {}), ('ORDER.CANCEL', uuid4(), {'version': 0})]:
+                ('ORDER.CANCEL', None, {'version': 1}), ('SETTINGS.UPDATE', uuid4(), {}), ('ORDER.CANCEL', uuid4(), {'version': 0}),
+                ('NOTIFICATION.READ_ALL', uuid4(), {}), ('NOTIFICATION.READ_ALL', None, {'all': True}),
+                ('ISSUE.RESOLVE_ALL', None, {'issues': [], 'resolution': 'done'})]:
             with self.subTest(operation=operation), self.assertRaises(HTTPException) as error:
                 changes.confirm(None, ACTOR, AssistantChangeCommand(operation=operation, target_id=target, body=body), 'chat-key-0123456789')
             self.assertEqual(error.exception.status_code, 422)

@@ -5,6 +5,7 @@ from app.models import now
 from app.services import audit
 from .models import Issue, Order, OrderStop, Route, RouteStop
 from .common import record, version, changed, command, dump
+from .schemas import IssueResolve
 
 
 def report(db, actor, identity, data, key, *, monitor_incident_id=None):
@@ -42,3 +43,9 @@ def resolve(db, actor, identity, data, key):
             changed(db, actor, order, 'order.completed')
         return jsonable_encoder(dump(row))
     return command(db, actor, key, 'issue-resolve:' + str(identity), data.model_dump(), run)
+
+
+def resolve_many(db, actor, data, key):
+    """Resolve each listed issue through `resolve`, so every one keeps its version check, events and Order completion."""
+    for item in data.issues: resolve(db, actor, item.id, IssueResolve(version=item.version, resolution=data.resolution), key)
+    return {'updated': len(data.issues)}

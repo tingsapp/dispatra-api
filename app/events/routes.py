@@ -71,12 +71,17 @@ def read_notification(slug: str, identity: UUID, data: Version, db: DB, idempote
     return mark_read(db, user, identity, data, idempotency_key, NotificationView)
 
 
-@router.post('/notifications/read-all', response_model=ReadAllView)
-def read_all(slug: str, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.company_user)):
+def mark_all_read(db, user, key):
+    """Mark every unread notification of this account read; notifications are kept as history, never deleted."""
     def run():
         count = db.execute(update(Notification).where(Notification.organization_id == user.organization_id,
             Notification.recipient_user_id == user.id, Notification.read_at.is_(None))
             .values(read_at=now(), version=Notification.version + 1, updated_at=now())).rowcount
         if count: audit(db, user, 'notification.read_all', user.id, user.organization_id)
         return {'updated': count}
-    return command(db, user, idempotency_key, 'notification-read-all', {}, run)
+    return command(db, user, key, 'notification-read-all', {}, run)
+
+
+@router.post('/notifications/read-all', response_model=ReadAllView)
+def read_all(slug: str, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.company_user)):
+    return mark_all_read(db, user, idempotency_key)

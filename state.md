@@ -1,3 +1,6 @@
+2026-11-14 chat bulk clean-up: Dispatcher chat can mark all the dispatcher's notifications read (`NOTIFICATION.READ_ALL`, shared `events.routes.mark_all_read`, never deletes) and resolve all open reported issues, company-wide or for one order (`ISSUE.RESOLVE_ALL`, `IssueBatch`, `issues.resolve_many` runs Resolve per issue); both are confirm cards with no target, replies give a count, and chat explains that order warnings clear only when the order is fixed. No migration; OpenAPI unchanged.
+Verification: app import ok; 121 database-free unit tests passed (2 skipped), including new prepare/confirm cases. PostgreSQL tests not run (no database on this machine).
+
 Published to the Google VM at 2026-11-14T06:01Z as chat_confirm_20261114 (client af21f9c only; 6 files hash-checked against live, no drift; no API change, migration or service restart; alembic stays 0069_default_package_type). Dispatra chat action cards now show one small Confirm button. Backup with database dump: /var/backups/dispatra/chat-confirm-20261114T060039Z; previous web kept at /opt/dispatra/.web-chat-confirm-old-2a4538b7-3978-4305-94e1-8c56c89ada2c.
 On the VM: client typecheck, activityFeed and buttonLoading tests and the build passed; built assets no longer contain the Cancel texts; live entry 200, availability ok, business record counts unchanged. Not checked signed in on the live site.
 

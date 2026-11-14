@@ -515,6 +515,16 @@ class IssueResolve(Version):
     resolution: Annotated[str, Field(min_length=3, max_length=2000)]
 
 
+class IssueVersion(Version):
+    id: UUID
+
+
+class IssueBatch(Input):
+    """Several open issues closed with one note; each keeps its own version check."""
+    issues: Annotated[list[IssueVersion], Field(min_length=1, max_length=200)]
+    resolution: Annotated[str, Field(min_length=3, max_length=2000)]
+
+
 class RecordView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
