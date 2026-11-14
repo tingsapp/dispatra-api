@@ -2,7 +2,7 @@
 import os
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import delete, func, select, tuple_, update
 from app import auth
 from app.models import User, now
 from app.routes import DB, OperationKey
@@ -80,6 +80,19 @@ def mark_all_read(db, user, key):
         if count: audit(db, user, 'notification.read_all', user.id, user.organization_id)
         return {'updated': count}
     return command(db, user, key, 'notification-read-all', {}, run)
+
+
+def delete_all(db, user, key):
+    """Delete every notification of this account; ones already e-mailed stay, since their delivery record refers to them."""
+    from app.operations.models import EmailDelivery
+    def run():
+        mailed = select(EmailDelivery.notification_id).where(EmailDelivery.organization_id == user.organization_id,
+            EmailDelivery.notification_id.is_not(None))
+        count = db.execute(delete(Notification).where(Notification.organization_id == user.organization_id,
+            Notification.recipient_user_id == user.id, Notification.id.not_in(mailed))).rowcount
+        if count: audit(db, user, 'notification.deleted_all', user.id, user.organization_id)
+        return {'updated': count}
+    return command(db, user, key, 'notification-delete-all', {}, run)
 
 
 @router.post('/notifications/read-all', response_model=ReadAllView)

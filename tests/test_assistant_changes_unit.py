@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import uuid4
 from fastapi import HTTPException
-from app.assistant import changes, drafting, provider, records, service
+from app.assistant import changes, cleanup, drafting, provider, records, service, workspace
 from app.assistant.schemas import SearchPlan, DraftedRecord, AssistantChangeCommand, AssistantReply
 
 ORG = uuid4()
@@ -39,7 +39,7 @@ class OperationTests(unittest.TestCase):
     def test_unsupported_request_proposes_nothing(self):
         result = changes.prepare(None, ACTOR, plan('ISSUE', 'CREATE'))
         self.assertIsNone(result['change'])
-        self.assertIn('Logins, passwords', result['message'])
+        self.assertIn('Dispatcher accounts and billing', result['message'])
 
 
 class DraftingTests(unittest.TestCase):
@@ -147,12 +147,12 @@ class PrepareTests(unittest.TestCase):
         self.assertIsNone(result['change'])
 
     def test_notifications_are_marked_read_never_deleted(self):
-        with patch.object(changes, 'unread', return_value=4):
+        with patch.object(cleanup, 'unread', return_value=4):
             change = changes.prepare(None, ACTOR, plan('NOTIFICATION', 'READ_ALL'))['change']
         self.assertEqual((change.operation, change.title, change.target_id, change.body, change.destructive),
             ('NOTIFICATION.READ_ALL', 'Mark all notifications read', None, {}, False))
         self.assertEqual(change.lines[0].model_dump(), {'field': 'Unread notifications', 'before': '4', 'after': '0'})
-        with patch.object(changes, 'unread', return_value=0):
+        with patch.object(cleanup, 'unread', return_value=0):
             self.assertIsNone(changes.prepare(None, ACTOR, plan('NOTIFICATION', 'READ_ALL'))['change'])
 
     def test_all_open_issues_are_proposed_with_their_versions(self):
@@ -168,10 +168,87 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(change.body['resolution'], 'Resolved from Dispatra chat.')
         fields = [line.field for line in change.lines]
         self.assertEqual(fields[0], 'DTO-2559 damaged goods')
-        self.assertEqual(fields[10:], ['More', 'Resolution', 'Note'])
+        self.assertEqual(fields[10:], ['More', 'Resolution'])
         with patch.object(records, 'open_issues', return_value=[]):
             empty = changes.prepare(db, ACTOR, plan('ISSUE', 'RESOLVE_ALL'))
-        self.assertIsNone(empty['change']); self.assertIn('clear when the order is fixed', empty['message'])
+        self.assertIsNone(empty['change']); self.assertIn('no open reported issues', empty['message'])
+
+    def test_notifications_can_be_deleted_behind_a_red_card(self):
+        db = Mock(); db.scalar.return_value = 7
+        change = changes.prepare(db, ACTOR, plan('NOTIFICATION', 'DELETE_ALL'))['change']
+        self.assertEqual((change.operation, change.destructive, change.target_id), ('NOTIFICATION.DELETE_ALL', True, None))
+        self.assertIn('can’t be undone', change.lines[1].after)
+
+    def test_clearing_alerts_resolves_issues_hides_warnings_and_leaves_requests(self):
+        order = SimpleNamespace(id=uuid4(), number='DTO-2559', version=5)
+        warning = {'key': 'OPERATIONAL:LATE_PICKUP', 'flag': 'OPERATIONAL', 'description': 'Late', 'at': None, 'severity': 'WARNING', 'hidden': False}
+        hidden = {**warning, 'key': 'PRICING', 'severity': None, 'hidden': True}
+        issue = SimpleNamespace(id=uuid4(), order_id=order.id, kind='DAMAGED_GOODS', version=2)
+        db = Mock(); db.execute.return_value.all.return_value = [(order.id, 'DTO-2559')]
+        with patch.object(cleanup, 'open_attention', return_value=({order.id: order}, {order.id: [warning, hidden]})), \
+             patch.object(records, 'open_issues', return_value=[issue]), patch.object(records, 'waiting_requests', return_value=2):
+            change = changes.prepare(db, ACTOR, plan('ALERT', 'CLEAR_ALL'))['change']
+        self.assertEqual((change.operation, change.subject, change.target_id), ('ALERT.CLEAR_ALL', '2 alerts', None))
+        self.assertEqual(change.body['hide'], [{'order_id': str(order.id), 'key': 'OPERATIONAL:LATE_PICKUP', 'order_version': 5, 'severity': 'WARNING'}])
+        self.assertEqual(change.body['issues'], [{'id': str(issue.id), 'version': 2}])
+        fields = [line.field for line in change.lines]
+        self.assertEqual(fields, ['DTO-2559 damaged goods', 'DTO-2559 late pickup', 'Resolution', 'Not included'])
+        self.assertIn('2 incoming requests', change.lines[-1].after)
+
+    def test_confirmed_clear_hides_then_resolves(self):
+        from app.assistant.schemas import AlertClear
+        body = AlertClear(issues=[{'id': uuid4(), 'version': 2}], resolution='Checked with driver',
+            hide=[{'order_id': uuid4(), 'key': 'PRICING', 'order_version': 3}])
+        with patch('app.operations.alerts.hide', return_value={'updated': 1}) as hide, patch('app.operations.issues.resolve_many') as resolve:
+            self.assertEqual(cleanup.run_clear(None, ACTOR, body, 'chat-key-0123456789'), {'updated': 2})
+        self.assertEqual(hide.call_args.args[2], body.hide)
+        self.assertEqual(resolve.call_args.args[2].resolution, 'Checked with driver')
+
+    def test_one_email_request_is_found_and_discarded_by_its_version(self):
+        row = SimpleNamespace(id=uuid4(), version=3, status='NEEDS_REVIEW', from_name='Pacific Office Supply', from_address='po@example.com',
+            subject='Pickup tomorrow', draft=None, missing=[])
+        with patch.object(records, 'find_requests', return_value=[('EMAIL', row)]):
+            change = changes.prepare(None, ACTOR, plan('REQUEST', 'DISCARD', 'Pacific'))['change']
+            draftless = changes.prepare(None, ACTOR, plan('REQUEST', 'CREATE_ORDER', 'Pacific'))
+        self.assertEqual((change.operation, change.target_id, change.body, change.destructive), ('EMAIL_REQUEST.DISCARD', row.id, {'version': 3}, True))
+        self.assertIsNone(draftless['change']); self.assertIn('no order draft', draftless['message'])
+        tms = SimpleNamespace(id=uuid4(), external_id='TMS-88', status='FAILED')
+        with patch.object(records, 'find_requests', return_value=[('TMS', tms)]):
+            self.assertEqual(changes.prepare(None, ACTOR, plan('REQUEST', 'RETRY', 'TMS-88'))['change'].operation, 'TMS_REQUEST.RETRY')
+            self.assertIsNone(changes.prepare(None, ACTOR, plan('REQUEST', 'LINK_SHIPPER', 'TMS-88'))['change'])
+
+    def test_discarding_all_requests_gives_every_email_its_own_key(self):
+        from app.assistant.schemas import RequestBatch
+        first, second = uuid4(), uuid4()
+        body = RequestBatch(emails=[{'id': first, 'version': 1}, {'id': second, 'version': 4}], tms=[uuid4()])
+        with patch('app.intake.routes.discard') as discard, patch('app.integrations.routes.dismiss_inbox') as dismiss:
+            self.assertEqual(workspace.run_discard_all(None, ACTOR, body, 'chat-key-0123456789'), {'updated': 3})
+        self.assertEqual([call.args[4] for call in discard.call_args_list], [f'chat-key-0123456789:{first}', f'chat-key-0123456789:{second}'])
+        dismiss.assert_called_once()
+
+    def test_quote_is_sent_to_the_address_given(self):
+        from datetime import datetime, timezone
+        quote = SimpleNamespace(id=uuid4(), version=1, pricing={'total': '42.00', 'currency': 'CAD'}, created_at=datetime(2026, 11, 14, tzinfo=timezone.utc))
+        db = Mock(); db.scalar.return_value = quote
+        change = changes.prepare(db, ACTOR, plan('QUOTE', 'SEND', '', 'send it to buyer@example.com'))['change']
+        self.assertEqual((change.target_id, change.body), (quote.id, {'version': 1, 'recipient': 'buyer@example.com'}))
+        self.assertIsNone(changes.prepare(db, ACTOR, plan('QUOTE', 'SEND', '', 'send it'))['change'])
+
+    def test_password_reset_card_never_carries_a_password(self):
+        row = driver_row(); row.archived_at = None
+        with patch.object(records, 'find', return_value=[row]):
+            change = changes.prepare(None, ACTOR, plan('DRIVER', 'RESET_PASSWORD', 'Driver'))['change']
+        self.assertEqual((change.operation, change.target_id, change.body), ('DRIVER.RESET_PASSWORD', row.id, {'version': 4}))
+
+    def test_integration_drafts_drop_secrets_and_unset_integrations_are_refused(self):
+        tms = changes.schema(records.OPERATIONS['TMS']['UPDATE'])
+        self.assertNotIn('credential', tms['properties']); self.assertNotIn('webhook_secret', tms['properties'])
+        self.assertNotIn('password', changes.schema(records.OPERATIONS['MAILBOX']['UPDATE'])['properties'])
+        with patch.object(records, 'company_record', return_value=None):
+            result = changes.prepare(None, ACTOR, plan('MAILBOX', 'UPDATE', '', 'use port 995'))
+        self.assertIsNone(result['change']); self.assertIn('Integrations', result['message'])
+        with patch.object(workspace.connectors, 'get', return_value=None):
+            self.assertIn('isn’t connected', changes.prepare(None, ACTOR, plan('CONNECTOR', 'DISCONNECT', 'samsara'))['message'])
 
     def test_chat_routes_change_requests_to_prepare(self):
         prepared = {'message': 'Which driver?', 'references': [], 'action': None, 'change': None}
@@ -221,11 +298,23 @@ class ConfirmTests(unittest.TestCase):
         self.assertEqual(response['message'], 'Done. 1 issue is resolved.')
         self.assertEqual(runner.call_args.args[3].resolution, 'Customer called back')
 
+    def test_shipper_password_reset_returns_the_new_password_once(self):
+        target = uuid4()
+        with patch('app.operations.directory.change_directory_password', return_value={'id': str(target), 'version': 5}) as change:
+            response, _, stored, _ = self.confirm('SHIPPER.RESET_PASSWORD', {'version': 4}, target, {'id': str(target), 'version': 5, 'initial_password': 'once'})
+            result = workspace.reset_shipper(None, ACTOR, target, SimpleNamespace(version=4), 'chat-key-0123456789')
+        self.assertEqual(response['initial_password'], 'once')
+        self.assertNotIn('initial_password', stored['result'])
+        self.assertGreaterEqual(len(result['initial_password']), 12)
+        self.assertEqual(change.call_args.args[3].new_password, result['initial_password'])
+
     def test_unknown_mismatched_or_invalid_changes_are_refused(self):
         for operation, target, body in [('USER.UPDATE', None, {}), ('ORDER.DELETE', uuid4(), {'version': 1}),
                 ('ORDER.CANCEL', None, {'version': 1}), ('SETTINGS.UPDATE', uuid4(), {}), ('ORDER.CANCEL', uuid4(), {'version': 0}),
                 ('NOTIFICATION.READ_ALL', uuid4(), {}), ('NOTIFICATION.READ_ALL', None, {'all': True}),
-                ('ISSUE.RESOLVE_ALL', None, {'issues': [], 'resolution': 'done'})]:
+                ('ISSUE.RESOLVE_ALL', None, {'issues': [], 'resolution': 'done'}), ('ALERT.CLEAR_ALL', uuid4(), {'resolution': 'done'}),
+                ('ALERT.CLEAR_ALL', None, {'resolution': 'done'}), ('DRIVER.RESET_PASSWORD', None, {'version': 1}),
+                ('TMS.UPDATE', None, {'base_url': 'https://tms.example.com', 'credential': 'new-secret-123'})]:
             with self.subTest(operation=operation), self.assertRaises(HTTPException) as error:
                 changes.confirm(None, ACTOR, AssistantChangeCommand(operation=operation, target_id=target, body=body), 'chat-key-0123456789')
             self.assertEqual(error.exception.status_code, 422)

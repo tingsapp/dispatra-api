@@ -7,7 +7,7 @@ from app import auth
 from app.models import User, now
 from app.routes import DB
 from app.dispatch.service import no_driver
-from .models import Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence
+from .models import Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence, AttentionDismissal
 from .schemas import AnalyticsView, DriverActivityView, MonitorView
 from .common import record
 from .attention import flags as attention_flags
@@ -22,6 +22,48 @@ def add_no_driver_attention(attention, candidates, explained=frozenset()):
         # a separate NO_DRIVER row would repeat the same issue in the Monitor.
         if order_id in explained: continue
         attention[order_id].append(('NO_DRIVER', description, at))
+
+
+SEVERITY = {None: 0, 'WARNING': 1, 'CRITICAL': 2}
+
+
+def order_attention(db, org, orders, visits_by_stop, observed_at):
+    """Computed Needs Attention rows of open Orders: {order_id: [{key, flag, description, at, severity, hidden}]}.
+
+    `key` names a row the dispatcher can hide: the warning kind, or `OPERATIONAL:<incident kind>`. A hidden row stays
+    hidden while its Order keeps the version it had when hidden and an incident does not become more severe."""
+    from app.order_watch.models import Incident as OperationalIncident
+    attention = {order.id: [(flag, text, order.created_at) for flag, text in attention_flags(order, visits_by_stop, observed_at)] for order in orders}
+    watched = db.scalars(select(OperationalIncident).where(OperationalIncident.organization_id == org,
+        OperationalIncident.status.in_(('OPEN','ACKNOWLEDGED')), OperationalIncident.source_issue_id.is_(None))).all()
+    explained, incidents = set(), {}
+    for incident in watched:
+        if incident.order_id not in attention: continue
+        text = incident.title + ': ' + incident.description
+        attention[incident.order_id].append(('OPERATIONAL', text, incident.created_at))
+        incidents[(incident.order_id, text)] = ('OPERATIONAL:' + incident.kind, incident.severity)
+        if incident.kind == 'UNASSIGNED': explained.add(incident.order_id)
+    add_no_driver_attention(attention, no_driver(db, org, orders), explained)
+    versions = {order.id: order.version for order in orders}
+    hidden = {(row.order_id, row.key): row for row in db.scalars(select(AttentionDismissal).where(
+        AttentionDismissal.organization_id == org, AttentionDismissal.order_id.in_(list(versions))))} if versions else {}
+    result = {}
+    for order_id, rows in attention.items():
+        result[order_id] = []
+        for flag, text, at in rows:
+            key, severity = incidents.get((order_id, text), (flag, None))
+            dismissal = hidden.get((order_id, key))
+            result[order_id].append({'key': key, 'flag': flag, 'description': text, 'at': at, 'severity': severity,
+                'hidden': bool(dismissal and dismissal.order_version == versions[order_id] and SEVERITY[severity] <= SEVERITY[dismissal.severity])})
+    return result
+
+
+def open_attention(db, org, observed_at):
+    """Open Orders by id and their computed Needs Attention rows, with stop visits from active routes."""
+    orders = list(db.scalars(select(Order).where(Order.organization_id == org, Order.status.in_(['NEW','ASSIGNED','IN_PROGRESS']))))
+    visits = db.scalars(select(RouteStop).join(Route, Route.id == RouteStop.route_id).where(RouteStop.organization_id == org,
+        Route.organization_id == org, Route.status.in_(['PLANNED','IN_PROGRESS']))).all()
+    return {order.id: order for order in orders}, order_attention(db, org, orders, {str(visit.stop_id): visit for visit in visits}, observed_at)
 
 
 def dated_orders(db, user, date_from, date_to):
@@ -148,20 +190,11 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     observed_at = now()
     from app.order_watch.estimates import collect as collect_estimates
     estimates = collect_estimates(db, user.organization_id, routes, observed_at)
-    attention = {order.id: [(flag, text, order.created_at) for flag, text in attention_flags(order, visits_by_stop, observed_at)] for order in orders}
-    from app.order_watch.models import Incident as OperationalIncident
-    watched = db.scalars(select(OperationalIncident).where(OperationalIncident.organization_id == user.organization_id,
-        OperationalIncident.status.in_(('OPEN','ACKNOWLEDGED')), OperationalIncident.source_issue_id.is_(None))).all()
-    explained = set()
-    for incident in watched:
-        if incident.order_id not in attention: continue
-        attention[incident.order_id].append(('OPERATIONAL', incident.title + ': ' + incident.description, incident.created_at))
-        if incident.kind == 'UNASSIGNED': explained.add(incident.order_id)
-    add_no_driver_attention(attention, no_driver(db, user.organization_id, orders), explained)
-    # Newest first, matching every other Monitor list.
+    attention = order_attention(db, user.organization_id, orders, visits_by_stop, observed_at)
+    # Newest first, matching every other Monitor list; hidden warnings leave the list but keep the Order's flags.
     needs_attention = sorted([{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues] +
-        [{'id':None,'order_id':str(o.id),'kind':flag,'description':description,'at':at}
-            for o in orders for flag,description,at in attention[o.id]], key=lambda item: item['at'], reverse=True)
+        [{'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':row['at']}
+            for o in orders for row in attention[o.id] if not row['hidden']], key=lambda item: item['at'], reverse=True)
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,
         'location':points[d.id].data if d.id in points else None,
@@ -171,7 +204,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
                    'estimate':estimates.get(r.id)} for r in routes],
         'orders':[{'id':str(o.id),'number':o.number,'status':o.status,'route_id':str(o.route_id) if o.route_id else None,
                    'pricing_status':o.pricing.get('status'),'review_reason':o.pricing.get('review_reason'),
-                   'attention_flags':[flag for flag,_,_ in attention[o.id]]} for o in orders],
+                   'attention_flags':[row['flag'] for row in attention[o.id]]} for o in orders],
         'needs_attention':needs_attention}
 
 

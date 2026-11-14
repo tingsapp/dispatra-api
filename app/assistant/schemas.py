@@ -1,19 +1,68 @@
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Kind = Literal['ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER']
 Status = Literal['NEW', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
 # Company records chat may change; `records.OPERATIONS` lists the allowed entity/operation pairs.
 Entity = Literal['NONE', 'ORDER', 'SHIPPER', 'DRIVER', 'VEHICLE', 'ISSUE', 'SERVICE', 'ACCESSORIAL', 'VEHICLE_TYPE', 'PACKAGE_TYPE',
-    'RATE_CARD', 'SETTINGS', 'NOTIFICATION']
-Operation = Literal['NONE', 'CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'COMPLETE', 'UNASSIGN', 'RESOLVE', 'RESOLVE_ALL', 'READ_ALL']
+    'RATE_CARD', 'SETTINGS', 'NOTIFICATION', 'ALERT', 'REQUEST', 'QUOTE', 'TMS', 'MAILBOX', 'CONNECTOR']
+Operation = Literal['NONE', 'CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'COMPLETE', 'UNASSIGN', 'RESOLVE', 'RESOLVE_ALL', 'READ_ALL',
+    'DELETE_ALL', 'CLEAR_ALL', 'DISCARD', 'DISCARD_ALL', 'RETRY', 'LINK_SHIPPER', 'CREATE_ORDER', 'SEND', 'RESET_PASSWORD', 'SYNC',
+    'DISCONNECT']
 
 
 class NoFields(BaseModel):
     """Request body of a chat change that needs no values, such as marking every notification read."""
     model_config = ConfigDict(extra='forbid')
+
+
+class HiddenWarning(BaseModel):
+    """One computed Needs Attention row to hide while its Order stays at `order_version`."""
+    model_config = ConfigDict(extra='forbid')
+    order_id: UUID
+    key: str = Field(min_length=1, max_length=80)
+    order_version: int = Field(ge=1)
+    severity: Literal['WARNING', 'CRITICAL'] | None = None
+
+
+class IssueRef(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    id: UUID
+    version: int = Field(ge=1)
+
+
+class AlertClear(BaseModel):
+    """Clear Needs Attention: resolve reported issues and hide computed warnings, each re-checked on confirmation."""
+    model_config = ConfigDict(extra='forbid')
+    issues: list[IssueRef] = Field(default_factory=list, max_length=200)
+    resolution: str = Field(min_length=3, max_length=2000)
+    hide: list[HiddenWarning] = Field(default_factory=list, max_length=500)
+
+    @model_validator(mode='after')
+    def not_empty(self):
+        if not self.hide and not self.issues: raise ValueError('Nothing to clear.')
+        return self
+
+
+class RequestBatch(BaseModel):
+    """Incoming requests to discard: e-mails with their versions and TMS orders waiting for review."""
+    model_config = ConfigDict(extra='forbid')
+    emails: list[IssueRef] = Field(default_factory=list, max_length=200)
+    tms: list[UUID] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode='after')
+    def not_empty(self):
+        if not self.tms and not self.emails: raise ValueError('Nothing to discard.')
+        return self
+
+
+class ConnectorChange(BaseModel):
+    """A connector sync or disconnect; the connector is named by its provider."""
+    model_config = ConfigDict(extra='forbid')
+    provider: str = Field(min_length=2, max_length=40)
+    version: int = Field(ge=1)
 
 
 class AssistantTurn(BaseModel):
@@ -50,7 +99,7 @@ class SearchPlan(BaseModel):
     kinds: list[Kind] = Field(max_length=4)
     order_statuses: list[Status] = Field(max_length=5)
     # ASSIGN only when the dispatcher's latest message asks to give an Order to a driver; the server resolves and checks both.
-    # CHANGE asks to create, edit, delete, cancel, complete, unassign or resolve a company record; the server drafts and checks it.
+    # CHANGE asks for a workspace change listed in `records.OPERATIONS` (or REQUEST); the server drafts and checks it.
     # No defaults: provider structured outputs require every field.
     action: Literal['NONE', 'ASSIGN', 'CHANGE']
     order_number: str = Field(max_length=60)

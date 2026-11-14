@@ -269,3 +269,15 @@ class EmailDelivery(TenantRecord, Base):
     message_id: Mapped[str] = mapped_column(String(200), unique=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(80))
+
+
+class AttentionDismissal(TenantRecord, Base):
+    """A Needs Attention warning the dispatcher hid; it shows again once the Order changes or the incident gets worse."""
+    __tablename__ = 'attention_dismissals'
+    __table_args__ = (UniqueConstraint('organization_id', 'id'), UniqueConstraint('organization_id', 'order_id', 'key', name='attention_dismissal_once'),
+        ForeignKeyConstraint(['organization_id', 'order_id'], ['orders.organization_id', 'orders.id']))
+    order_id: Mapped[UUID]
+    key: Mapped[str] = mapped_column(String(80))
+    order_version: Mapped[int]
+    severity: Mapped[str | None] = mapped_column(String(12))
+    dismissed_by: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
