@@ -350,8 +350,6 @@ def reset_driver_password(db, actor, identity, key):
         password = secrets.token_urlsafe(18)
         account.password_hash = hash_password(password)
         db.execute(delete(LoginSession).where(LoginSession.user_id == account.id))
-        from .execution import close_duty_on_logout
-        close_duty_on_logout(db,account,actor)
         audit(db, actor, 'driver.password_reset', driver.id, actor.organization_id)
         return {'driver_id':str(driver.id),'login_id':account.login_id}
     result = command(db,actor,key,'driver-reset:' + str(identity),{},run)
@@ -374,10 +372,8 @@ def change_directory_password(db, actor, identity, data, key, kind):
         account.password_hash = hash_password(data.new_password)
         account.version += 1
         account.updated_at = now()
+        # Sessions are revoked; driver duty is availability and stays as the dispatcher left it.
         db.execute(delete(LoginSession).where(LoginSession.user_id == account.id))
-        if kind == 'driver':
-            from .execution import close_duty_on_logout
-            close_duty_on_logout(db, account, actor)
         changed(db, actor, row, f'{kind}.password_reset')
         return {'id': str(row.id), 'version': row.version}
     return command(db, actor, key, f'{kind}-password:{identity}', data.model_dump(mode='json'), run)

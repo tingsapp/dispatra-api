@@ -32,7 +32,7 @@ def test_dispatcher_supplied_password_revokes_target_sessions_and_replays_safely
         if kind == 'driver':
             assert w['mobile'].get('/api/v1/auth/me').status_code == 401
             with Session(owner_engine) as db:
-                assert db.get(DutySession, UUID(w['duty']['id'])).ended_at is not None
+                assert db.get(DutySession, UUID(w['duty']['id'])).ended_at is None
         # A replay must not reset a later self-service password or revoke its new session.
         later = 'Self-service-password-after-reset!'
         assert target.post('/api/v1/auth/password', json={'current_password': password, 'new_password': later}).status_code == 204
