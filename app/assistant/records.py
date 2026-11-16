@@ -1,7 +1,7 @@
 """What dispatcher chat may change. Each entry is an existing workspace command with its request schema, so a confirmed
 chat change runs the same authorization, validation, idempotency, audit and events as the workspace form. Records outside
-this table (dispatcher accounts, company billing, permanent deletion of orders, shippers, drivers or vehicles) cannot be
-reached from chat. New passwords are generated on confirmation; integration secrets never pass through chat."""
+this table (dispatcher accounts, company billing) cannot be reached from chat. Deleting an order, shipper, driver or vehicle,
+even "permanently", archives it so its history stays. New passwords are generated on confirmation; integration secrets never pass through chat."""
 import importlib
 from dataclasses import dataclass
 from typing import Callable
@@ -63,6 +63,8 @@ OPERATIONS = {
     'ORDER': {'CREATE': Operation('Create', Booking, lambda db, a, t, b, k: orders.create_order(db, a, b, k), True),
         'UPDATE': Operation('Edit', OrderUpdate, orders.update_order, True),
         'CANCEL': Operation('Cancel', Version, orders.cancel_order, destructive=True),
+        'ARCHIVE': Operation('Archive', Version, orders.archive_order, destructive=True),
+        'RESTORE': Operation('Restore', Version, orders.restore_order),
         'COMPLETE': Operation('Complete', Version, orders.complete_order, destructive=True),
         'UNASSIGN': Operation('Unassign', RouteCommand, dispatch.release)},
     'SHIPPER': {**_directory(directory.save_shipper, archive.archive_shipper, ShipperData, ShipperUpdate),
@@ -109,8 +111,8 @@ OPERATIONS = {
         'DELETE': Operation('Archive', Version, archive.archive_rate, destructive=True)},
     'SETTINGS': {'UPDATE': Operation('Edit', SettingsUpdate, lambda db, a, t, b, k: directory.save_settings(db, a, b, k), True, whole=True)},
 }
-# Orders are cancelled, never deleted.
-ALIASES = {('ORDER', 'DELETE'): 'CANCEL'}
+# Orders are archived, never erased: an unassigned one is cancelled first.
+ALIASES = {('ORDER', 'DELETE'): 'ARCHIVE'}
 
 
 def operation(entity, verb):
@@ -138,9 +140,10 @@ def label(entity, row):
     return str(row.id)
 
 
-def query(entity, org):
-    """Tenant-filtered live records of one entity and the fields a dispatcher may name them by."""
-    if entity == 'ORDER': return select(Order).where(Order.organization_id == org), [Order.number]
+def query(entity, org, archived=False):
+    """Tenant-filtered live records of one entity (archived Orders on request) and the fields a dispatcher may name them by."""
+    if entity == 'ORDER':
+        return select(Order).where(Order.organization_id == org, Order.archived_at.is_not(None) if archived else Order.archived_at.is_(None)), [Order.number]
     if entity == 'SHIPPER':
         return (select(Shipper).where(Shipper.organization_id == org, Shipper.archived_at.is_(None), Shipper.warehouse.is_not(None)),
             [Shipper.name, Shipper.company_name, Shipper.number, Shipper.email])
@@ -157,9 +160,9 @@ def query(entity, org):
     raise ValueError(entity)
 
 
-def find(db, org, entity, term):
+def find(db, org, entity, term, archived=False):
     """Exact (case-insensitive) matches first; otherwise up to CHOICES partial matches, all inside the company."""
-    base, fields = query(entity, org)
+    base, fields = query(entity, org, archived)
     model = base.column_descriptions[0]['entity']
     exact = db.scalars(base.where(or_(*[func.lower(f) == term.lower() for f in fields])).limit(CHOICES)).all()
     if exact: return exact

@@ -49,8 +49,8 @@ def prepare(db, actor, plan):
         if entity == 'ISSUE': return resolve_issue(db, actor, name, op, plan)
         term = plan.target.strip()
         if not term: return reply(f'Which {noun}? Tell me its {"number" if entity == "ORDER" else "name"}.')
-        rows = records.find(db, actor.organization_id, entity, term)
-        if not rows: return reply(f'I couldn’t find a {noun} matching “{term}”.')
+        rows = records.find(db, actor.organization_id, entity, term, archived=verb == 'RESTORE')
+        if not rows: return reply(f'I couldn’t find {"an archived" if verb == "RESTORE" else "a"} {noun} matching “{term}”.')
         if len(rows) > 1:
             names = ', '.join(records.label(entity, row) for row in rows)
             return reply(f'More than one {noun} matches “{term}”: {names}. Which one do you mean?',
@@ -173,10 +173,21 @@ def close(db, actor, entity, name, op, row):
     verb = name.split('.')[1]
     if entity == 'ORDER':
         refs = reference(entity, row)
+        if verb == 'CANCEL' and row.status in {'CANCELLED', 'COMPLETED'}:
+            return reply(f'Order {row.number} is already {STATUS[row.status].lower()}, so there is nothing to cancel.', refs)
         if verb == 'CANCEL' and row.status != 'NEW':
             return reply(f'Order {row.number} is {STATUS[row.status].lower()}. Only unassigned orders can be cancelled; unassign it first.', refs)
         if verb == 'COMPLETE' and row.status not in {'ASSIGNED', 'IN_PROGRESS'}:
             return reply(f'Order {row.number} is {STATUS[row.status].lower()}. Only assigned or on-the-road orders can be completed.', refs)
+        if verb == 'RESTORE':
+            return proposal(name, op, f'order {row.number}', {'version': row.version},
+                [{'field': 'Orders list', 'before': 'Archived', 'after': f'Shown ({STATUS[row.status]})'}], row.id, refs)
+        if verb == 'ARCHIVE':
+            if row.status in {'ASSIGNED', 'IN_PROGRESS'}:
+                return reply(f'Order {row.number} is {STATUS[row.status].lower()}. Unassign or complete it first, then I can archive it.', refs)
+            lines = [{'field': 'Status', 'before': STATUS[row.status], 'after': 'Cancelled'}] if row.status == 'NEW' else []
+            lines.append({'field': 'Orders list', 'before': 'Shown', 'after': 'Archived (history kept)'})
+            return proposal(name, op, f'order {row.number}', {'version': row.version}, lines, row.id, refs)
         after = 'Cancelled' if verb == 'CANCEL' else 'Completed (remaining stops closed without proof of delivery)'
         return proposal(name, op, f'order {row.number}', {'version': row.version}, [{'field': 'Status', 'before': STATUS[row.status], 'after': after}],
             row.id, refs)
@@ -261,7 +272,7 @@ def done(entity, verb, op, label):
 
 def past(op):
     return op.past or {'Create': 'created', 'Add': 'added', 'Edit': 'updated', 'Cancel': 'cancelled', 'Complete': 'completed',
-        'Unassign': 'unassigned', 'Resolve': 'resolved', 'Archive': 'archived', 'Delete': 'deleted', 'Mark read': 'marked read',
+        'Unassign': 'unassigned', 'Resolve': 'resolved', 'Archive': 'archived', 'Restore': 'restored', 'Delete': 'deleted', 'Mark read': 'marked read',
         'Discard': 'discarded', 'Send': 'sent', 'Sync': 'synced', 'Disconnect': 'disconnected', 'Clear': 'cleared'}[op.verb]
 
 

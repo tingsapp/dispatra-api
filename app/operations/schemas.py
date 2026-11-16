@@ -586,6 +586,7 @@ class OrderView(RecordView):
     status: str
     scheduled_at: datetime
     completed_at: datetime | None
+    archived_at: datetime | None = None
     facts: Booking
     booking: dict
     pricing: PriceView

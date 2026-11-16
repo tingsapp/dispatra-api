@@ -74,3 +74,36 @@ def test_unlocked_planned_route_release_still_unassigns_order(setup):
     assert released['status'] == 'CANCELLED'
     current = check(w['client'].get(BASE + f'/orders/{order["id"]}'))
     assert current['status'] == 'NEW' and current['route_id'] is None
+
+
+def test_archived_order_leaves_the_list_and_keeps_its_history(setup):
+    w = setup
+    cancelled, unassigned, assigned = new_order(w), new_order(w), new_order(w)
+    cancelled = check(post(w['client'], BASE + f'/orders/{cancelled["id"]}/cancel', {'version': cancelled['version']}))
+    archived = check(post(w['client'], BASE + f'/orders/{cancelled["id"]}/archive', {'version': cancelled['version']}))
+    assert archived['status'] == 'CANCELLED' and archived['archived_at']
+    # An unassigned order is cancelled and archived in one step.
+    removed = check(post(w['client'], BASE + f'/orders/{unassigned["id"]}/archive', {'version': unassigned['version']}))
+    assert removed['status'] == 'CANCELLED' and removed['archived_at']
+    assign(w, assigned)
+    current = check(w['client'].get(BASE + f'/orders/{assigned["id"]}'))
+    refused = post(w['client'], BASE + f'/orders/{assigned["id"]}/archive', {'version': current['version']})
+    assert refused.status_code == 409, refused.text
+    again = post(w['client'], BASE + f'/orders/{cancelled["id"]}/archive', {'version': archived['version']})
+    assert again.status_code == 409, again.text
+    listed = {row['id'] for row in check(w['client'].get(BASE + '/orders'))}
+    assert listed == {assigned['id']}
+    assert check(w['client'].get(BASE + f'/orders/{cancelled["id"]}'))['archived_at']
+
+
+def test_archived_order_can_be_listed_and_restored(setup):
+    w = setup
+    order = new_order(w)
+    archived = check(post(w['client'], BASE + f'/orders/{order["id"]}/archive', {'version': order['version']}))
+    assert [row['id'] for row in check(w['client'].get(BASE + '/orders?archived=true'))] == [order['id']]
+    restored = check(post(w['client'], BASE + f'/orders/{order["id"]}/restore', {'version': archived['version']}))
+    assert restored['status'] == 'CANCELLED' and restored['archived_at'] is None
+    assert [row['id'] for row in check(w['client'].get(BASE + '/orders'))] == [order['id']]
+    assert check(w['client'].get(BASE + '/orders?archived=true')) == []
+    again = post(w['client'], BASE + f'/orders/{order["id"]}/restore', {'version': restored['version']})
+    assert again.status_code == 409, again.text

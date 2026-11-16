@@ -28,7 +28,8 @@ def driver_row():
 class OperationTests(unittest.TestCase):
     def test_only_listed_company_records_are_reachable(self):
         self.assertEqual(records.operation('DRIVER', 'UPDATE')[0], 'DRIVER.UPDATE')
-        self.assertEqual(records.operation('ORDER', 'DELETE')[0], 'ORDER.CANCEL')
+        self.assertEqual(records.operation('ORDER', 'DELETE')[0], 'ORDER.ARCHIVE')
+        self.assertEqual(records.named('ORDER.ARCHIVE')[0], 'ORDER')
         self.assertIsNone(records.operation('ISSUE', 'CREATE'))
         self.assertEqual(records.operation('NOTIFICATION', 'READ_ALL')[0], 'NOTIFICATION.READ_ALL')
         self.assertIsNone(records.operation('NOTIFICATION', 'DELETE'))
@@ -130,10 +131,40 @@ class PrepareTests(unittest.TestCase):
     def test_assigned_orders_are_not_cancelled_or_edited(self):
         order = SimpleNamespace(id=uuid4(), number='DDO-8711', status='ASSIGNED', version=2, route_id=uuid4(), booking={'shipper': {'name': 'Shipper'}})
         with patch.object(records, 'find', return_value=[order]):
-            cancel = changes.prepare(None, ACTOR, plan('ORDER', 'DELETE', 'DDO-8711'))
+            cancel = changes.prepare(None, ACTOR, plan('ORDER', 'CANCEL', 'DDO-8711'))
+            delete = changes.prepare(None, ACTOR, plan('ORDER', 'DELETE', 'DDO-8711'))
             edit = changes.prepare(None, ACTOR, plan('ORDER', 'UPDATE', 'DDO-8711', 'pickup at 3pm'))
         self.assertIsNone(cancel['change']); self.assertIn('unassign it first', cancel['message'])
+        self.assertIsNone(delete['change']); self.assertIn('Unassign or complete it first, then I can archive it', delete['message'])
         self.assertIsNone(edit['change']); self.assertIn('Only unassigned orders can be edited', edit['message'])
+
+    def test_cancelling_a_closed_order_says_it_is_already_closed(self):
+        order = SimpleNamespace(id=uuid4(), number='DTO-2559', status='CANCELLED', version=5, route_id=None, booking={'shipper': {'name': 'Shipper'}})
+        with patch.object(records, 'find', return_value=[order]):
+            cancel = changes.prepare(None, ACTOR, plan('ORDER', 'CANCEL', 'DTO-2559'))
+        self.assertIsNone(cancel['change'])
+        self.assertEqual(cancel['message'], 'Order DTO-2559 is already cancelled, so there is nothing to cancel.')
+
+    def test_deleting_an_order_archives_it(self):
+        for status, lines in [('CANCELLED', [('Orders list', 'Shown', 'Archived (history kept)')]),
+                ('COMPLETED', [('Orders list', 'Shown', 'Archived (history kept)')]),
+                ('NEW', [('Status', 'Unassigned', 'Cancelled'), ('Orders list', 'Shown', 'Archived (history kept)')])]:
+            order = SimpleNamespace(id=uuid4(), number='DTO-2559', status=status, version=5, route_id=None, booking={'shipper': {'name': 'Shipper'}})
+            with self.subTest(status=status), patch.object(records, 'find', return_value=[order]):
+                change = changes.prepare(None, ACTOR, plan('ORDER', 'DELETE', 'DTO-2559'))['change']
+                self.assertEqual((change.operation, change.body, change.target_id, change.destructive), ('ORDER.ARCHIVE', {'version': 5}, order.id, True))
+                self.assertEqual([(line.field, line.before, line.after) for line in change.lines], lines)
+
+    def test_restore_looks_only_among_archived_orders(self):
+        order = SimpleNamespace(id=uuid4(), number='DTO-2559', status='CANCELLED', version=6, route_id=None, booking={'shipper': {'name': 'Shipper'}})
+        with patch.object(records, 'find', return_value=[order]) as find:
+            change = changes.prepare(None, ACTOR, plan('ORDER', 'RESTORE', 'DTO-2559'))['change']
+        self.assertEqual(find.call_args.kwargs, {'archived': True})
+        self.assertEqual((change.operation, change.body, change.target_id, change.destructive), ('ORDER.RESTORE', {'version': 6}, order.id, False))
+        self.assertEqual([(line.field, line.before, line.after) for line in change.lines], [('Orders list', 'Archived', 'Shown (Cancelled)')])
+        with patch.object(records, 'find', return_value=[]):
+            self.assertIn('an archived order', changes.prepare(None, ACTOR, plan('ORDER', 'RESTORE', 'DTO-1'))['message'])
+        self.assertIsNone(records.operation('DRIVER', 'RESTORE'))
 
     def test_new_order_cancel_proposes_the_version_only(self):
         order = SimpleNamespace(id=uuid4(), number='DDO-8711', status='NEW', version=2, route_id=None, booking={'shipper': {'name': 'Shipper'}})

@@ -27,7 +27,7 @@ def pattern(query):
 
 
 def overview(db, org):
-    statuses = dict(db.execute(select(Order.status, func.count()).where(Order.organization_id == org).group_by(Order.status)).all())
+    statuses = dict(db.execute(select(Order.status, func.count()).where(Order.organization_id == org, Order.archived_at.is_(None)).group_by(Order.status)).all())
     return {'time_zone': str(company_zone(db, org)), 'orders_by_status': statuses, 'total_orders': sum(statuses.values()),
         'registered_drivers': db.scalar(select(func.count()).select_from(Driver).where(Driver.organization_id == org, Driver.archived_at.is_(None))),
         'registered_vehicles': db.scalar(select(func.count()).select_from(Vehicle).where(Vehicle.organization_id == org, Vehicle.archived_at.is_(None)))}
@@ -60,7 +60,7 @@ def collect(db, org, plan):
     kinds = set(plan.kinds) or {'ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER'}
     queries = []
     if 'ORDER' in kinds:
-        q = select(Order).where(Order.organization_id == org)
+        q = select(Order).where(Order.organization_id == org, Order.archived_at.is_(None))
         if plan.order_statuses: q = q.where(Order.status.in_(plan.order_statuses))
         if term:
             stops = exists(select(OrderStop.id).where(OrderStop.organization_id == org, OrderStop.order_id == Order.id,
@@ -125,7 +125,7 @@ def daily_briefing(db, org, observed):
     local = observed.astimezone(zone)
     start = datetime.combine(local.date(), time.min, zone)
     end = datetime.combine(local.date() + timedelta(days=1), time.min, zone)
-    today = (Order.organization_id == org, Order.created_at >= start, Order.created_at < end)
+    today = (Order.organization_id == org, Order.archived_at.is_(None), Order.created_at >= start, Order.created_at < end)
     counts = dict(db.execute(select(Order.status, func.count()).where(*today,
         Order.status != 'CANCELLED').group_by(Order.status)).all())
     incidents = db.scalar(select(func.count()).select_from(Incident).where(

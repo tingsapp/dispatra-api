@@ -133,7 +133,8 @@ class Order(TenantRecord, Base):
         ForeignKeyConstraint(['organization_id', 'billing_shipper_id'], ['shippers.organization_id', 'shippers.id']),
         ForeignKeyConstraint(['organization_id', 'service_id'], ['catalog_entries.organization_id', 'catalog_entries.id']),
         ForeignKeyConstraint(['organization_id', 'route_id'], ['routes.organization_id', 'routes.id']),
-        CheckConstraint("status IN ('NEW','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED')"))
+        CheckConstraint("status IN ('NEW','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED')"),
+        CheckConstraint("archived_at IS NULL OR status IN ('COMPLETED','CANCELLED')", name='orders_archived_closed'))
     number: Mapped[str] = mapped_column(String(50))
     shipper_id: Mapped[UUID]
     billing_shipper_id: Mapped[UUID]
@@ -146,6 +147,7 @@ class Order(TenantRecord, Base):
     booking: Mapped[dict] = mapped_column(JSONB)
     pricing: Mapped[dict] = mapped_column(JSONB)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class OrderStop(TenantRecord, Base):

@@ -67,10 +67,12 @@ def list_orders(slug: str, db: DB, after: UUID | None = None, limit: int = Query
     service_id: UUID | None = None,
     pricing_status: Literal['PRICED','NEEDS_ATTENTION'] | None = None,
     search: str | None = Query(default=None, max_length=120),
+    archived: bool = False,
     user: User = Depends(booking_actor)):
+    if archived and user.role != 'DISPATCHER': raise HTTPException(403, 'Dispatcher access required.')
     rows = queries.order_page(db, user, after=after, limit=limit, date_from=date_from,
         date_to=date_to, status=status, service_id=service_id,
-        pricing_status=pricing_status, search=search)
+        pricing_status=pricing_status, search=search, archived=archived)
     return [orders.order_view(row, user) for row in rows]
 
 
@@ -108,6 +110,16 @@ def edit_order(slug: str, identity: UUID, data: OrderUpdate, db: DB, idempotency
 @router.post('/orders/{identity}/cancel', response_model=OrderView)
 def cancel(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(booking_actor)):
     return orders.cancel_order(db,user,identity,data,idempotency_key)
+
+
+@router.post('/orders/{identity}/archive', response_model=OrderView)
+def archive(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    return orders.archive_order(db,user,identity,data,idempotency_key)
+
+
+@router.post('/orders/{identity}/restore', response_model=OrderView)
+def restore(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    return orders.restore_order(db,user,identity,data,idempotency_key)
 
 
 @router.post('/orders/{identity}/complete', response_model=OrderView)

@@ -13,12 +13,14 @@ from .models import Driver, Order, OrderStop, Route
 def order_page(db, actor, *, after: UUID | None, limit: int,
                date_from: datetime | None, date_to: datetime | None,
                status: str | None, service_id: UUID | None,
-               pricing_status: str | None, search: str | None):
+               pricing_status: str | None, search: str | None, archived: bool = False):
     if (date_from and date_from.tzinfo is None) or (date_to and date_to.tzinfo is None):
         raise HTTPException(422, 'Date filters must include a time zone.')
     if date_from and date_to and date_from >= date_to:
         raise HTTPException(422, 'Invalid date range.')
-    query = select(Order).where(Order.organization_id == actor.organization_id)
+    # Archived Orders are listed only on request (the dispatcher's Archived view).
+    query = select(Order).where(Order.organization_id == actor.organization_id,
+        Order.archived_at.is_not(None) if archived else Order.archived_at.is_(None))
     if actor.role == 'SHIPPER':
         query = query.where(Order.shipper_id == actor.shipper_id)
     if after:

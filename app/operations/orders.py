@@ -163,6 +163,33 @@ def cancel_order(db, actor, identity, data, key):
     return command(db, actor, key, 'order-cancel:' + str(identity), data.model_dump(), run)
 
 
+def archive_order(db, actor, identity, data, key):
+    """Dispatcher removal: an unassigned Order is cancelled, then a closed Order leaves the Orders lists. History stays."""
+    def run():
+        company_lock(db, actor)
+        if actor.role != 'DISPATCHER': raise HTTPException(403, 'Dispatcher access required.')
+        row = visible_order(db, actor, identity, True); version(row, data.version)
+        if row.archived_at is not None: raise HTTPException(409, 'Order is already archived.')
+        if row.status in {'ASSIGNED', 'IN_PROGRESS'}: raise HTTPException(409, 'Unassign or complete the order before archiving it.')
+        if row.status == 'NEW':
+            row.status = 'CANCELLED'; changed(db, actor, row, 'order.cancelled')
+        row.archived_at = now(); changed(db, actor, row, 'order.archived')
+        return order_view(row, actor)
+    return command(db, actor, key, 'order-archive:' + str(identity), data.model_dump(), run)
+
+
+def restore_order(db, actor, identity, data, key):
+    """Return an archived Order to the Orders lists with its closed status unchanged."""
+    def run():
+        company_lock(db, actor)
+        if actor.role != 'DISPATCHER': raise HTTPException(403, 'Dispatcher access required.')
+        row = visible_order(db, actor, identity, True); version(row, data.version)
+        if row.archived_at is None: raise HTTPException(409, 'Order is not archived.')
+        row.archived_at = None; changed(db, actor, row, 'order.restored')
+        return order_view(row, actor)
+    return command(db, actor, key, 'order-restore:' + str(identity), data.model_dump(), run)
+
+
 def complete_order(db, actor, identity, data, key):
     """Dispatcher override: close an assigned Order's remaining visits without driver POD."""
     def run():
