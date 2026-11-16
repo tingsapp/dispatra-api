@@ -290,8 +290,9 @@ class ConfirmTests(unittest.TestCase):
         self.assertNotIn('initial_password', stored['result'])
 
     def test_bulk_changes_have_no_target_and_report_a_count(self):
-        response, runner, _, _ = self.confirm('NOTIFICATION.READ_ALL', {}, None, {'updated': 3})
+        response, runner, _, audit = self.confirm('NOTIFICATION.READ_ALL', {}, None, {'updated': 3})
         self.assertEqual(response['message'], 'Done. 3 notifications are marked read.')
+        self.assertEqual(audit.call_args.args[3], ACTOR.id)
         self.assertEqual(runner.call_args.args[4], 'chat-key-0123456789')
         issues = {'issues': [{'id': str(uuid4()), 'version': 1}], 'resolution': 'Customer called back'}
         response, runner, _, _ = self.confirm('ISSUE.RESOLVE_ALL', issues, None, {'updated': 1})

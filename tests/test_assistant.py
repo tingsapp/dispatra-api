@@ -1,7 +1,7 @@
 import json
 from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.main import app
 from app.assistant import provider
@@ -131,3 +131,15 @@ def test_chat_assignment_is_proposed_then_saved_only_on_dispatcher_confirmation(
     assert client.get(f'/api/v1/companies/acme/orders/{order["id"]}').json()['status'] == 'ASSIGNED'
     assert post(client, actions_path, body).status_code == 409, 'a stale proposal is rechecked'
     assert post(setup['mobile'], actions_path, body).status_code == 403
+
+
+def test_confirmed_bulk_chat_changes_save_with_the_dispatcher_as_audit_record(client, setup):
+    from conftest import post
+    path = ROOT.replace('/messages', '/actions/change')
+    for operation in ('NOTIFICATION.READ_ALL', 'NOTIFICATION.DELETE_ALL'):
+        done = post(client, path, {'operation': operation, 'body': {}})
+        assert done.status_code == 200, done.text
+    with Session(owner_engine) as db:
+        rows = db.execute(text("SELECT a.entity_id, u.role FROM audit_events a JOIN users u ON u.id = a.entity_id "
+            "WHERE a.action = 'assistant.change_confirmed'")).all()
+    assert len(rows) == 2 and {role for _, role in rows} == {'DISPATCHER'}

@@ -241,7 +241,8 @@ def confirm(db, actor, data, key):
         result = op.run(db, actor, data.target_id, body, key)
         password = result.pop('initial_password', None) if isinstance(result, dict) else None
         identity = (result.get('id') or result.get('order_id')) if isinstance(result, dict) else None
-        audit(db, actor, 'assistant.change_confirmed', identity or data.target_id, actor.organization_id)
+        # Bulk changes have no single record; audit rows require one, so they name the confirming dispatcher.
+        audit(db, actor, 'assistant.change_confirmed', identity or data.target_id or actor.id, actor.organization_id)
         label = (result.get('number') if entity == 'ORDER' else result.get('name') or (result.get('data') or {}).get('name')
             or result.get('number')) if isinstance(result, dict) else None
         message = done_many(entity, op, result['updated']) if isinstance(result, dict) and 'updated' in result else done(entity, verb, op, label)
