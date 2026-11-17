@@ -31107,6 +31107,20 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Fuel Percent"
           },
+          "work_hours": {
+            "items": {
+              "$ref": "#/components/schemas/WorkDay"
+            },
+            "type": "array",
+            "title": "Work Hours"
+          },
+          "holidays": {
+            "items": {
+              "$ref": "#/components/schemas/Holiday"
+            },
+            "type": "array",
+            "title": "Holidays"
+          },
           "default_service_id": {
             "anyOf": [
               {
@@ -31132,7 +31146,9 @@
           "provincial_enabled",
           "provincial_percent",
           "fuel_enabled",
-          "fuel_percent"
+          "fuel_percent",
+          "work_hours",
+          "holidays"
         ],
         "title": "BookingPreferences"
       },
@@ -36476,6 +36492,28 @@
         ],
         "title": "FleetSyncResult"
       },
+      "Holiday": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "date",
+          "name"
+        ],
+        "title": "Holiday"
+      },
       "InboxItem": {
         "properties": {
           "closed_reason": {
@@ -41115,6 +41153,23 @@
             "maxItems": 100,
             "title": "Dispatch Zones"
           },
+          "work_hours": {
+            "items": {
+              "$ref": "#/components/schemas/WorkDay"
+            },
+            "type": "array",
+            "maxItems": 7,
+            "minItems": 7,
+            "title": "Work Hours"
+          },
+          "holidays": {
+            "items": {
+              "$ref": "#/components/schemas/Holiday"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Holidays"
+          },
           "default_service_id": {
             "anyOf": [
               {
@@ -41315,6 +41370,23 @@
             "type": "array",
             "maxItems": 100,
             "title": "Dispatch Zones"
+          },
+          "work_hours": {
+            "items": {
+              "$ref": "#/components/schemas/WorkDay"
+            },
+            "type": "array",
+            "maxItems": 7,
+            "minItems": 7,
+            "title": "Work Hours"
+          },
+          "holidays": {
+            "items": {
+              "$ref": "#/components/schemas/Holiday"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Holidays"
           },
           "default_service_id": {
             "anyOf": [
@@ -44171,6 +44243,47 @@
           "prices"
         ],
         "title": "WeightBand"
+      },
+      "WorkDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "enum": [
+              "MON",
+              "TUE",
+              "WED",
+              "THU",
+              "FRI",
+              "SAT",
+              "SUN"
+            ],
+            "title": "Day"
+          },
+          "open": {
+            "type": "boolean",
+            "title": "Open"
+          },
+          "start": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "Start",
+            "default": "08:00"
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "End",
+            "default": "17:00"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "day",
+          "open"
+        ],
+        "title": "WorkDay",
+        "description": "One weekday of company work hours, in the company time zone; same-day hours only, 23:59 meaning end of day."
       },
       "WorkspaceAssistantQuestion": {
         "properties": {

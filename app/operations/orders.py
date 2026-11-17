@@ -8,8 +8,9 @@ from app.models import now
 from app.services import audit
 from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
 from .schemas import Booking, OrderView
-from .common import record, command, version, changed, company_lock, operational_shipper
+from .common import record, command, version, changed, company_lock, operational_shipper, settings
 from .pricing import quote
+from .calendar import closed_reason
 from .identifiers import issue_number
 
 
@@ -23,6 +24,13 @@ def authorized_booking(actor, booking, prospect=False):
         booking = booking.model_copy(update={'shipper_id': actor.shipper_id, 'billing_shipper_id': actor.shipper_id})
     if not prospect and booking.shipper_id is None: raise HTTPException(422, 'Select a Shipper for the Order.')
     return booking
+
+
+def check_open_hours(db, actor, booking):
+    """Shippers book pickups only in company work hours; dispatchers and intake may schedule outside them."""
+    if actor.role != 'SHIPPER': return
+    reason = closed_reason(settings(db, actor)[1], booking.scheduled_at)
+    if reason: raise HTTPException(422, f'{reason} Choose a pickup time when we are open.')
 
 
 @contextmanager
@@ -117,6 +125,7 @@ def create_order(db, actor, data, key, source=None):
         company_lock(db, actor)
         check_preferred_driver(db, actor, booking)
         check_package_types(db, actor, booking)
+        check_open_hours(db, actor, booking)
         identity = uuid4()
         row = Order(id=identity, organization_id=actor.organization_id, number=issue_number(db, actor, Order, 'O'),
             shipper_id=booking.shipper_id, billing_shipper_id=booking.billing_shipper_id or booking.shipper_id,
@@ -138,6 +147,7 @@ def update_order(db, actor, identity, data, key):
         if row.status != 'NEW': raise HTTPException(409, 'Only unassigned orders can be edited. Report an issue instead.')
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
         check_package_types(db, actor, booking, row.facts)
+        if booking.scheduled_at != row.scheduled_at: check_open_hours(db, actor, booking)
         from .pricing import retain_price
         retain_price(db, row)
         row.facts, row.booking = booking.model_dump(mode='json'), booking_snapshot(db, actor, booking, row.booking)

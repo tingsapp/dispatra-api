@@ -16,6 +16,7 @@ from app.events import publish
 from app.models import now, Organization
 from app.services import audit
 from app.operations import dispatch
+from app.operations.calendar import closed_reason
 from app.operations.common import command, company_lock, record, settings
 from app.operations.models import Order, Route, Settings
 from app.operations.schemas import Assignment
@@ -162,13 +163,16 @@ def auto_companies():
 
 
 def due(organization_id, limit=100):
-    """Priced, unassigned Orders eligible immediately after booking, with bounded retry cooldown."""
+    """Priced, unassigned Orders eligible immediately after booking, with bounded retry cooldown.
+    Pickups outside company work hours are held for a dispatcher; Needs Attention reports them."""
     with Session(engine) as db, db.begin():
         context(db, organization_id)
+        config = settings(db, AgentDispatcher(organization_id))[1]
         orders = db.scalars(select(Order).where(Order.organization_id == organization_id, Order.status == 'NEW',
             Order.pricing['status'].astext == 'PRICED').order_by(Order.scheduled_at).limit(limit * 3)).all()
         result = []
         for order in orders:
+            if closed_reason(config, order.scheduled_at): continue
             previous = latest(db, organization_id, order.id)
             if previous and previous.order_version == order.version:
                 if previous.status == 'ASSIGNED': continue

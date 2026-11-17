@@ -12,6 +12,9 @@ from .identifiers import issue_number, vehicle_number
 from .schemas import SettingsView, CatalogView, RateView
 from .common import record, version, company_lock, command, changed, dump, settings, operational_shipper
 
+# Older clients omit these lists; keep the saved values instead of resetting them to defaults.
+PRESERVED_WHEN_OMITTED = ('dispatch_zones', 'work_hours', 'holidays')
+
 
 def save_settings(db, actor, data, key):
     def run():
@@ -35,15 +38,17 @@ def save_settings(db, actor, data, key):
         if 'tms_workspace' in data.data.model_fields_set:
             from .tms_pricing import apply_workspace_rate
             apply_workspace_rate(db, actor, row, values['tms_workspace'])
-        if 'dispatch_zones' not in data.data.model_fields_set:
-            values['dispatch_zones'] = row.data.get('dispatch_zones', [])
+        for field in PRESERVED_WHEN_OMITTED:
+            if field not in data.data.model_fields_set and field in row.data:
+                values[field] = row.data[field]
         row.data = values
         db.get(Organization, actor.organization_id).name = data.data.company_name
         changed(db, actor, row, 'settings.updated')
         return SettingsView.model_validate(row).model_dump(mode='json')
     payload = data.model_dump(mode='json')
     if 'tms_workspace' not in data.data.model_fields_set: payload['data'].pop('tms_workspace')
-    if 'dispatch_zones' not in data.data.model_fields_set: payload['data'].pop('dispatch_zones')
+    for field in PRESERVED_WHEN_OMITTED:
+        if field not in data.data.model_fields_set: payload['data'].pop(field)
     return command(db, actor, key, 'settings', payload, run)
 
 

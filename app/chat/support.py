@@ -27,7 +27,7 @@ def channel(db, user, dispatcher_id):
         Conversation.dispatcher_id == dispatcher.id, Conversation.kind == 'ADMIN_DISPATCHER'))
     reason = None if dispatcher.active and org.active else 'This dispatcher account or company is inactive. The chat is read-only.'
     return dict(kind='ADMIN_DISPATCHER', conversation_id=conversation.id if conversation else None,
-        dispatcher_id=dispatcher.id, company_name=org.name, title=(dispatcher.display_name or dispatcher.login_id) if user.role == 'ADMIN' else 'Admin',
+        dispatcher_id=dispatcher.id, company_name=org.name, title=(dispatcher.display_name or dispatcher.login_id) if user.role == 'ADMIN' else 'Dispatra',
         driver_id=None, can_send=reason is None, closed_reason=reason,
         unread=service.unread(db, user, [conversation.id]).get(conversation.id, 0) if conversation else 0,
         last_message_at=conversation.last_message_at if conversation else None)

@@ -1,6 +1,6 @@
 """Versioned operational requests; canonical units are kg, cm, km and CAD."""
 import base64
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -64,6 +64,33 @@ class DispatchZone(Input):
     postal_codes: list[Fsa] = Field(min_length=1, max_length=200)
 
 
+WEEKDAYS = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
+ClockTime = Annotated[str, Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')]
+
+
+class WorkDay(Input):
+    """One weekday of company work hours, in the company time zone; same-day hours only, 23:59 meaning end of day."""
+    day: Literal['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+    open: StrictBool
+    start: ClockTime = '08:00'
+    end: ClockTime = '17:00'
+
+    @model_validator(mode='after')
+    def ordered(self):
+        if self.open and self.end <= self.start: raise ValueError('Work hours must end after they start')
+        return self
+
+
+class Holiday(Input):
+    date: date
+    name: Name
+
+
+def default_work_hours():
+    # Companies that have not saved hours book and auto-dispatch pickups 06:00–19:00, every day.
+    return [WorkDay(day=day, open=True, start='06:00', end='19:00') for day in WEEKDAYS]
+
+
 class SettingsData(Input):
     company_name: Name = 'Dispatra Logistics'
     tms_workspace: StrictBool = False
@@ -91,6 +118,9 @@ class SettingsData(Input):
     # AUTO: the Dispatch agent assigns priced, unassigned Orders inside its horizon; MANUAL: dispatchers assign, the agent only recommends.
     dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
     dispatch_zones: list[DispatchZone] = Field(default_factory=list, max_length=100)
+    # Company operating calendar: Shippers book pickups inside it and AUTO dispatch holds pickups outside it.
+    work_hours: list[WorkDay] = Field(default_factory=default_work_hours, min_length=7, max_length=7)
+    holidays: list[Holiday] = Field(default_factory=list, max_length=100)
     # Manual new-order forms start on this active SERVICE; email intake resolves service from requested facts.
     default_service_id: UUID | None = None
     # Email intake falls back to this active PACKAGE_TYPE when it cannot infer an item's type.
@@ -103,6 +133,14 @@ class SettingsData(Input):
         prefixes = [(p.replace(' ', '').upper(), i) for i,z in enumerate(self.dispatch_zones) for p in z.postal_codes]
         if any(i != j and (a.startswith(b) or b.startswith(a)) for a,i in prefixes for b,j in prefixes):
             raise ValueError('Dispatch zones must not have overlapping postal prefixes')
+        return self
+
+    @model_validator(mode='after')
+    def operating_calendar(self):
+        if tuple(d.day for d in self.work_hours) != WEEKDAYS: raise ValueError('Work hours need each weekday once, Monday to Sunday')
+        dates = [h.date for h in self.holidays]
+        if len(set(dates)) != len(dates): raise ValueError('Each holiday date can be added once')
+        self.holidays.sort(key=lambda h: h.date)
         return self
 
     @field_validator('logo_url')
@@ -1000,4 +1038,7 @@ class BookingPreferences(BaseModel):
     provincial_percent: Percent
     fuel_enabled: bool
     fuel_percent: Percent
+    # Shippers book pickups only inside these hours.
+    work_hours: list[WorkDay]
+    holidays: list[Holiday]
     default_service_id: UUID | None = None

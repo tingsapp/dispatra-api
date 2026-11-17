@@ -31,6 +31,10 @@ class DailyBriefingTests(unittest.TestCase):
         params = query.compile().params
         self.assertIn(org, params.values())
         self.assertIn('CANCELLED', params.values())
+        sql = str(query)
+        self.assertIn('scheduled_at', sql, 'the day is the pickup day, matching the Monitor')
+        self.assertNotIn('created_at', sql)
+        self.assertIn(['NEW', 'ASSIGNED', 'IN_PROGRESS'], list(params.values()), 'earlier pickups still open stay in today’s work')
         per_driver = db.execute.call_args_list[1].args[0].compile().params
         self.assertEqual(list(per_driver.values()).count(org), 3, 'orders, routes and drivers are each company-filtered')
         self.assertIn(org, db.scalar.call_args.args[0].compile().params.values())

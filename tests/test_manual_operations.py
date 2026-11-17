@@ -284,7 +284,7 @@ def test_web_projections_quotes_and_stop_issue_scope(setup):
     with TestClient(app,headers=HEADERS) as portal:
         login(portal,'customer','acme',w['shipper']['email'],w['shipper']['initial_password'])
         preferences=check(portal.get(BASE+'/booking-preferences'))
-        assert set(preferences)=={'currency','time_zone','weight_unit','dimension_unit','distance_unit','gst_enabled','gst_percent','provincial_enabled','provincial_percent','fuel_enabled','fuel_percent','default_service_id'}
+        assert set(preferences)=={'currency','time_zone','weight_unit','dimension_unit','distance_unit','gst_enabled','gst_percent','provincial_enabled','provincial_percent','fuel_enabled','fuel_percent','work_hours','holidays','default_service_id'}
         assert preferences['weight_unit']=='lb'
         assert portal.get(BASE+'/quotes').status_code==403
     first=check(post(client,BASE+'/quotes',booking(None,w['service'],w['type_id'],w['fixed'])),201)

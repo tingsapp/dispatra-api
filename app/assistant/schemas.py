@@ -146,6 +146,7 @@ class DailyBriefing(BaseModel):
     day: str
     time_zone: str
     evening: bool
+    # Today's orders by pickup: scheduled today, plus earlier pickups still open (the field name predates this rule).
     received: int
     unassigned: int
     assigned: int

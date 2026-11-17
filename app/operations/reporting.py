@@ -7,9 +7,11 @@ from app import auth
 from app.models import User, now
 from app.routes import DB
 from app.dispatch.service import no_driver
-from .models import Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence, AttentionDismissal
+from .models import Settings, Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence, AttentionDismissal
 from .schemas import AnalyticsView, DriverActivityView, MonitorView
 from .common import record
+from .calendar import closed_reason
+from .schemas import SettingsData
 from .attention import flags as attention_flags
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Operations reporting'])
@@ -22,6 +24,16 @@ def add_no_driver_attention(attention, candidates, explained=frozenset()):
         # a separate NO_DRIVER row would repeat the same issue in the Monitor.
         if order_id in explained: continue
         attention[order_id].append(('NO_DRIVER', description, at))
+
+
+def add_closed_hours_attention(db, org, orders, attention):
+    """AUTO dispatch holds unassigned pickups outside work hours; tell the dispatcher why each one waits."""
+    row = db.scalar(select(Settings).where(Settings.organization_id == org))
+    config = SettingsData.model_validate(row.data) if row else None
+    if config is None or config.dispatch_mode != 'AUTO': return
+    for order in orders:
+        reason = order.status == 'NEW' and closed_reason(config, order.scheduled_at)
+        if reason: attention[order.id].append(('OUTSIDE_HOURS', f'Pickup outside work hours; AUTO dispatch is holding it. {reason}', order.created_at))
 
 
 SEVERITY = {None: 0, 'WARNING': 1, 'CRITICAL': 2}
@@ -44,6 +56,7 @@ def order_attention(db, org, orders, visits_by_stop, observed_at):
         incidents[(incident.order_id, text)] = ('OPERATIONAL:' + incident.kind, incident.severity)
         if incident.kind == 'UNASSIGNED': explained.add(incident.order_id)
     add_no_driver_attention(attention, no_driver(db, org, orders), explained)
+    add_closed_hours_attention(db, org, orders, attention)
     versions = {order.id: order.version for order in orders}
     hidden = {(row.order_id, row.key): row for row in db.scalars(select(AttentionDismissal).where(
         AttentionDismissal.organization_id == org, AttentionDismissal.order_id.in_(list(versions))))} if versions else {}

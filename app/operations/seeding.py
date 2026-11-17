@@ -10,7 +10,7 @@ from app.database import engine, context
 from app.models import Organization, User
 from app.services import audit
 from .models import Catalog, RateCard, Settings
-from .schemas import SettingsData, CatalogData, RateData, Zone, WeightBand
+from .schemas import SettingsData, CatalogData, RateData, Zone, WeightBand, default_work_hours
 from .common import company_lock
 
 SEED = json.loads((Path(__file__).parent / 'seeds/demo_pricing_v1.json').read_text())
@@ -28,7 +28,7 @@ def seed_pricing(db, actor, organization=None):
     existing = db.scalar(select(Settings).where(Settings.organization_id == org_id))
     if not existing:
         billing = SEED['billing']
-        data = SettingsData(company_name=organization.name,
+        data = SettingsData(company_name=organization.name, work_hours=default_work_hours(),
             gst_enabled=billing['companyTax']['enabled'], gst_percent=billing['companyTax']['ratePercent'],
             provincial_enabled=billing['companyTax']['provincialEnabled'], provincial_percent=billing['companyTax']['provincialRatePercent'],
             fuel_enabled=billing['fuelSurcharge']['enabled'], fuel_percent=billing['fuelSurcharge']['percent'],

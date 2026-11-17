@@ -43,6 +43,13 @@ def reset_database():
     with Session(owner_engine) as db, db.begin():
         db.add(User(scope='platform',login_id='owner',role='ADMIN',password_hash=hash_password(PASSWORD)))
 
+@pytest.fixture(autouse=True)
+def all_day_hours(monkeypatch):
+    """Test companies are open around the clock so bookings at the current time never depend on when tests run."""
+    from app.operations import seeding
+    from app.operations.schemas import WEEKDAYS, WorkDay
+    monkeypatch.setattr(seeding, 'default_work_hours', lambda: [WorkDay(day=d, open=True, start='00:00', end='23:59') for d in WEEKDAYS])
+
 @pytest.fixture
 def client():
     with TestClient(app, headers=HEADERS) as client: yield client

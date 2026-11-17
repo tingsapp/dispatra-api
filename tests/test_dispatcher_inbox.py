@@ -19,7 +19,8 @@ def test_admin_dispatcher_chat_private_and_notifies_both_sides(setup):
         login(admin)
         contact=check(admin.get('/api/v1/platform/chat-contacts'))['items']
         assert {r['id'] for r in contact} == {uid}
-        assert check(dispatcher.get(BASE+'/admin-chat'))['conversation_id'] is None
+        support=check(dispatcher.get(BASE+'/admin-chat'))
+        assert support['conversation_id'] is None and support['title']=='Dispatra'
         key=str(uuid4()); sent=check(post(dispatcher,BASE+'/admin-chat/messages',{'body':'Need help'},key),201)
         assert check(post(dispatcher,BASE+'/admin-chat/messages',{'body':'Need help'},key),201)==sent
         cid=sent['conversation_id']
