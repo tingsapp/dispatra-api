@@ -130,12 +130,6 @@ def daily_briefing(db, org, observed):
     today = (Order.organization_id == org, Order.archived_at.is_(None), picked_today)
     counts = dict(db.execute(select(Order.status, func.count()).where(*today,
         Order.status != 'CANCELLED').group_by(Order.status)).all())
-    open_statuses = ['NEW', 'ASSIGNED', 'IN_PROGRESS']
-    overdue_filter = (Order.organization_id == org, Order.archived_at.is_(None), Order.scheduled_at < start,
-        Order.status.in_(open_statuses))
-    overdue_orders = db.execute(select(Order.number, Order.scheduled_at, Order.status, func.count().over())
-        .where(*overdue_filter)
-        .order_by(Order.scheduled_at, Order.number).limit(3)).all()
     incidents = db.scalar(select(func.count()).select_from(Incident).where(
         Incident.organization_id == org, Incident.status.in_(['OPEN', 'ACKNOWLEDGED'])))
     orders = func.count(Order.id)
@@ -147,8 +141,5 @@ def daily_briefing(db, org, observed):
     return DailyBriefing(day=local.date().isoformat(), time_zone=str(zone), evening=local.hour >= 18,
         received=sum(counts.values()), unassigned=counts.get('NEW', 0), assigned=counts.get('ASSIGNED', 0),
         in_progress=counts.get('IN_PROGRESS', 0), completed=counts.get('COMPLETED', 0), open_incidents=incidents,
-        overdue_count=overdue_orders[0][3] if overdue_orders else 0,
-        overdue_orders=[{'order_number': number, 'scheduled_at': scheduled_at, 'status': status}
-            for number, scheduled_at, status, _ in overdue_orders],
         dispatch_mode='AUTO' if settings.get('dispatch_mode') == 'AUTO' else 'MANUAL',
         assigned_by_driver=[DriverAssignments(driver_name=name, orders=count) for name, count in drivers])

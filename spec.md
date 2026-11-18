@@ -4,7 +4,7 @@ The user-facing name of the OPERATIONAL agent is Supervisor agent, including own
 
 Route release requires an unlocked PLANNED route containing only ASSIGNED orders. Reject the whole release before any order mutation or stop deletion if the route includes started or closed work; completed order history must never be reset to NEW.
 
-Dispatcher assistant briefing requests return authoritative company-local daily order counts, a separate count and bounded list of earlier unfinished pickups, workspace-wide open/acknowledged incident totals, observation time and grounded commentary. Daily counts include only non-cancelled, unarchived Orders whose `scheduled_at` falls on the company-local day (`received` keeps its name for that total); earlier NEW/ASSIGNED/IN_PROGRESS Orders are reported separately as overdue, oldest first, and never inflate today's totals. Provider unavailability preserves the factual card and explicitly marks commentary unavailable.
+Dispatcher assistant briefing requests return authoritative company-local daily order counts, workspace-wide open/acknowledged incident totals, observation time and grounded commentary. Daily counts include only non-cancelled, unarchived Orders whose `scheduled_at` falls on the company-local day (`received` keeps its name for that total). Monitor Needs Attention lists earlier NEW, ASSIGNED, and IN_PROGRESS Orders as overdue. Provider unavailability preserves the factual card and explicitly marks commentary unavailable.
 
 # Dispatra API specification
 

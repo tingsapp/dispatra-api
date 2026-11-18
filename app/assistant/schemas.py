@@ -142,25 +142,16 @@ class DriverAssignments(BaseModel):
     orders: int
 
 
-class OverdueOrderSummary(BaseModel):
-    order_number: str
-    scheduled_at: datetime
-    status: Literal['NEW', 'ASSIGNED', 'IN_PROGRESS']
-
-
 class DailyBriefing(BaseModel):
     day: str
     time_zone: str
     evening: bool
-    # Daily totals contain only non-cancelled orders scheduled on this company-local day.
+    # Today's orders by pickup: scheduled today, plus earlier pickups still open (the field name predates this rule).
     received: int
     unassigned: int
     assigned: int
     in_progress: int
     completed: int
-    # Overdue work is surfaced separately from today's totals; the list is oldest first and bounded.
-    overdue_count: int = 0
-    overdue_orders: list[OverdueOrderSummary] = Field(default_factory=list)
     open_incidents: int
     dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
     # Today's orders that have a driver (assigned, in progress or completed), most orders first.

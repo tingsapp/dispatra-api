@@ -16,18 +16,15 @@ class DailyBriefingTests(unittest.TestCase):
     def test_company_day_counts_and_tenant_filters(self):
         db = Mock()
         db.scalar.side_effect = [{'time_zone': 'America/Vancouver', 'dispatch_mode': 'AUTO'}, 3]
-        statuses, overdue, drivers = Mock(), Mock(), Mock()
+        statuses, drivers = Mock(), Mock()
         statuses.all.return_value = [('NEW', 12), ('COMPLETED', 1)]
-        overdue.all.return_value = [('DUE-1', datetime(2026, 7, 7, 6, 59, tzinfo=timezone.utc), 'ASSIGNED', 4)]
         drivers.all.return_value = [('Alex Chen', 1)]
-        db.execute.side_effect = [statuses, overdue, drivers]
+        db.execute.side_effect = [statuses, drivers]
         org = uuid4()
         result = search.daily_briefing(db, org, datetime(2026, 7, 8, 2, tzinfo=timezone.utc))
         self.assertEqual(result.day, '2026-07-07')
         self.assertTrue(result.evening)
         self.assertEqual((result.received, result.unassigned, result.completed, result.open_incidents), (13, 12, 1, 3))
-        self.assertEqual(result.overdue_count, 4)
-        self.assertEqual(result.overdue_orders[0].order_number, 'DUE-1')
         self.assertEqual(result.dispatch_mode, 'AUTO')
         self.assertEqual([(row.driver_name, row.orders) for row in result.assigned_by_driver], [('Alex Chen', 1)])
         query = db.execute.call_args_list[0].args[0]
@@ -42,13 +39,11 @@ class DailyBriefingTests(unittest.TestCase):
         self.assertEqual(end.astimezone(timezone.utc), datetime(2026, 7, 8, 7, tzinfo=timezone.utc))
         self.assertNotIn('created_at', sql)
         self.assertNotIn(['NEW', 'ASSIGNED', 'IN_PROGRESS'], list(params.values()), 'overdue orders are not included in today’s totals')
-        overdue_query = db.execute.call_args_list[1].args[0]
-        overdue_params = overdue_query.compile().params
-        self.assertIn('orders.scheduled_at <', str(overdue_query))
-        self.assertIn(start, overdue_params.values())
-        self.assertIn(['NEW', 'ASSIGNED', 'IN_PROGRESS'], list(overdue_params.values()))
-        self.assertIn(org, overdue_params.values())
-        per_driver = db.execute.call_args_list[2].args[0].compile().params
+        driver_query = db.execute.call_args_list[1].args[0]
+        per_driver = driver_query.compile().params
+        self.assertIn('orders.scheduled_at >=', str(driver_query))
+        self.assertIn('orders.scheduled_at <', str(driver_query))
+        self.assertEqual([value for value in per_driver.values() if isinstance(value, datetime)], [start, end])
         self.assertEqual(list(per_driver.values()).count(org), 3, 'orders, routes and drivers are each company-filtered')
         self.assertIn(org, db.scalar.call_args.args[0].compile().params.values())
 
@@ -56,10 +51,9 @@ class DailyBriefingTests(unittest.TestCase):
         db = Mock()
         db.scalar.side_effect = [{}, 0]
         empty = Mock(); empty.all.return_value = []
-        db.execute.side_effect = [empty, empty, empty]
+        db.execute.side_effect = [empty, empty]
         result = search.daily_briefing(db, uuid4(), datetime(2026, 11, 5, 18, tzinfo=timezone.utc))
         self.assertEqual((result.dispatch_mode, result.assigned_by_driver), ('MANUAL', []))
-        self.assertEqual((result.overdue_count, result.overdue_orders), (0, []))
 
     def test_ai_and_unavailable_keep_authoritative_card(self):
         data = DailyBriefing(day='2026-11-04', time_zone='UTC', evening=False, received=1,

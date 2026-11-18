@@ -33840,18 +33840,6 @@
             "type": "integer",
             "title": "Completed"
           },
-          "overdue_count": {
-            "type": "integer",
-            "title": "Overdue Count",
-            "default": 0
-          },
-          "overdue_orders": {
-            "items": {
-              "$ref": "#/components/schemas/OverdueOrderSummary"
-            },
-            "type": "array",
-            "title": "Overdue Orders"
-          },
           "open_incidents": {
             "type": "integer",
             "title": "Open Incidents"
@@ -39283,35 +39271,6 @@
           "active"
         ],
         "title": "OrganizationView"
-      },
-      "OverdueOrderSummary": {
-        "properties": {
-          "order_number": {
-            "type": "string",
-            "title": "Order Number"
-          },
-          "scheduled_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Scheduled At"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "NEW",
-              "ASSIGNED",
-              "IN_PROGRESS"
-            ],
-            "title": "Status"
-          }
-        },
-        "type": "object",
-        "required": [
-          "order_number",
-          "scheduled_at",
-          "status"
-        ],
-        "title": "OverdueOrderSummary"
       },
       "OverviewDispatcherUpdate": {
         "properties": {
