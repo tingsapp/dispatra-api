@@ -1,3 +1,6 @@
+2026-11-18 Published dispatcher company-day fix to the Google VM at 2026-11-18T10:12:50.323821+00:00; API f29998a, client 4f13de5. Earlier unfinished jobs appear only in Needs Attention.
+Checks: 32 API tests, 48 web tests, TypeScript/build, live totals/attention and health passed; business record counts unchanged; no migration. Backup: /var/backups/dispatra/briefing-day-20261118T101046Z.
+
 2026-11-18 Dispatcher briefing counts pickups scheduled on the current company day. Monitor Needs Attention lists earlier unfinished pickups.
 Checks: five briefing unit tests passed, including Vancouver midnight boundaries and the same date window for the driver breakdown. The briefing API schema is unchanged.
 
