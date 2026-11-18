@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, or_, func
 from app import auth
@@ -9,7 +10,7 @@ from app.routes import DB
 from app.dispatch.service import no_driver
 from .models import Settings, Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence, AttentionDismissal
 from .schemas import AnalyticsView, DriverActivityView, MonitorView
-from .common import record
+from .common import record, settings as company_settings
 from .calendar import closed_reason
 from .schemas import SettingsData
 from .attention import flags as attention_flags
@@ -205,9 +206,18 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     estimates = collect_estimates(db, user.organization_id, routes, observed_at)
     attention = order_attention(db, user.organization_id, orders, visits_by_stop, observed_at)
     # Newest first, matching every other Monitor list; hidden warnings leave the list but keep the Order's flags.
-    needs_attention = sorted([{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues] +
-        [{'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':row['at']}
-            for o in orders for row in attention[o.id] if not row['hidden']], key=lambda item: item['at'], reverse=True)
+    needs_attention = [{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues]
+    needs_attention.extend({'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':row['at']}
+        for o in orders for row in attention[o.id] if not row['hidden'])
+    _, company_config = company_settings(db, user)
+    company_zone = ZoneInfo(company_config.time_zone)
+    company_day = observed_at.astimezone(company_zone).date()
+    for order in orders:
+        scheduled_day = order.scheduled_at.astimezone(company_zone).date()
+        if order.archived_at is None and scheduled_day < company_day:
+            needs_attention.append({'id':None,'order_id':str(order.id),'kind':'OVERDUE',
+                'description':f'Pickup scheduled for {scheduled_day.isoformat()}; this order is still open.', 'at':observed_at})
+    needs_attention.sort(key=lambda item: item['at'], reverse=True)
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,
         'location':points[d.id].data if d.id in points else None,

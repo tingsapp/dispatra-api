@@ -72,7 +72,7 @@ def brief(db, actor):
             'No greeting, heading, date, timezone, counts, status recap or introductory text. '
             'The visual card shows all totals; do not repeat them. Suggest the most useful next step. '
             'The card already shows counts, the auto dispatch setting and how many of today\'s orders each driver has. '
-            'All status counts refer to today\'s non-cancelled orders by pickup: scheduled for pickup today, plus earlier pickups still open; '
+            'Status counts refer only to non-cancelled orders scheduled for pickup on the company-local day. '
             'open_incidents covers the whole workspace. Zero recorded incidents does not establish absence of risk. '
             'Do not claim dispatch eligibility or perform actions.',
             [{'role': 'user', 'content': 'Give me the current daily briefing using these fresh authorized facts: ' + json.dumps(facts)}])

@@ -21,8 +21,8 @@ class DailyBriefingTests(unittest.TestCase):
         drivers.all.return_value = [('Alex Chen', 1)]
         db.execute.side_effect = [statuses, drivers]
         org = uuid4()
-        result = search.daily_briefing(db, org, datetime(2026, 11, 5, 2, tzinfo=timezone.utc))
-        self.assertEqual(result.day, '2026-11-04')
+        result = search.daily_briefing(db, org, datetime(2026, 7, 8, 2, tzinfo=timezone.utc))
+        self.assertEqual(result.day, '2026-07-07')
         self.assertTrue(result.evening)
         self.assertEqual((result.received, result.unassigned, result.completed, result.open_incidents), (13, 12, 1, 3))
         self.assertEqual(result.dispatch_mode, 'AUTO')
@@ -32,10 +32,18 @@ class DailyBriefingTests(unittest.TestCase):
         self.assertIn(org, params.values())
         self.assertIn('CANCELLED', params.values())
         sql = str(query)
-        self.assertIn('scheduled_at', sql, 'the day is the pickup day, matching the Monitor')
+        self.assertIn('orders.scheduled_at >=', sql)
+        self.assertIn('orders.scheduled_at <', sql)
+        start, end = [value for value in params.values() if isinstance(value, datetime)]
+        self.assertEqual(start.astimezone(timezone.utc), datetime(2026, 7, 7, 7, tzinfo=timezone.utc))
+        self.assertEqual(end.astimezone(timezone.utc), datetime(2026, 7, 8, 7, tzinfo=timezone.utc))
         self.assertNotIn('created_at', sql)
-        self.assertIn(['NEW', 'ASSIGNED', 'IN_PROGRESS'], list(params.values()), 'earlier pickups still open stay in today’s work')
-        per_driver = db.execute.call_args_list[1].args[0].compile().params
+        self.assertNotIn(['NEW', 'ASSIGNED', 'IN_PROGRESS'], list(params.values()), 'overdue orders are not included in today’s totals')
+        driver_query = db.execute.call_args_list[1].args[0]
+        per_driver = driver_query.compile().params
+        self.assertIn('orders.scheduled_at >=', str(driver_query))
+        self.assertIn('orders.scheduled_at <', str(driver_query))
+        self.assertEqual([value for value in per_driver.values() if isinstance(value, datetime)], [start, end])
         self.assertEqual(list(per_driver.values()).count(org), 3, 'orders, routes and drivers are each company-filtered')
         self.assertIn(org, db.scalar.call_args.args[0].compile().params.values())
 

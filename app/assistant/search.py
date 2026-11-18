@@ -125,10 +125,9 @@ def daily_briefing(db, org, observed):
     local = observed.astimezone(zone)
     start = datetime.combine(local.date(), time.min, zone)
     end = datetime.combine(local.date() + timedelta(days=1), time.min, zone)
-    # Today's work, matching the Monitor: pickups scheduled today plus earlier pickups still open; creation time does not matter.
+    # Today's totals include only pickups scheduled for the company-local day.
     picked_today = (Order.scheduled_at >= start) & (Order.scheduled_at < end)
-    carried = (Order.scheduled_at < start) & Order.status.in_(['NEW', 'ASSIGNED', 'IN_PROGRESS'])
-    today = (Order.organization_id == org, Order.archived_at.is_(None), or_(picked_today, carried))
+    today = (Order.organization_id == org, Order.archived_at.is_(None), picked_today)
     counts = dict(db.execute(select(Order.status, func.count()).where(*today,
         Order.status != 'CANCELLED').group_by(Order.status)).all())
     incidents = db.scalar(select(func.count()).select_from(Incident).where(
