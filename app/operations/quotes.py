@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from app.services import audit
 from .models import Quote
 from .common import command
-from .pricing import quote
+from .pricing import quote, prepare_booking
 from .orders import check_package_types
 
 
@@ -13,7 +13,8 @@ def create_quote(db, actor, booking, key):
         raise HTTPException(422, 'New Quote requires a Rate Card and no Shipper.')
     def run():
         check_package_types(db, actor, booking)
-        row = Quote(organization_id=actor.organization_id, facts=booking.model_dump(mode='json'), pricing=quote(db, actor, booking))
+        prepared = prepare_booking(db, actor, booking)
+        row = Quote(organization_id=actor.organization_id, facts=prepared.model_dump(mode='json'), pricing=quote(db, actor, prepared))
         db.add(row); db.flush(); audit(db, actor, 'quote.created', row.id, actor.organization_id)
         return {'id': str(row.id), 'version': row.version, 'created_at': row.created_at.isoformat(), 'facts': row.facts, 'pricing': row.pricing}
     return command(db, actor, key, 'quote-create', booking.model_dump(mode='json'), run)

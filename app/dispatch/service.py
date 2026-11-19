@@ -163,16 +163,16 @@ def auto_companies():
 
 
 def due(organization_id, limit=100):
-    """Priced, unassigned Orders eligible immediately after booking, with bounded retry cooldown.
-    Pickups outside company work hours are held for a dispatcher; Needs Attention reports them."""
+    """Priced, unassigned Orders, with bounded retry cooldown. AUTO dispatch works only while the company is open
+    (work hours and holidays, company time zone): Orders booked while closed wait, and all are assigned from opening time."""
     with Session(engine) as db, db.begin():
         context(db, organization_id)
         config = settings(db, AgentDispatcher(organization_id))[1]
+        if closed_reason(config, now()): return []
         orders = db.scalars(select(Order).where(Order.organization_id == organization_id, Order.status == 'NEW',
             Order.pricing['status'].astext == 'PRICED').order_by(Order.scheduled_at).limit(limit * 3)).all()
         result = []
         for order in orders:
-            if closed_reason(config, order.scheduled_at): continue
             previous = latest(db, organization_id, order.id)
             if previous and previous.order_version == order.version:
                 if previous.status == 'ASSIGNED': continue

@@ -124,6 +124,53 @@ def test_shipper_booking_and_role_isolation(setup):
     assert w['mobile'].get(BASE+'/invoices').status_code==404
 
 
+def test_shipper_rate_cards_one_per_load_size(setup):
+    w=setup;client=w['client']
+    rates={r['data']['method']:r for r in w['rates'] if r['active']}
+    fixed,zone,hourly,distance=rates['FIXED'],rates['ZONE'],rates['HOURLY'],rates['BASE_PLUS_DISTANCE']
+    def sized(card,size):
+        body={'version':card['version'],'is_default':card['is_default'],'active':True,'data':{**card['data'],'load_size':size}}
+        return check(client.put(BASE+f'/rate-cards/{card["id"]}',json=body,headers={'Idempotency-Key':str(uuid4())}))
+    # Each card prices one load size; cards saved before the field are LTL.
+    assert zone['data']['load_size']=='LTL'
+    fixed,hourly=sized(fixed,'FTL'),sized(hourly,'SMALL_PARCEL')
+    put=lambda row,data: client.put(BASE+f'/shippers/{row["id"]}',json={'version':row['version'],'data':data},headers={'Idempotency-Key':str(uuid4())})
+    # The dispatcher's order is kept and duplicates collapse; two cards for one load size are refused.
+    body={**w['shipper_body'],'phone':'6045550197','email':'multi@example.com','rate_card_id':None,'rate_card_ids':[zone['id'],fixed['id'],zone['id']]}
+    multi=check(post(client,BASE+'/shippers',body),201)
+    assert multi['rate_card_ids']==[zone['id'],fixed['id']] and multi['rate_card_names']==[zone['data']['name'],fixed['data']['name']] and multi['rate_card_id']==zone['id']
+    assert multi['rate_card_load_sizes']==['LTL','FTL']
+    overlap=post(client,BASE+'/shippers',{**body,'email':'overlap@example.com','phone':'6045550193','rate_card_ids':[zone['id'],distance['id']]})
+    assert overlap.status_code==422 and 'one card per load size' in overlap.text
+    # Orders use the attached card for their load size; a size without one uses the Shipper's default (first) card.
+    ftl={**booking(multi['id'],None,w['type_id']),'load_size':'FTL'}
+    assert check(post(client,BASE+'/orders',ftl),201)['pricing']['rate_card_id']==fixed['id']
+    parcel=check(post(client,BASE+'/orders',{**booking(multi['id'],w['service'],None),'load_size':'SMALL_PARCEL'}),201)['pricing']
+    assert parcel.get('rate_card_id')==zone['id'] or 'Zone' in (parcel.get('review_reason') or '')
+    default=next(r for r in w['rates'] if r['is_default'])
+    data={k:v for k,v in body.items() if k!='rate_card_ids'}
+    # An older client resending the same first card keeps the list; choosing another card replaces it.
+    kept=check(put(multi,{**data,'rate_card_id':zone['id']}))
+    assert kept['rate_card_ids']==[zone['id'],fixed['id']]
+    single=check(put(kept,{**data,'rate_card_id':hourly['id']}))
+    assert single['rate_card_ids']==[hourly['id']]
+    emptied=check(put(single,{**data,'rate_card_ids':[]}))
+    assert emptied['rate_card_ids']==[default['id']]
+    attached=check(put(emptied,{**data,'rate_card_ids':[fixed['id'],hourly['id']],'rate_card_id':hourly['id']}))
+    assert attached['rate_card_ids']==[hourly['id'],fixed['id']] and attached['rate_card_id']==hourly['id']
+    assert put(attached,{**data,'rate_card_ids':[fixed['id']],'rate_card_id':hourly['id']}).status_code==422
+    assert put(attached,{**data,'rate_card_ids':[str(uuid4())]}).status_code==404
+    # A card attached in any position blocks archiving while the Shipper is active.
+    assert client.post(BASE+f'/rate-cards/{fixed["id"]}/archive',json={'version':fixed['version']},headers={'Idempotency-Key':str(uuid4())}).status_code==409
+    with TestClient(app,headers=HEADERS) as portal:
+        login(portal,'customer','acme','multi@example.com',multi['initial_password'])
+        profile=check(portal.get(BASE+'/shipper/profile'))
+        assert profile['rate_card_ids']==[hourly['id'],fixed['id']] and profile['rate_card_load_sizes']==['SMALL_PARCEL','FTL']
+        assert 'default_package_type_id' in check(portal.get(BASE+'/booking-preferences'))
+        assert check(post(portal,BASE+'/orders',{**booking(None,None,w['type_id']),'load_size':'FTL'}),201)['pricing']['rate_card_id']==fixed['id']
+    with owner_engine.connect() as db:
+        assert db.scalar(text('SELECT count(*) FROM shipper_rate_cards WHERE shipper_id=:s'),{'s':multi['id']})==2
+
 def test_shipper_preferred_driver_and_rate_card(setup):
     w=setup;client=w['client']
     default=next(r for r in w['rates'] if r['is_default'])
@@ -200,18 +247,79 @@ def test_assignment_capacity_dg_versions_and_residential_city_independence(setup
     assert post(w['client'],BASE+f'/orders/{outside["id"]}/assign',{**body,'version':1}).status_code==200
 
 
+def test_load_size_rules(setup):
+    w=setup;client=w['client']
+    bay=next(c for c in w['catalog'] if c['id']==w['type_id'])['data']
+    # Without a load size the API suggests one from the packages: light boxes are a Small parcel.
+    parcel=new_order(w)
+    assert parcel['facts']['load_size']=='SMALL_PARCEL'
+    heavy=booking(w['shipper']['id'],w['service'],w['type_id']);heavy['items'][0]['pallets']=1
+    assert check(post(client,BASE+'/orders',heavy),201)['facts']['load_size']=='LTL'
+    # LTL and Small parcel need a service level and package sizes.
+    no_service=booking(w['shipper']['id'],None,None);no_service['load_size']='LTL'
+    assert post(client,BASE+'/orders',no_service).status_code==422
+    no_size=booking(w['shipper']['id'],w['service'],None);no_size['load_size']='SMALL_PARCEL'
+    for key in ('length_cm','width_cm','height_cm'): no_size['items'][0].pop(key)
+    assert post(client,BASE+'/orders',no_size).status_code==422
+    # A full truckload needs a vehicle type, no service level, and takes the vehicle's cargo space.
+    ftl=booking(w['shipper']['id'],None,None);ftl['load_size']='FTL'
+    for key in ('length_cm','width_cm','height_cm'): ftl['items'][0].pop(key)
+    assert post(client,BASE+'/orders',ftl).status_code==422
+    no_weight=booking(w['shipper']['id'],w['service'],None);no_weight['load_size']='LTL';no_weight['items'][0].pop('weight_kg')
+    assert post(client,BASE+'/orders',no_weight).status_code==422
+    # A full truckload needs no weight: it takes the vehicle type's payload, and a heavier stated load is refused.
+    ftl['vehicle_type_id']=w['type_id'];ftl['items'][0].pop('weight_kg')
+    ftl['items'][0]['weight_kg']=str(float(bay['payload_kg'])+1)
+    assert 'heavier' in post(client,BASE+'/orders',ftl).json()['error']['message']
+    ftl['items'][0].pop('weight_kg')
+    full=check(post(client,BASE+'/orders',ftl),201)
+    item=full['facts']['items'][0]
+    assert float(item['weight_kg'])==float(bay['payload_kg'])
+    assert full['service_id'] is None and full['facts']['service_id'] is None and full['facts']['load_size']=='FTL'
+    assert [float(item[k]) for k in ('length_cm','width_cm','height_cm')]==[float(bay[k]) for k in ('length_cm','width_cm','height_cm')]
+    assert full['pricing']['status']=='PRICED' and not any(l['group']=='SERVICE' for l in full['pricing']['lines'])
+    # The full truckload cannot share a Route with another Order.
+    route=assign(w,parcel)
+    shared=post(client,BASE+f'/orders/{full["id"]}/assign',dict(version=full['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],
+        route_id=route['id'],route_version=route['version'],planned_at=datetime.now(timezone.utc).isoformat()))
+    assert shared.status_code==409 and 'full truckload' in shared.json()['error']['message']
+    with TestClient(app,headers=HEADERS) as mobile:
+        login(mobile,'driver','acme','dana@example.com',w['driver']['initial_password'])
+        assert {o['id']:o['load_size'] for o in check(mobile.get(BASE+'/driver/orders'))}[parcel['id']]=='SMALL_PARCEL'
+
+
+def test_vehicle_type_load_sizes(setup):
+    w=setup;client=w['client']
+    row=next(c for c in w['catalog'] if c['id']==w['type_id'])
+    assert row['data']['load_sizes']==['FTL','LTL']
+    put=lambda data,version: client.put(BASE+f'/catalog/{w["type_id"]}',json=dict(data=data,version=version),headers={'Idempotency-Key':str(uuid4())})
+    ltl_only=check(put({**row['data'],'load_sizes':['LTL']},row['version']))
+    assert put({**row['data'],'load_sizes':[]},ltl_only['version']).status_code==422
+    # A client that sends no load sizes keeps the saved ones.
+    legacy={k:v for k,v in ltl_only['data'].items() if k!='load_sizes'}
+    kept=check(put(legacy,ltl_only['version']))
+    assert kept['data']['load_sizes']==['LTL']
+    ftl=booking(w['shipper']['id'],None,w['type_id']);ftl['load_size']='FTL'
+    refused=post(client,BASE+'/orders',ftl)
+    assert refused.status_code==422 and 'offered for a full truckload' in refused.json()['error']['message']
+    ltl=booking(w['shipper']['id'],w['service'],w['type_id']);ltl['load_size']='LTL'
+    assert check(post(client,BASE+'/orders',ltl),201)['facts']['vehicle_type_id']==w['type_id']
+    # A load size the API suggests (no stated size) never refuses the vehicle type.
+    assert check(post(client,BASE+'/orders',booking(w['shipper']['id'],w['service'],w['type_id'])),201)
+
+
 def test_multiple_orders_route_and_locked_mutations(setup):
     w=setup;one=new_order(w);two=new_order(w)
     route=assign(w,one);original_ids={v['stop_id']:v['id'] for v in route['stops']}
     without_route=post(w['client'],BASE+f'/orders/{two["id"]}/assign',dict(version=two['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat()))
-    assert without_route.status_code==409 and 'planned Route' in without_route.json()['error']['message']
+    assert without_route.status_code==409 and 'planned route' in without_route.json()['error']['message']
     route=assign(w,two,route)
     assert len(route['stops'])==4
     assert all(original_ids.get(v['stop_id'],v['id'])==v['id'] for v in route['stops'])
     route=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'])))
     third=new_order(w)
     in_progress=post(w['client'],BASE+f'/orders/{third["id"]}/assign',dict(version=third['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat()))
-    assert in_progress.status_code==409 and 'in-progress Route' in in_progress.json()['error']['message']
+    assert in_progress.status_code==409 and 'locked or underway' in in_progress.json()['error']['message']
     body=dict(version=1,driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],route_id=route['id'],route_version=route['version'],planned_at=datetime.now(timezone.utc).isoformat())
     assert post(w['client'],BASE+f'/orders/{third["id"]}/assign',body).status_code==409
     assert post(w['client'],BASE+f'/routes/{route["id"]}/release',dict(version=route['version'],generation=route['generation'])).status_code==409

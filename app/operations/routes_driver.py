@@ -48,6 +48,7 @@ def driver_orders(slug: str, db: DB, user: User = Depends(auth.driver)):
     services = {c.id: c.data.get('name','') for c in db.scalars(select(Catalog).where(Catalog.organization_id == user.organization_id, Catalog.id.in_({o.service_id for o,_ in rows})))} if rows else {}
     return [{'id': o.id, 'number': o.number, 'status': o.status, 'scheduled_at': o.scheduled_at, 'completed_at': o.completed_at,
         'route_id': o.route_id, 'route_status': route_status, 'service_name': services.get(o.service_id,''),
+        'load_size': o.facts.get('load_size'),
         'shipper': {k: o.booking['shipper'].get(k, '') for k in ('name','company_name','phone','email')},
         'stops': [{k: stop.get(k, default) for k, default in [('id',None),('kind',None),('address',None),('contact_name',''),('phone',''),('instructions',''),
             ('window_start',None),('window_end',None),('unattended_allowed',False),('photo_required',False)]} for stop in o.facts['stops']],

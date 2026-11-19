@@ -12,6 +12,8 @@ Money = Annotated[Decimal, Field(ge=0, le=10000000, max_digits=16, decimal_place
 Positive = Annotated[Decimal, Field(gt=0, le=10000000, allow_inf_nan=False)]
 Percent = Annotated[Decimal, Field(ge=0, le=100, allow_inf_nan=False)]
 Text = Annotated[str, Field(max_length=2000)]
+# Full truckload, less than truckload, small parcel.
+LoadSize = Literal['FTL', 'LTL', 'SMALL_PARCEL']
 
 
 def normalize_fsa(value):
@@ -206,11 +208,14 @@ class CatalogData(Input):
     equipment: list[Name] = Field(default_factory=list, max_length=30)
     required_equipment: list[Name] = Field(default_factory=list, max_length=30)
     required_crew: int = Field(default=1, ge=1, le=10)
+    load_sizes: list[Literal['FTL', 'LTL']] = Field(default_factory=lambda: ['FTL', 'LTL'], min_length=1, max_length=2,
+        description='Vehicle Type only: the load sizes an order may require it for. Records saved before this field read as both.')
 
     @model_validator(mode='after')
     def road_weight_valid(self):
         if self.road_profile and self.payload_kg is not None and self.road_profile.gross_weight_kg < self.payload_kg:
             raise ValueError('Loaded gross weight must include at least the vehicle type payload capacity')
+        if len(set(self.load_sizes)) != len(self.load_sizes): raise ValueError('Duplicate load size')
         return self
 
 
@@ -265,6 +270,7 @@ class RateData(Input):
     apply_service: bool = True
     apply_vehicle: bool = True
     apply_accessorials: bool = True
+    load_size: LoadSize = Field(default='LTL', description='The one load size this card prices. Cards saved before this field read as LTL.')
 
     @model_validator(mode='after')
     def bands_valid(self):
@@ -306,7 +312,9 @@ class ShipperData(Input):
     email: EmailStr
     phone: Annotated[str, Field(max_length=50)] = ''
     warehouse: Address
+    # With `rate_card_ids` (in the dispatcher's order) this is the default card among them; alone it is a legacy single card.
     rate_card_id: UUID | None = None
+    rate_card_ids: list[UUID] | None = Field(default=None, max_length=20, description='Attached Rate Cards, at most one per load size.')
     assigned_driver_id: UUID | None = None
     discount: Discount = Field(default_factory=Discount)
     instructions: Text = ''
@@ -426,10 +434,11 @@ class ItemInput(Input):
     pickup_id: UUID
     delivery_id: UUID
     quantity: int = Field(ge=1, le=10000)
-    weight_kg: Positive
-    length_cm: Positive
-    width_cm: Positive
-    height_cm: Positive
+    # Weight and sizes are optional only on a full truckload, which takes the vehicle type's payload and cargo space.
+    weight_kg: Positive | None = None
+    length_cm: Positive | None = None
+    width_cm: Positive | None = None
+    height_cm: Positive | None = None
     pallets: int = Field(default=0, ge=0, le=100)
     fragile: bool = False
     dangerous_goods: bool = False
@@ -452,7 +461,9 @@ class Booking(Input):
     shipper_id: UUID | None = None
     billing_shipper_id: UUID | None = None
     rate_card_id: UUID | None = None
-    service_id: UUID
+    # Older bookings have no load size; the API suggests one when it is omitted.
+    load_size: LoadSize | None = None
+    service_id: UUID | None = None
     vehicle_type_id: UUID | None = None
     preferred_driver_id: UUID | None = None
     scheduled_at: AwareDatetime
@@ -478,6 +489,17 @@ class Booking(Input):
             used.update([item.pickup_id, item.delivery_id])
         if used != set(stops): raise ValueError('Every stop must be linked to cargo')
         if len({a.id for a in self.accessorials}) != len(self.accessorials): raise ValueError('Duplicate Accessorial')
+        return self
+
+    @model_validator(mode='after')
+    def load_fields(self):
+        """FTL needs a vehicle type and no service level, package weights or sizes; LTL and Small parcel need all of them."""
+        if self.load_size == 'FTL':
+            if self.vehicle_type_id is None: raise ValueError('Choose a vehicle type for a full truckload')
+            return self
+        if self.service_id is None: raise ValueError('Choose a service level')
+        if any(i.weight_kg is None for i in self.items): raise ValueError('Enter the weight of every package')
+        if any(None in (i.length_cm, i.width_cm, i.height_cm) for i in self.items): raise ValueError('Enter length, width and height for every package')
         return self
 
 
@@ -618,7 +640,7 @@ class OrderView(RecordView):
     number: str
     shipper_id: UUID
     billing_shipper_id: UUID
-    service_id: UUID
+    service_id: UUID | None
     route_id: UUID | None
     source: str
     status: str
@@ -669,6 +691,9 @@ class ShipperView(RecordView):
     warehouse: Address
     rate_card_id: UUID | None
     rate_card_name: str | None = None
+    rate_card_ids: list[UUID] = Field(default_factory=list)
+    rate_card_names: list[str] = Field(default_factory=list)
+    rate_card_load_sizes: list[LoadSize] = Field(default_factory=list, description='Load size of each attached card, in the same order; the first is the default card\'s, which new Orders start with.')
     assigned_driver_id: UUID | None = None
     assigned_driver_name: str | None = None
     discount: Discount
@@ -820,6 +845,7 @@ class DriverOrderView(BaseModel):
     route_id: UUID
     route_status: str
     service_name: str
+    load_size: LoadSize | None = None
     shipper: DriverShipperContact
     stops: list[DriverOrderStop]
     items: list[ItemInput]
@@ -919,6 +945,7 @@ class AnalyticsRow(BaseModel):
     driver_number: str = ''
     vehicle_unit: str = ''
     service_name: str = ''
+    load_size: LoadSize | None = None
     delivered_at: datetime | None = None
     delivery_outcome: Literal['ON_TIME', 'LATE', 'NOT_MEASURED'] = 'NOT_MEASURED'
     pod_verified: bool = False
@@ -1042,3 +1069,5 @@ class BookingPreferences(BaseModel):
     work_hours: list[WorkDay]
     holidays: list[Holiday]
     default_service_id: UUID | None = None
+    # Prefills new packages (Small parcel, and LTL when the company has no Pallet type).
+    default_package_type_id: UUID | None = None

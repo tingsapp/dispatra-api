@@ -27,14 +27,65 @@ def catalog(db, actor, identity, kind):
     return row
 
 
-def price_context(db, actor, booking):
-    _, config = settings(db, actor)
-    shipper = operational_shipper(db, actor, booking.shipper_id) if booking.shipper_id else None
-    card_id = booking.rate_card_id or (shipper.rate_card_id if shipper else None)
+# Small parcel: no pallets, each piece up to 70 lb and the whole order up to 150 lb.
+PARCEL_PIECE_KG, PARCEL_TOTAL_KG = Decimal('31.75'), Decimal('68.04')
+LOAD_SIZE_NAMES = {'FTL': 'a full truckload', 'LTL': 'less than truckload loads'}
+
+
+def suggested_load_size(booking):
+    """Load size for a booking that names none (email/TMS intake, older clients). FTL is never guessed."""
+    weight = sum((item.weight_kg * item.quantity for item in booking.items), ZERO)
+    parcel = all(item.pallets == 0 and item.weight_kg <= PARCEL_PIECE_KG for item in booking.items) and weight <= PARCEL_TOTAL_KG
+    return 'SMALL_PARCEL' if parcel else 'LTL'
+
+
+def prepare_booking(db, actor, booking):
+    """Complete load facts before pricing or saving: a missing load size is suggested, a stated FTL/LTL load refuses vehicle
+    types not offered for it, and a full truckload takes the chosen vehicle type's payload and cargo space for lines without
+    a weight or size (the load fills the truck)."""
+    stated = booking.load_size
+    if stated is None: booking = booking.model_copy(update={'load_size': suggested_load_size(booking)})
+    bay = catalog(db, actor, booking.vehicle_type_id, 'VEHICLE_TYPE').data if booking.vehicle_type_id else None
+    # A stated FTL or LTL load only takes vehicle types offered for it; a suggested load size refuses nothing.
+    if bay and stated in ('FTL', 'LTL') and stated not in bay.get('load_sizes', ['FTL', 'LTL']):
+        raise HTTPException(422, f"{bay['name']} isn’t offered for {LOAD_SIZE_NAMES[stated]}. Choose another vehicle type.")
+    if booking.load_size != 'FTL': return booking
+    payload = Decimal(str(bay['payload_kg'])) if bay.get('payload_kg') else None
+    given = sum((item.weight_kg * item.quantity for item in booking.items if item.weight_kg is not None), ZERO)
+    if payload is not None and given > payload:
+        raise HTTPException(422, f'This load is heavier than the vehicle type can carry ({payload.normalize():f} kg).')
+    blank = [item for item in booking.items if item.weight_kg is None]
+    if blank and payload is None:
+        raise HTTPException(422, 'Add a payload to this vehicle type before booking a full truckload.')
+    sized = all(None not in (i.length_cm, i.width_cm, i.height_cm) for i in booking.items)
+    if not sized and not all(bay.get(key) for key in ('length_cm', 'width_cm', 'height_cm')):
+        raise HTTPException(422, 'Add cargo length, width and height to this vehicle type before booking a full truckload.')
+    size = {} if sized else {key: Decimal(str(bay[key])) for key in ('length_cm', 'width_cm', 'height_cm')}
+    share = ((payload - given) / sum(item.quantity for item in blank)).quantize(Decimal('0.000001')) if blank else None
+    items = [item.model_copy(update={**({'weight_kg': share} if item.weight_kg is None else {}),
+        **({k: v for k, v in size.items() if getattr(item, k) is None})}) for item in booking.items]
+    return booking.model_copy(update={'items': items})
+
+
+def rate_card(db, actor, booking, shipper):
+    """The card that prices a booking: an explicit override; else the Shipper's attached card for the booking's load size
+    (each card prices one size); else the Shipper's default (first) card; else the company Default."""
+    from .directory import shipper_rate_ids
+    card_id = booking.rate_card_id
+    if not card_id and shipper:
+        cards = [card for card in (record(db, RateCard, actor, identity) for identity in shipper_rate_ids(db, actor, shipper)) if card.active]
+        card_id = next((card.id for card in cards if card.data.get('load_size', 'LTL') == (booking.load_size or 'LTL')), cards[0].id if cards else None)
     card = record(db, RateCard, actor, card_id) if card_id else db.scalar(select(RateCard).where(
         RateCard.organization_id == actor.organization_id, RateCard.is_default.is_(True), RateCard.active.is_(True)))
     if not card or not card.active: raise HTTPException(409, 'An active Rate Card is required.')
-    service = catalog(db, actor, booking.service_id, 'SERVICE')
+    return card
+
+
+def price_context(db, actor, booking):
+    _, config = settings(db, actor)
+    shipper = operational_shipper(db, actor, booking.shipper_id) if booking.shipper_id else None
+    card = rate_card(db, actor, booking, shipper)
+    service = catalog(db, actor, booking.service_id, 'SERVICE') if booking.service_id else None
     vehicle = catalog(db, actor, booking.vehicle_type_id, 'VEHICLE_TYPE') if booking.vehicle_type_id else None
     package_counts = {
         'FRAGILE': sum(item.quantity for item in booking.items if item.fragile),
@@ -62,7 +113,7 @@ def price_context(db, actor, booking):
     return {'distance_km': str(distance) if distance is not None else None, 'estimated_minutes': minutes, 'card_id': str(card.id), 'card_version': card.version,
         'card': {key:value for key,value in card.data.items() if key != 'settle_actual'},
         'package_handling_unit_pricing': True,
-        'settings': config.model_dump(mode='json'), 'service': service.data,
+        'settings': config.model_dump(mode='json'), 'service': service.data if service else None,
         'vehicle': vehicle.data if vehicle else None, 'accessorials': accessorials,
         'discount': shipper.discount if shipper else Discount().model_dump(mode='json')}
 
@@ -120,8 +171,8 @@ def calculate(booking: Booking, context):
     else:
         freight = freight_amount(booking, card)
         lines.append(line('FREIGHT', card.name, freight, fuel=True))
-        service = CatalogData.model_validate(context['service'])
-        if card.apply_service and service.amount: lines.append(line('SERVICE', service.name, service.amount, service.taxable, True))
+        service = CatalogData.model_validate(context['service']) if context.get('service') else None
+        if card.apply_service and service and service.amount: lines.append(line('SERVICE', service.name, service.amount, service.taxable, True))
         if card.apply_vehicle and context['vehicle']:
             vehicle = CatalogData.model_validate(context['vehicle'])
             if vehicle.amount: lines.append(line('VEHICLE', vehicle.name, vehicle.amount, vehicle.taxable, vehicle.fuel_eligible))
@@ -170,6 +221,7 @@ def calculate(booking: Booking, context):
 
 
 def quote(db, actor, booking):
+    booking = prepare_booking(db, actor, booking)
     return calculate(booking, price_context(db, actor, booking))
 
 

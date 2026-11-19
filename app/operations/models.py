@@ -73,6 +73,18 @@ class Shipper(TenantRecord, Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ShipperRateCard(Base):
+    """Rate Cards attached to a Shipper, in the dispatcher's order; `position` 0 mirrors `shippers.rate_card_id`."""
+    __tablename__ = 'shipper_rate_cards'
+    __table_args__ = (UniqueConstraint('shipper_id', 'position'),
+        ForeignKeyConstraint(['organization_id', 'shipper_id'], ['shippers.organization_id', 'shippers.id'], ondelete='CASCADE'),
+        ForeignKeyConstraint(['organization_id', 'rate_card_id'], ['rate_cards.organization_id', 'rate_cards.id']))
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey('organizations.id'), index=True)
+    shipper_id: Mapped[UUID] = mapped_column(primary_key=True)
+    rate_card_id: Mapped[UUID] = mapped_column(primary_key=True)
+    position: Mapped[int]
+
+
 class Vehicle(TenantRecord, Base):
     __tablename__ = 'vehicles'
     __table_args__ = (UniqueConstraint('organization_id', 'id'), UniqueConstraint('organization_id', 'number', name='vehicles_company_number'), UniqueConstraint('organization_id', 'plate', 'province'),
@@ -138,7 +150,8 @@ class Order(TenantRecord, Base):
     number: Mapped[str] = mapped_column(String(50))
     shipper_id: Mapped[UUID]
     billing_shipper_id: Mapped[UUID]
-    service_id: Mapped[UUID]
+    # NULL only for full truckloads, which have no service level.
+    service_id: Mapped[UUID | None]
     route_id: Mapped[UUID | None]
     source: Mapped[str] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(20), default='NEW')

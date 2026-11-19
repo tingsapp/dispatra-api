@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select
 from app.models import LoginSession, User, now
 from .common import changed, command, company_lock, record, version, operational_shipper
-from .models import Driver, Order, RateCard, Route, Shipper, Vehicle
+from .models import Driver, Order, RateCard, Route, Shipper, ShipperRateCard, Vehicle
 
 
 def archive_rate(db, actor, identity, data, key):
@@ -15,9 +15,11 @@ def archive_rate(db, actor, identity, data, key):
             raise HTTPException(409, 'Rate Card is already archived.')
         if row.is_default:
             raise HTTPException(409, 'Select another default Rate Card before archiving this one.')
+        linked = select(ShipperRateCard.shipper_id).where(ShipperRateCard.organization_id == actor.organization_id,
+            ShipperRateCard.rate_card_id == identity)
         attached = db.scalar(select(Shipper.id).where(
-            Shipper.organization_id == actor.organization_id, Shipper.rate_card_id == identity,
-            Shipper.status == 'ACTIVE'))
+            Shipper.organization_id == actor.organization_id, Shipper.status == 'ACTIVE',
+            (Shipper.rate_card_id == identity) | Shipper.id.in_(linked)))
         if attached:
             raise HTTPException(409, 'Move active Shippers to another Rate Card first.')
         row.active = False

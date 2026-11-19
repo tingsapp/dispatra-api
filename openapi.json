@@ -13029,6 +13029,122 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/order-attention-count": {
+      "get": {
+        "tags": [
+          "Operations reporting"
+        ],
+        "summary": "Order Attention Count",
+        "operationId": "order_attention_count_api_v1_companies__slug__order_attention_count_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Order Attention Count Api V1 Companies  Slug  Order Attention Count Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/monitor": {
       "get": {
         "tags": [
@@ -29757,6 +29873,22 @@
             "title": "Service Name",
             "default": ""
           },
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
+          },
           "delivered_at": {
             "anyOf": [
               {
@@ -30689,9 +30821,32 @@
             ],
             "title": "Rate Card Id"
           },
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
+          },
           "service_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Service Id"
           },
           "vehicle_type_id": {
@@ -30837,7 +30992,6 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "service_id",
           "scheduled_at",
           "stops",
           "items"
@@ -30882,9 +31036,32 @@
             ],
             "title": "Rate Card Id"
           },
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
+          },
           "service_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Service Id"
           },
           "vehicle_type_id": {
@@ -31015,7 +31192,6 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "service_id",
           "scheduled_at",
           "stops",
           "items"
@@ -31132,6 +31308,18 @@
               }
             ],
             "title": "Default Service Id"
+          },
+          "default_package_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Package Type Id"
           }
         },
         "type": "object",
@@ -31666,6 +31854,20 @@
             "minimum": 1.0,
             "title": "Required Crew",
             "default": 1
+          },
+          "load_sizes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "FTL",
+                "LTL"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Load Sizes",
+            "description": "Vehicle Type only: the load sizes an order may require it for. Records saved before this field read as both."
           }
         },
         "additionalProperties": false,
@@ -31827,6 +32029,20 @@
             "minimum": 1.0,
             "title": "Required Crew",
             "default": 1
+          },
+          "load_sizes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "FTL",
+                "LTL"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Load Sizes",
+            "description": "Vehicle Type only: the load sizes an order may require it for. Records saved before this field read as both."
           }
         },
         "additionalProperties": false,
@@ -33840,6 +34056,18 @@
             "type": "integer",
             "title": "Completed"
           },
+          "overdue_count": {
+            "type": "integer",
+            "title": "Overdue Count",
+            "default": 0
+          },
+          "overdue_orders": {
+            "items": {
+              "$ref": "#/components/schemas/OverdueOrderSummary"
+            },
+            "type": "array",
+            "title": "Overdue Orders"
+          },
           "open_incidents": {
             "type": "integer",
             "title": "Open Incidents"
@@ -34868,7 +35096,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -35004,7 +35232,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -35709,6 +35937,22 @@
           "service_name": {
             "type": "string",
             "title": "Service Name"
+          },
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
           },
           "shipper": {
             "$ref": "#/components/schemas/DriverShipperContact"
@@ -37579,6 +37823,9 @@
               {
                 "type": "string",
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Weight Kg"
@@ -37593,6 +37840,9 @@
               {
                 "type": "string",
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Length Cm"
@@ -37607,6 +37857,9 @@
               {
                 "type": "string",
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Width Cm"
@@ -37621,6 +37874,9 @@
               {
                 "type": "string",
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Height Cm"
@@ -37659,7 +37915,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -37668,11 +37924,7 @@
           "id",
           "pickup_id",
           "delivery_id",
-          "quantity",
-          "weight_kg",
-          "length_cm",
-          "width_cm",
-          "height_cm"
+          "quantity"
         ],
         "title": "ItemInput"
       },
@@ -37700,23 +37952,51 @@
             "title": "Quantity"
           },
           "weight_kg": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Weight Kg"
           },
           "length_cm": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Length Cm"
           },
           "width_cm": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Width Cm"
           },
           "height_cm": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Height Cm"
           },
           "pallets": {
@@ -37753,7 +38033,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -37762,11 +38042,7 @@
           "id",
           "pickup_id",
           "delivery_id",
-          "quantity",
-          "weight_kg",
-          "length_cm",
-          "width_cm",
-          "height_cm"
+          "quantity"
         ],
         "title": "ItemInput"
       },
@@ -39055,8 +39331,15 @@
             "title": "Billing Shipper Id"
           },
           "service_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Service Id"
           },
           "route_id": {
@@ -39271,6 +39554,35 @@
           "active"
         ],
         "title": "OrganizationView"
+      },
+      "OverdueOrderSummary": {
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scheduled At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "ASSIGNED",
+              "IN_PROGRESS"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_number",
+          "scheduled_at",
+          "status"
+        ],
+        "title": "OverdueOrderSummary"
       },
       "OverviewDispatcherUpdate": {
         "properties": {
@@ -40235,6 +40547,17 @@
             "type": "boolean",
             "title": "Apply Accessorials",
             "default": true
+          },
+          "load_size": {
+            "type": "string",
+            "enum": [
+              "FTL",
+              "LTL",
+              "SMALL_PARCEL"
+            ],
+            "title": "Load Size",
+            "description": "The one load size this card prices. Cards saved before this field read as LTL.",
+            "default": "LTL"
           }
         },
         "additionalProperties": false,
@@ -40355,6 +40678,17 @@
             "type": "boolean",
             "title": "Apply Accessorials",
             "default": true
+          },
+          "load_size": {
+            "type": "string",
+            "enum": [
+              "FTL",
+              "LTL",
+              "SMALL_PARCEL"
+            ],
+            "title": "Load Size",
+            "description": "The one load size this card prices. Cards saved before this field read as LTL.",
+            "default": "LTL"
           }
         },
         "additionalProperties": false,
@@ -41513,6 +41847,23 @@
             ],
             "title": "Rate Card Id"
           },
+          "rate_card_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Card Ids",
+            "description": "Attached Rate Cards, at most one per load size."
+          },
           "assigned_driver_id": {
             "anyOf": [
               {
@@ -41739,6 +42090,34 @@
               }
             ],
             "title": "Rate Card Name"
+          },
+          "rate_card_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Rate Card Ids"
+          },
+          "rate_card_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rate Card Names"
+          },
+          "rate_card_load_sizes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "FTL",
+                "LTL",
+                "SMALL_PARCEL"
+              ]
+            },
+            "type": "array",
+            "title": "Rate Card Load Sizes",
+            "description": "Load size of each attached card, in the same order; the first is the default card's, which new Orders start with."
           },
           "assigned_driver_id": {
             "anyOf": [

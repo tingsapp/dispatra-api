@@ -222,7 +222,8 @@ def editable(db, actor, entity, row):
     if entity == 'ORDER': return {'booking': row.facts}
     if entity == 'SHIPPER':
         view = directory.shipper_view(db, actor, row)
-        return {'data': {field: view[field] for field in ShipperData.model_fields if field in view}, 'status': view['status']}
+        # The ordered `rate_card_ids` list replaces the legacy single `rate_card_id` in chat edits.
+        return {'data': {field: view[field] for field in ShipperData.model_fields if field in view and field != 'rate_card_id'}, 'status': view['status']}
     if entity == 'DRIVER':
         data = {**row.data, 'name': row.name, 'email': row.email, 'phone': row.phone, 'address': row.address,
             'vehicle_id': str(row.vehicle_id) if row.vehicle_id else None, 'active': row.active}

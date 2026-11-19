@@ -16,6 +16,8 @@ from .schemas import DraftedRecord
 REFERENCES = {'shipper_id': 'SHIPPER', 'billing_shipper_id': 'SHIPPER', 'assigned_driver_id': 'DRIVER', 'preferred_driver_id': 'DRIVER',
     'vehicle_id': 'VEHICLE', 'rate_card_id': 'RATE_CARD', 'service_id': 'SERVICE', 'default_service_id': 'SERVICE',
     'vehicle_type_id': 'VEHICLE_TYPE', 'type_id': 'VEHICLE_TYPE', 'package_type_id': 'PACKAGE_TYPE', 'default_package_type_id': 'PACKAGE_TYPE'}
+# Lists of references, such as a Shipper's ordered Rate Cards.
+LISTS = {'rate_card_ids': 'RATE_CARD'}
 ADDRESSES = {'warehouse', 'address', 'parking_address'}
 MOMENTS = {'scheduled_at', 'window_start', 'window_end', 'shift_start', 'shift_end', 'unavailable_from', 'unavailable_until'}
 HIDDEN = {'id', 'version', 'pickup_id', 'delivery_id', 'latitude', 'longitude', 'logo_url', 'avatar_url', 'country'}
@@ -34,6 +36,7 @@ class Incomplete(Exception):
 def reference(path, key):
     """Entity a field points to, if any. Accessorial selections are `{'id': ...}` entries under `accessorials`."""
     if key == 'id' and len(path) >= 3 and path[-3] == 'accessorials': return 'ACCESSORIAL'
+    if isinstance(key, int) and len(path) >= 2 and path[-2] in LISTS: return LISTS[path[-2]]
     return REFERENCES.get(key)
 
 
@@ -131,9 +134,10 @@ def explain(error):
 
 
 def title(key):
-    """`type_id` → 'Type', `payload_kg` → 'Payload (kg)'."""
+    """`type_id` → 'Type', `rate_card_ids` → 'Rate cards', `payload_kg` → 'Payload (kg)'."""
     words = str(key).split('_')
     if len(words) > 1 and words[-1] == 'id': words = words[:-1]
+    if len(words) > 1 and words[-1] == 'ids': words = words[:-2] + [words[-2] + 's']
     if len(words) > 1 and words[-1] in UNITS: words[-1] = f'({UNITS[words[-1]]})'
     return ' '.join(words).capitalize()
 

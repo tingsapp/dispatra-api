@@ -7,7 +7,7 @@ from sqlalchemy import select, delete, func
 from app.models import User, LoginSession, Organization, now
 from app.security import hash_password
 from app.services import audit
-from .models import Catalog, RateCard, Shipper, Driver, Vehicle, Route, Settings, DutySession
+from .models import Catalog, RateCard, Shipper, ShipperRateCard, Driver, Vehicle, Route, Settings, DutySession
 from .identifiers import issue_number, vehicle_number
 from .schemas import SettingsView, CatalogView, RateView
 from .common import record, version, company_lock, command, changed, dump, settings, operational_shipper
@@ -64,6 +64,8 @@ def save_catalog(db, actor, data, key, identity=None):
         if 'road_profile' not in data.data.model_fields_set:
             values.pop('road_profile', None)
             if row and 'road_profile' in row.data: values['road_profile'] = row.data['road_profile']
+        # Clients that do not send load sizes keep the saved ones.
+        if 'load_sizes' not in data.data.model_fields_set and row and 'load_sizes' in row.data: values['load_sizes'] = row.data['load_sizes']
         if kind == 'VEHICLE_TYPE' and not values.get('road_profile'):
             raise HTTPException(422, 'Enter outside length, width, height and loaded weight.')
         if values.get('road_profile') and kind != 'VEHICLE_TYPE':
@@ -149,9 +151,20 @@ def default_rate(db, actor):
     return db.scalar(select(RateCard).where(RateCard.organization_id == actor.organization_id, RateCard.is_default.is_(True), RateCard.active.is_(True)))
 
 
+def shipper_rate_ids(db, actor, row):
+    """Attached Rate Cards in the dispatcher's order; older rows without links fall back to the single card."""
+    ids = db.scalars(select(ShipperRateCard.rate_card_id).where(ShipperRateCard.organization_id == actor.organization_id,
+        ShipperRateCard.shipper_id == row.id).order_by(ShipperRateCard.position)).all()
+    return list(ids) or ([row.rate_card_id] if row.rate_card_id else [])
+
+
 def shipper_view(db, actor, row):
-    """`rate_card_name` is the card that prices this shipper's orders: its own, else the company Default."""
+    """`rate_card_name` is the Shipper's first (default) attached card, else the company Default.
+    `rate_card_ids`/`rate_card_names` list every attached card in order; Orders use the one for their load size."""
     card = record(db, RateCard, actor, row.rate_card_id) if row.rate_card_id else default_rate(db, actor)
+    ids = shipper_rate_ids(db, actor, row)
+    rates = {rate.id: rate.data for rate in db.scalars(select(RateCard).where(
+        RateCard.organization_id == actor.organization_id, RateCard.id.in_(ids)))} if ids else {}
     from .orders import company_scope
     driver_name = None
     if row.assigned_driver_id:
@@ -159,7 +172,9 @@ def shipper_view(db, actor, row):
             driver_name = db.scalar(select(Driver.name).where(Driver.organization_id == actor.organization_id,
                 Driver.id == row.assigned_driver_id))
     return jsonable_encoder({**{k: v for k, v in dump(row).items() if k not in {'contact_name', 'address'}},
-        'rate_card_name': card.data['name'] if card else None, 'assigned_driver_name': driver_name})
+        'rate_card_name': card.data['name'] if card else None, 'rate_card_ids': ids,
+        'rate_card_names': [rates[identity]['name'] for identity in ids if identity in rates],
+        'rate_card_load_sizes': [rates[identity].get('load_size', 'LTL') for identity in ids if identity in rates], 'assigned_driver_name': driver_name})
 
 
 def save_shipper(db, actor, data, key, identity=None):
@@ -168,9 +183,6 @@ def save_shipper(db, actor, data, key, identity=None):
         nonlocal password
         company_lock(db, actor)
         payload = data.data if identity else data
-        if payload.rate_card_id:
-            rate = record(db, RateCard, actor, payload.rate_card_id)
-            if not rate.active: raise HTTPException(422, 'Choose an active Rate Card.')
         if identity:
             row = customer = operational_shipper(db, actor, identity, True); version(row, data.version)
             if row.archived_at: raise HTTPException(409, 'Archived Shipper cannot be edited.')
@@ -199,9 +211,7 @@ def save_shipper(db, actor, data, key, identity=None):
         customer.address = payload.warehouse.text
         row.kind, row.company_name = payload.kind, payload.company_name
         row.warehouse, row.discount = payload.warehouse.model_dump(mode='json'), payload.discount.model_dump(mode='json')
-        # Every shipper carries a Rate Card; without a choice it is the company Default at save time.
-        default = None if payload.rate_card_id else default_rate(db, actor)
-        row.rate_card_id = payload.rate_card_id or (default.id if default else None)
+        attach_rates(db, actor, row, chosen_rates(db, actor, row, payload, identity))
         row.instructions, row.email_updates = payload.instructions, payload.email_updates
         if user.login_id != payload.email:
             user.login_id = payload.email
@@ -212,10 +222,47 @@ def save_shipper(db, actor, data, key, identity=None):
         return shipper_view(db, actor, row)
     values = data.model_dump(mode='json')
     payload = data.data if identity else data
-    if 'assigned_driver_id' not in payload.model_fields_set:
-        (values['data'] if identity else values).pop('assigned_driver_id', None)
+    for field in ('assigned_driver_id', 'rate_card_ids'):
+        if field not in payload.model_fields_set: (values['data'] if identity else values).pop(field, None)
     result = command(db, actor, key, 'shipper:' + str(identity or 'new'), values, run)
     return {**result, 'initial_password': password}
+
+
+LOAD_SIZE_LABELS = {'FTL': 'Full truckload (FTL)', 'LTL': 'Less than truckload (LTL)', 'SMALL_PARCEL': 'Small parcel'}
+
+
+def chosen_rates(db, actor, row, payload, identity):
+    """Ordered, de-duplicated Rate Cards for a save, default card first, at most one per load size. A legacy single-card
+    write that keeps the default card keeps the rest."""
+    if payload.rate_card_ids is not None:
+        ids = list(dict.fromkeys(payload.rate_card_ids))
+        if payload.rate_card_id:
+            if payload.rate_card_id not in ids: raise HTTPException(422, 'Choose the default from the attached Rate Cards.')
+            ids = [payload.rate_card_id] + [card for card in ids if card != payload.rate_card_id]
+    elif payload.rate_card_id and identity and payload.rate_card_id == row.rate_card_id: ids = shipper_rate_ids(db, actor, row)
+    else: ids = [payload.rate_card_id] if payload.rate_card_id else []
+    sizes = {}
+    for card in ids:
+        rate = record(db, RateCard, actor, card)
+        if not rate.active: raise HTTPException(422, 'Choose active Rate Cards.')
+        size = rate.data.get('load_size', 'LTL')
+        if size in sizes: raise HTTPException(422, f"{sizes[size]} and {rate.data['name']} are both for {LOAD_SIZE_LABELS[size]}. Attach one card per load size.")
+        sizes[size] = rate.data['name']
+    # Every shipper carries a Rate Card; without a choice it is the company Default at save time.
+    if not ids:
+        default = default_rate(db, actor)
+        ids = [default.id] if default else []
+    return ids
+
+
+def attach_rates(db, actor, row, ids):
+    """The first (default) card mirrors `rate_card_id`; the link rows keep the full ordered list. Orders use the
+    attached card for their load size (`pricing.rate_card`)."""
+    row.rate_card_id = ids[0] if ids else None
+    db.flush()
+    db.execute(delete(ShipperRateCard).where(ShipperRateCard.organization_id == actor.organization_id, ShipperRateCard.shipper_id == row.id))
+    db.add_all(ShipperRateCard(organization_id=actor.organization_id, shipper_id=row.id, rate_card_id=card, position=index)
+        for index, card in enumerate(ids))
 
 
 def in_use(db, actor, field, identity):

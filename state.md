@@ -1,3 +1,39 @@
+2026-11-20: ShipperView adds `rate_card_load_sizes`; `/booking-preferences` adds `default_package_type_id`. OpenAPI regenerated, local API restarted.
+Checks: `test_shipper_rate_cards_one_per_load_size` passed on dispatra_events_test.
+
+2026-11-19: Rate Cards price one load size (`RateData.load_size`, default LTL, no migration); a Shipper keeps several cards but at most one per size (422 otherwise); pricing uses the attached card for the order's size, else the Shipper's default (first) card, else the company Default. OpenAPI regenerated; a per-size-rows design and its migration 0075 were built and rolled back on local and test DBs, then removed.
+Checks: new `test_shipper_rate_cards_one_per_load_size`, `test_load_size_rules`, route-assignment and work-hours tests 6/6, assistant unit suite 35/35 passed on dispatra_events_test.
+
+2026-11-19: Vehicle Types carry `load_sizes` (FTL/LTL, default both, kept when a save omits it); `prepare_booking` refuses a stated FTL/LTL booking whose type isn't offered for it. No migration (catalogue JSON). OpenAPI regenerated; local API not restarted.
+Checks: new `test_vehicle_type_load_sizes` and `test_load_size_rules` 2/2, `test_type_road_profiles` 8/8 passed on dispatra_events_test.
+
+2026-11-19: AUTO dispatch works only while the company is open: nothing is assigned while closed, every waiting Order (outside-hours pickups included) is assigned from opening time; OUTSIDE_HOURS Needs Attention row removed. Local API restarted.
+Checks: work-hours, reporting-attention and assistant unit suites 41/41 passed on dispatra_events_test.
+
+2026-11-19: Shipper default Rate Card: with `rate_card_ids`, `rate_card_id` picks the default among them (moved first, prices Orders; outside the list → 422). Removed `shippers.default_load_size` (migration 0074 drops it); OpenAPI regenerated.
+Checks: 0074 upgraded on dispatra_events_test (down/up blocked by another session's pytest holding the DB); `chosen_rates` unit check passed; `test_shipper_multiple_rate_cards` updated but not run. Local demo still at 0073.
+
+2026-11-19: FTL package weight is optional: blank lines share the vehicle type's payload, stated weights above it are refused; LTL/Small parcel now require weight in `Booking.load_fields`. OpenAPI regenerated, local API restarted.
+Checks: `test_load_size_rules` passed on dispatra_events_test.
+
+2026-11-19: Brought 6 stale tests up to date: conftest drops a sourced DISPATCH_ROUTING_PROVIDER, route-lock and warehouse wording matches current messages, email intake tests save the corrected draft before creating the Order (2be7a49 rule). No app code changed.
+Checks: the 6 tests pass on dispatra_events_test.
+
+2026-11-19: Order load size (FTL/LTL/Small parcel): Booking rules, `prepare_booking` (suggested size, FTL takes the vehicle type's cargo size), nullable `orders.service_id` and `shippers.default_load_size` (migration 0073), FTL cannot share a Route, driver/analytics projections. OpenAPI regenerated; local dispatra_demo migrated to 0073 and services restarted.
+Checks: 0073 up/down/up; `test_load_size_rules` passed. Related suites 94/100: 6 failures are in code this change didn't touch (planned-route message, routing env, email draft blocker 2be7a49, warehouse wording).
+
+2026-11-19: Shippers can attach several ordered Rate Cards (`shipper_rate_cards`, migration 0072 with RLS/backfill; `rate_card_ids`/`rate_card_names` on ShipperData/ShipperView; first card mirrors `rate_card_id` and still prices orders; archive guard and chat drafting cover the list). OpenAPI regenerated.
+Checks: migration 0072 up/down/up on dispatra_events_test; new `test_shipper_multiple_rate_cards` and existing rate card test passed on real PostgreSQL; wider suite result below.
+
+2026-11-19: Added tenant-scoped dispatcher order-attention count using shared operational flags, reported issues and due-pickup rules; excludes archived/closed Orders and deduplicates multiple warnings. Local API restarted; read-only demo check returned 11 affected Orders.
+Checks: five focused count/due tests passed; OpenAPI and web client regenerated. Additive endpoint has no native consumer. Follow-up: order-attention, monitor-day, reporting-attention and briefing tests 16/16 on dispatra_release_20261112_test (migrated to head).
+
+2026-11-19: Monitor includes due pending pickups from today's cohort, sorts alerts newest first using actual due/deadline timestamps, and retains strict company-local day filters for summary and attention. Local API restarted; no production release or business-data mutation.
+Checks: 38 distinct backend checks passed; read-only demo verification confirmed all status totals, attention order and exclusion of 12 other-day records (current company day 2026-11-18, America/Vancouver).
+
+2026-11-18 Daily briefing counts only current company-local pickup day; overdue NEW/ASSIGNED/IN_PROGRESS orders are returned separately and added to Monitor `needs_attention` as `OVERDUE`. OpenAPI regenerated.
+Checks: OpenAPI export and Python compilation passed. Client generated types/build passed; TypeScript lint did not finish after 60 seconds and was interrupted. Tests not run.
+
 Published to the Google VM at 2026-11-17T15:04Z as work_hours_20261117 (API 66da9a5, client 1733b92; driver contract c6c67ed pushed only; 89 files hash-checked against live, no drift; no migration, alembic stays 0071_order_archive; all 13 services restarted). Ships company work hours/holidays enforcement (default 06:00–19:00 daily; the live company, in AUTO with no saved hours, now uses it — its one NEW order, DTO-4624 at 07:00 on Nov 25, is inside hours) plus the pending briefing, Monitor, chat and popup-feedback work. Pre-release full PostgreSQL suite on the VM: live 773 passed/19 failed, candidate 777 passed/20 failed — the same 19 baseline failures plus a reporting unit test fixed before release. A first publish rolled back automatically at the web gate: a test date fell after BC's 2026 move to permanent UTC-7 in the VM's newer tz data; the test now uses July. On release: API unit gate 32 passed, web gate 69 passed, tsc and build passed, record counts unchanged, availability ok, no API/dispatch errors. Backup: /var/backups/dispatra/work-hours-20261117T150148Z; previous web /opt/dispatra/.web-work-hours-old-68ddf9f4-3317-49d4-bb55-6ae3366d222d. Staging: ../work/work-hours-release-20261117. Not exercised signed in.
 
 2026-11-17 Default work hours are now 06:00–19:00 every day (`default_work_hours`, written by seeding for new companies; unconfigured companies read it too); tests' autouse `all_day_hours` keeps test companies open around the clock. Local demo hours set to 06:00–19:00 (Sunday stays closed); openapi.json regenerated, local API restarted.

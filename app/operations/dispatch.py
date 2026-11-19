@@ -59,8 +59,10 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_
             needs = {equipment_key(item) for item in required.get('equipment', [])} & BODY_EQUIPMENT
             if not needs <= {equipment_key(item) for item in vehicle.data.get('equipment', [])}:
                 raise HTTPException(409, 'Vehicle lacks the needed refrigeration or open deck.')
-        if order in active_orders and context['service'].get('exclusive_vehicle') and len(active_orders) > 1:
-            raise HTTPException(409, 'Exclusive service cannot share a Route.')
+        if order in active_orders and len(active_orders) > 1:
+            # A full truckload takes the whole vehicle, like an exclusive service.
+            if order.facts.get('load_size') == 'FTL': raise HTTPException(409, 'A full truckload cannot share a Route.')
+            if (context.get('service') or {}).get('exclusive_vehicle'): raise HTTPException(409, 'Exclusive service cannot share a Route.')
         for accessory in context['accessorials']:
             if not set(accessory.get('required_equipment',[])).issubset(vehicle.data['equipment']): raise HTTPException(409, 'Vehicle lacks required equipment.')
             crew = accessory.get('required_crew', 1)

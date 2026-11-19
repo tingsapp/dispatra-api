@@ -1,17 +1,16 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, or_, func
 from app import auth
 from app.models import User, now
 from app.routes import DB
 from app.dispatch.service import no_driver
-from .models import Settings, Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence, AttentionDismissal
+from .models import Order, Shipper, Driver, Vehicle, Catalog, Route, Location, DutySession, Issue, RouteStop, OrderStop, Evidence, AttentionDismissal
 from .schemas import AnalyticsView, DriverActivityView, MonitorView
-from .common import record
-from .calendar import closed_reason
-from .schemas import SettingsData
+from .common import record, settings as company_settings
 from .attention import flags as attention_flags
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Operations reporting'])
@@ -24,16 +23,6 @@ def add_no_driver_attention(attention, candidates, explained=frozenset()):
         # a separate NO_DRIVER row would repeat the same issue in the Monitor.
         if order_id in explained: continue
         attention[order_id].append(('NO_DRIVER', description, at))
-
-
-def add_closed_hours_attention(db, org, orders, attention):
-    """AUTO dispatch holds unassigned pickups outside work hours; tell the dispatcher why each one waits."""
-    row = db.scalar(select(Settings).where(Settings.organization_id == org))
-    config = SettingsData.model_validate(row.data) if row else None
-    if config is None or config.dispatch_mode != 'AUTO': return
-    for order in orders:
-        reason = order.status == 'NEW' and closed_reason(config, order.scheduled_at)
-        if reason: attention[order.id].append(('OUTSIDE_HOURS', f'Pickup outside work hours; AUTO dispatch is holding it. {reason}', order.created_at))
 
 
 SEVERITY = {None: 0, 'WARNING': 1, 'CRITICAL': 2}
@@ -56,7 +45,6 @@ def order_attention(db, org, orders, visits_by_stop, observed_at):
         incidents[(incident.order_id, text)] = ('OPERATIONAL:' + incident.kind, incident.severity)
         if incident.kind == 'UNASSIGNED': explained.add(incident.order_id)
     add_no_driver_attention(attention, no_driver(db, org, orders), explained)
-    add_closed_hours_attention(db, org, orders, attention)
     versions = {order.id: order.version for order in orders}
     hidden = {(row.order_id, row.key): row for row in db.scalars(select(AttentionDismissal).where(
         AttentionDismissal.organization_id == org, AttentionDismissal.order_id.in_(list(versions))))} if versions else {}
@@ -154,6 +142,7 @@ def analytics(slug: str, db: DB, date_from: datetime | None = None, date_to: dat
             'driver_name': driver.name if driver else '', 'driver_number': driver.number if driver else '',
             'vehicle_unit': vehicle.data.get('unit_number', '') if vehicle else '',
             'service_name': services[order.service_id].data.get('name', '') if order.service_id in services else '',
+            'load_size': order.facts.get('load_size'),
             'delivery_outcome': outcome, 'pod_verified': bool(proof), 'open_issues': issues[order.id]})
     on_time = sum(r['delivery_outcome'] == 'ON_TIME' for r in rows)
     measured = sum(r['delivery_outcome'] != 'NOT_MEASURED' for r in rows)
@@ -178,11 +167,44 @@ def driver_activity(slug: str, identity: UUID, db: DB, user: User = Depends(auth
         'location_permission':driver.location_permission,'current_route':str(current.id) if current else None}
 
 
+def attention_order_ids(orders, attention, issue_ids, visits, observed):
+    from .monitor_day import due_pickup
+    return {order.id for order in orders if order.archived_at is None
+        and order.status in ('NEW','ASSIGNED','IN_PROGRESS') and
+        (order.id in issue_ids or any(not row['hidden'] for row in attention.get(order.id, []))
+         or due_pickup(order, visits, observed))}
+
+
+@router.get('/order-attention-count', response_model=dict[str, int])
+def order_attention_count(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
+    observed = now()
+    orders = list(db.scalars(select(Order).where(Order.organization_id == user.organization_id,
+        Order.archived_at.is_(None), Order.status.in_(['NEW','ASSIGNED','IN_PROGRESS']))))
+    visits = db.scalars(select(RouteStop).join(Route, Route.id == RouteStop.route_id).where(
+        RouteStop.organization_id == user.organization_id, Route.organization_id == user.organization_id,
+        Route.status.in_(['PLANNED','IN_PROGRESS']))).all()
+    by_stop = {str(visit.stop_id): visit for visit in visits}
+    attention = order_attention(db, user.organization_id, orders, by_stop, observed)
+    issue_ids = set(db.scalars(select(Issue.order_id).where(Issue.organization_id == user.organization_id,
+        Issue.resolved.is_(False))))
+    return {'count': len(attention_order_ids(orders, attention, issue_ids, by_stop, observed))}
+
+
 @router.get('/monitor', response_model=MonitorView)
 def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
-    routes = list(db.scalars(select(Route).where(Route.organization_id == user.organization_id,Route.status.in_(['PLANNED','IN_PROGRESS']))))
-    orders = list(db.scalars(select(Order).where(Order.organization_id == user.organization_id,Order.status.in_(['NEW','ASSIGNED','IN_PROGRESS']))))
-    issues = list(db.scalars(select(Issue).where(Issue.organization_id == user.organization_id,Issue.resolved.is_(False))))
+    from .monitor_day import day_bounds, due_pickup, alert_time
+    observed_at = now()
+    _, company_config = company_settings(db, user)
+    start, end = day_bounds(observed_at, ZoneInfo(company_config.time_zone))
+    today = (Order.organization_id == user.organization_id, Order.archived_at.is_(None),
+        Order.scheduled_at >= start, Order.scheduled_at < end, Order.status != 'CANCELLED')
+    today_ids = select(Order.id).where(*today)
+    today_routes = select(Order.route_id).where(*today, Order.route_id.is_not(None))
+    routes = list(db.scalars(select(Route).where(Route.organization_id == user.organization_id,
+        Route.id.in_(today_routes), Route.status.in_(['PLANNED','IN_PROGRESS']))))
+    orders = list(db.scalars(select(Order).where(*today, Order.status.in_(['NEW','ASSIGNED','IN_PROGRESS'])).order_by(Order.created_at.desc(), Order.id.desc())))
+    issues = list(db.scalars(select(Issue).where(Issue.organization_id == user.organization_id,
+        Issue.order_id.in_(today_ids), Issue.resolved.is_(False))))
     drivers = list(db.scalars(select(Driver).where(Driver.organization_id == user.organization_id,Driver.active.is_(True))))
     route_ids = [route.id for route in routes]
     visits = db.scalars(select(RouteStop).where(RouteStop.organization_id == user.organization_id,
@@ -200,14 +222,17 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     active_duty_ids = set(db.scalars(select(DutySession.driver_id).where(
         DutySession.organization_id == user.organization_id,
         DutySession.ended_at.is_(None))))
-    observed_at = now()
     from app.order_watch.estimates import collect as collect_estimates
     estimates = collect_estimates(db, user.organization_id, routes, observed_at)
     attention = order_attention(db, user.organization_id, orders, visits_by_stop, observed_at)
     # Newest first, matching every other Monitor list; hidden warnings leave the list but keep the Order's flags.
-    needs_attention = sorted([{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues] +
-        [{'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':row['at']}
-            for o in orders for row in attention[o.id] if not row['hidden']], key=lambda item: item['at'], reverse=True)
+    needs_attention = [{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues]
+    needs_attention.extend({'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':alert_time(o, row['flag'], observed_at, visits_by_stop) if row['flag'] in ('LATE_START','AT_RISK') else row['at']}
+        for o in orders for row in attention[o.id] if not row['hidden'])
+    for order in orders:
+        if reminder := due_pickup(order, visits_by_stop, observed_at):
+            needs_attention.append(reminder)
+    needs_attention.sort(key=lambda item: (item['at'], str(item.get('id') or item['order_id']) + item['kind']), reverse=True)
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
         'on_duty':d.id in active_duty_ids,
         'location':points[d.id].data if d.id in points else None,

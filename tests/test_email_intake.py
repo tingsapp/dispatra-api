@@ -263,7 +263,10 @@ def test_incomplete_email_becomes_a_draft_the_dispatcher_completes(agent):
     assert 'Please pick up' in detail['body'] and detail['extraction']['reference'] == 'PO-77'
     draft = detail['draft']
     draft['items'][0]['weight_kg'] = '12'
-    order = check(post(client, INTAKE + f'/messages/{item["id"]}/order', dict(version=detail['version'], booking=draft)), 201)
+    # Blockers clear only once the correction is saved to the draft.
+    saved = check(client.put(INTAKE + f'/messages/{item["id"]}/draft', json=dict(version=detail['version'], draft=draft), headers={'Idempotency-Key': str(uuid4())}))
+    assert saved['missing'] == []
+    order = check(post(client, INTAKE + f'/messages/{item["id"]}/order', dict(version=saved['version'], booking=saved['draft'])), 201)
     assert order['source'] == 'EMAIL'
     [done] = queue(client)
     assert done['status'] == 'ORDER_CREATED' and done['order_id'] == order['id']
@@ -521,7 +524,8 @@ def test_multiple_orders_split_independently_and_retry_never_duplicates_siblings
     # Dispatcher can complete just the incomplete booking through the existing shared form.
     [review]=queue(agent['client'],'NEEDS_REVIEW')
     detail=check(agent['client'].get(INTAKE+f'/messages/{review["id"]}'));draft=detail['draft'];draft['items'][0]['weight_kg']='10'
-    assert post(agent['client'],INTAKE+f'/messages/{review["id"]}/order',{'version':detail['version'],'booking':draft}).status_code==201
+    saved=check(agent['client'].put(INTAKE+f'/messages/{review["id"]}/draft',json={'version':detail['version'],'draft':draft},headers={'Idempotency-Key':str(uuid4())}))
+    assert post(agent['client'],INTAKE+f'/messages/{review["id"]}/order',{'version':saved['version'],'booking':saved['draft']}).status_code==201
     worker.cycle()
     with owner_engine.connect() as db:assert db.scalar(text('SELECT count(*) FROM orders'))==3
 
@@ -532,4 +536,4 @@ def test_matched_shipper_without_warehouse_reports_missing_pickup():
         'shipper': {'id': str(uuid4()), 'name': 'Fresh', 'warehouse': None}}
     draft, missing = booking.build(facts(service='Same Day'), context, lambda t, p: {'text': t, 'latitude': 49.2, 'longitude': -123.1})
     assert draft['shipper_id'] == context['shipper']['id']
-    assert missing == ["Stop 1: the Shipper's warehouse address"]
+    assert missing == ["Pickup address: the Shipper's warehouse address"]

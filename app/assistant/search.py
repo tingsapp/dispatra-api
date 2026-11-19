@@ -117,22 +117,22 @@ def collect(db, org, plan):
 
 
 def daily_briefing(db, org, observed):
-    from datetime import datetime, time, timedelta
+    from app.operations.monitor_day import day_bounds
     from app.order_watch.models import Incident
     from .schemas import DailyBriefing, DriverAssignments
     settings = company_settings(db, org)
     zone = settings_zone(settings)
     local = observed.astimezone(zone)
-    start = datetime.combine(local.date(), time.min, zone)
-    end = datetime.combine(local.date() + timedelta(days=1), time.min, zone)
-    # Today's work, matching the Monitor: pickups scheduled today plus earlier pickups still open; creation time does not matter.
+    start, end = day_bounds(observed, zone)
+    # Today's totals include only pickups scheduled for the company-local day.
     picked_today = (Order.scheduled_at >= start) & (Order.scheduled_at < end)
-    carried = (Order.scheduled_at < start) & Order.status.in_(['NEW', 'ASSIGNED', 'IN_PROGRESS'])
-    today = (Order.organization_id == org, Order.archived_at.is_(None), or_(picked_today, carried))
+    today = (Order.organization_id == org, Order.archived_at.is_(None), picked_today)
     counts = dict(db.execute(select(Order.status, func.count()).where(*today,
         Order.status != 'CANCELLED').group_by(Order.status)).all())
-    incidents = db.scalar(select(func.count()).select_from(Incident).where(
-        Incident.organization_id == org, Incident.status.in_(['OPEN', 'ACKNOWLEDGED'])))
+    incidents = db.scalar(select(func.count()).select_from(Incident)
+        .join(Order, (Order.organization_id == org) & (Order.id == Incident.order_id))
+        .where(*today, Order.status != 'CANCELLED', Incident.organization_id == org,
+            Incident.status.in_(['OPEN', 'ACKNOWLEDGED'])))
     orders = func.count(Order.id)
     drivers = db.execute(select(Driver.name, orders)
         .join(Route, (Route.organization_id == org) & (Route.id == Order.route_id))

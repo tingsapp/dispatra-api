@@ -13,6 +13,8 @@ os.environ['MIGRATION_DATABASE_URL'] = owner_url
 os.environ['DATABASE_URL'] = os.environ['TEST_DATABASE_URL']
 os.environ['COOKIE_SECURE'] = 'false'
 os.environ['ROUTING_PROVIDER'] = 'demo'
+# A sourced .env may point dispatch at a live provider; tests opt in with monkeypatch instead.
+os.environ.pop('DISPATCH_ROUTING_PROVIDER', None)
 os.environ['WEB_ORIGINS'] = 'http://testserver,http://127.0.0.1:3000'
 from app.main import app
 from app.models import User

@@ -1,4 +1,4 @@
-"""Company work hours and holidays: Shippers book inside them, dispatchers may override, AUTO holds pickups outside them."""
+"""Company work hours and holidays: Shippers book inside them, dispatchers may override, AUTO dispatch waits for opening time, then assigns every Order."""
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -67,14 +67,17 @@ def test_shippers_book_only_in_work_hours_and_dispatchers_may_override(setup):
     assert check(post(w['client'], BASE + '/orders', after_hours), 201)['status'] == 'NEW'
 
 
-def test_auto_dispatch_holds_pickups_outside_work_hours_for_a_dispatcher(setup):
+def test_auto_dispatch_waits_for_opening_then_assigns_every_order(setup, monkeypatch):
     w = setup
     calendar(w['client'])
     mode(w['client'], 'AUTO')
     held = check(post(w['client'], BASE + '/orders', booking(w['shipper']['id'], w['service'], w['type_id']) | {'scheduled_at': next_monday(20).isoformat()}), 201)
-    organization_id = service.auto_companies()[0]
-    assert held['id'] not in {str(i) for i in service.due(organization_id)}
-    attention = [item for item in check(w['client'].get(BASE + '/monitor'))['needs_attention'] if item['kind'] == 'OUTSIDE_HOURS']
-    assert [item['order_id'] for item in attention] == [held['id']] and 'Monday pickups are 08:00–17:00' in attention[0]['description']
     open_order = check(post(w['client'], BASE + '/orders', booking(w['shipper']['id'], w['service'], w['type_id']) | {'scheduled_at': next_monday(9).isoformat()}), 201)
-    assert open_order['id'] in {str(i) for i in service.due(organization_id)}
+    organization_id = service.auto_companies()[0]
+    # While the company is closed AUTO assigns nothing and the waiting Orders raise no Needs Attention row.
+    monkeypatch.setattr(service, 'now', lambda: next_monday(7))
+    assert service.due(organization_id) == []
+    assert not any(item['order_id'] == held['id'] for item in check(w['client'].get(BASE + '/monitor'))['needs_attention'])
+    # From opening time every waiting Order is assigned, including a pickup outside work hours.
+    monkeypatch.setattr(service, 'now', lambda: next_monday(8))
+    assert {held['id'], open_order['id']} <= {str(i) for i in service.due(organization_id)}

@@ -9,7 +9,7 @@ from app.services import audit
 from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
 from .schemas import Booking, OrderView
 from .common import record, command, version, changed, company_lock, operational_shipper, settings
-from .pricing import quote
+from .pricing import quote, prepare_booking
 from .calendar import closed_reason
 from .identifiers import issue_number
 
@@ -120,9 +120,10 @@ def save_children(db, actor, row, booking):
 
 
 def create_order(db, actor, data, key, source=None):
-    booking = authorized_booking(actor, data)
+    requested = authorized_booking(actor, data)
     def run():
         company_lock(db, actor)
+        booking = prepare_booking(db, actor, requested)
         check_preferred_driver(db, actor, booking)
         check_package_types(db, actor, booking)
         check_open_hours(db, actor, booking)
@@ -136,13 +137,14 @@ def create_order(db, actor, data, key, source=None):
         save_children(db, actor, row, booking)
         audit(db, actor, 'order.created', row.id, actor.organization_id)
         return order_view(row, actor)
-    return command(db, actor, key, 'order-create', booking.model_dump(mode='json'), run)
+    return command(db, actor, key, 'order-create', requested.model_dump(mode='json'), run)
 
 
 def update_order(db, actor, identity, data, key):
-    booking = authorized_booking(actor, data.booking)
+    requested = authorized_booking(actor, data.booking)
     def run():
         company_lock(db, actor)
+        booking = prepare_booking(db, actor, requested)
         row = visible_order(db, actor, identity, True); version(row, data.version)
         if row.status != 'NEW': raise HTTPException(409, 'Only unassigned orders can be edited. Report an issue instead.')
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
