@@ -11,6 +11,14 @@ from .common import record, company_lock, version, changed, command, dump
 from .routing import optimize
 
 
+def route_map_origin(db, actor, route, vehicle):
+    if route.status in {'PLANNED', 'IN_PROGRESS'}:
+        from app.dispatch.candidates import position
+        driver = record(db, Driver, actor, route.driver_id)
+        return position(db, actor, driver, vehicle)
+    return None, None
+
+
 def route_view(db, actor, row):
     stops = db.scalars(select(RouteStop).where(RouteStop.organization_id == actor.organization_id, RouteStop.route_id == row.id).order_by(RouteStop.position)).all()
     result = jsonable_encoder(dump(row))
@@ -21,6 +29,14 @@ def route_view(db, actor, row):
         orders = db.scalars(select(Order).where(Order.organization_id == actor.organization_id, Order.route_id == row.id)).all()
         result['items'] = [item for order in orders for item in order.facts['items']]
         result['vehicle'] = {k: vehicle.data[k] for k in ['name','plate','payload_kg','volume_m3','length_cm','width_cm','height_cm','equipment']}
+        parking = vehicle.data.get('parking_address') or {}
+        result['vehicle']['parking_address'] = ({'latitude': parking['latitude'], 'longitude': parking['longitude']}
+            if parking.get('latitude') is not None and parking.get('longitude') is not None else None)
+        result['map_origin'] = None
+        if row.status in {'PLANNED', 'IN_PROGRESS'}:
+            origin, source = route_map_origin(db, actor, row, vehicle)
+            if origin and source:
+                result['map_origin'] = {k: origin[k] for k in ('latitude', 'longitude')} | {'source': source}
     return result
 
 
@@ -29,6 +45,9 @@ BODY_EQUIPMENT = {'refrigeration', 'open deck'}
 
 def equipment_key(value):
     return ' '.join(str(value).replace('_', ' ').casefold().split())
+
+
+DRIVER_LOAD_SIZES = {'FTL': 'full truckloads', 'LTL': 'LTL loads', 'SMALL_PARCEL': 'small parcels'}
 
 
 def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_off_duty=False):
@@ -52,6 +71,9 @@ def validate_candidate(db, actor, orders, driver, vehicle, planned_at, *, allow_
         if order.status == 'NEW' and datetime.fromisoformat(order.pricing['expires_at']) < now(): raise HTTPException(409, 'Order quote has expired; reprice it before assignment.')
         if any(i['dangerous_goods'] for i in order.facts['items']) and 'DG' not in driver.data['qualifications']:
             raise HTTPException(409, 'Driver requires a verified DG qualification.')
+        size = order.facts.get('load_size')
+        if size and size not in driver.data.get('load_sizes', ['FTL', 'LTL', 'SMALL_PARCEL']):
+            raise HTTPException(409, f"{driver.name} doesn't handle {DRIVER_LOAD_SIZES[size]}. Choose another driver or add the load size to the driver.")
         context = order.pricing['context']
         # Meets or exceeds: a truck of another type may take the order when it has the required body; route planning checks the load fits it.
         required = context.get('vehicle') if order.facts.get('vehicle_type_id') else None

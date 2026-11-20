@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from uuid import UUID
 from pydantic import ValidationError
+from app import regions
 from app.intake import geocode
 from app.intake.booking import moment
 from . import provider, records
@@ -24,7 +25,7 @@ HIDDEN = {'id', 'version', 'pickup_id', 'delivery_id', 'latitude', 'longitude', 
 # New records list only fields with a value; unset flags and zero counts are noise on the card.
 EMPTY = {None, 'No', '0'}
 UNITS = {'kg': 'kg', 'cm': 'cm', 'm3': 'm³', 'km': 'km', 'minutes': 'minutes'}
-POSTAL = re.compile(r'[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d')
+POSTAL = regions.POSTAL_IN_TEXT
 LINES = 20
 
 
@@ -101,9 +102,9 @@ def address(value, known, problems, optional=False):
     if text in known: return known[text]
     postal = POSTAL.search(text)
     found = geocode.verify(text, postal.group(0) if postal else '') if text.strip() else None
-    if found: return {**found, 'country': 'CA'}
+    if found: return found
     if optional: return text
-    problems.append(f'I couldn’t find “{text}” on the map. Give the street address with city and postal code.')
+    problems.append(f'I couldn’t find “{text}” on the map. Give the street address with city and postal or ZIP code.')
     return value
 
 

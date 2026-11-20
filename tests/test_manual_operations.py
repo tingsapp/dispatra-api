@@ -308,6 +308,22 @@ def test_vehicle_type_load_sizes(setup):
     assert check(post(client,BASE+'/orders',booking(w['shipper']['id'],w['service'],w['type_id'])),201)
 
 
+def test_driver_load_sizes_limit_assignment(setup):
+    w=setup;client=w['client']
+    put=lambda row,data: check(client.put(BASE+f'/drivers/{row["id"]}',json={'version':row['version'],'data':data},headers={'Idempotency-Key':str(uuid4())}))
+    # Drivers handle every load size until the dispatcher narrows it; an older client that omits it keeps the choice.
+    assert w['driver']['data']['load_sizes']==['FTL','LTL','SMALL_PARCEL']
+    driver=put(w['driver'],{**w['driver_body'],'load_sizes':['FTL']})
+    driver=put(driver,w['driver_body'])
+    assert driver['data']['load_sizes']==['FTL']
+    order=new_order(w)
+    body=dict(version=order['version'],driver_id=driver['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat())
+    refused=post(client,BASE+f'/orders/{order["id"]}/assign',body)
+    assert refused.status_code==409 and "doesn't handle small parcels" in refused.text
+    put(driver,{**w['driver_body'],'load_sizes':['SMALL_PARCEL']})
+    assert check(post(client,BASE+f'/orders/{order["id"]}/assign',body))['route']
+
+
 def test_multiple_orders_route_and_locked_mutations(setup):
     w=setup;one=new_order(w);two=new_order(w)
     route=assign(w,one);original_ids={v['stop_id']:v['id'] for v in route['stops']}
@@ -370,7 +386,7 @@ def test_cross_company_foreign_keys_and_rls(setup):
         assert db.scalar(text('select count(*) from shippers'))==0
 
 
-def test_concurrent_assignment_and_logout_closes_duty(setup):
+def test_concurrent_assignment_and_native_logout_closes_duty(setup):
     from concurrent.futures import ThreadPoolExecutor
     w=setup;order=new_order(w)
     payload=dict(version=order['version'],driver_id=w['driver']['id'],vehicle_id=w['vehicle']['id'],planned_at=datetime.now(timezone.utc).isoformat())
@@ -381,7 +397,12 @@ def test_concurrent_assignment_and_logout_closes_duty(setup):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(request_assignment,range(2)))
     assert sorted(r.status_code for r in results)==[200,409]
-    assert w['mobile'].post('/api/v1/auth/logout').status_code==204
+    # Use native bearer sign-out: browser sign-out preserves operational duty.
+    with TestClient(app, headers=HEADERS) as native:
+        issued = check(native.post('/api/v1/auth/driver/login', json={
+            'login_id': w['driver']['email'], 'password': w['driver']['initial_password']}))
+        native.headers['Authorization'] = 'Bearer ' + issued['token']
+        assert native.post('/api/v1/auth/logout').status_code == 204
     with owner_engine.connect() as db:
         assert db.scalar(text('select count(*) from duty_sessions where ended_at is null'))==0
         assert db.scalar(text('select count(*) from routes'))==1
@@ -515,6 +536,54 @@ def test_driver_orders_profile_and_viewable_proof(setup):
         assert check(portal.get(BASE+f'/orders/{order["id"]}/delivery-proof'))[0]['evidence'][0]['id']==proof[0]['evidence'][0]['id']
         assert portal.get(BASE+f'/evidence/{proof[0]["evidence"][0]["id"]}').status_code==200
         assert portal.get(BASE+'/driver/orders').status_code==403
+
+
+def test_driver_route_road_path_uses_live_gps_when_available_and_parking_fallback(setup,monkeypatch):
+    w=setup;mobile=w['mobile'];order=new_order(w);route=assign(w,order)
+    from app.operations import driver_route_path
+    captured={}
+    monkeypatch.setattr(driver_route_path.travel,'dispatch_provider',lambda:'tomtom')
+    def road(addresses,vehicle,**options):
+        captured.update(addresses=addresses,options=options)
+        return {'points':[[49.26,-123.11],[49.27,-123.11]]}
+    monkeypatch.setattr(driver_route_path.tomtom,'route',road)
+    stamp=datetime.now(timezone.utc).isoformat()
+    check(post(mobile,BASE+'/driver/location',dict(duty_id=w['duty']['id'],captured_at=stamp,latitude=49.25,
+        longitude=-123.12,accuracy_m=8,location_permission='GRANTED')),201)
+    view=check(mobile.get(BASE+f'/driver/routes/{route["id"]}'))
+    assert view['map_origin']=={'latitude':49.25,'longitude':-123.12,'source':'GPS'}
+    result=check(mobile.get(BASE+f'/driver/routes/{route["id"]}/road-path'))
+    assert result['points']==[[49.26,-123.11],[49.27,-123.11]] and result['provider']=='TOMTOM'
+    assert result['truck_profile_applied'] is True
+    assert captured['addresses'][0]['latitude']==49.25 and captured['addresses'][0]['longitude']==-123.12 and len(captured['addresses'])==3
+    assert captured['options']['geometry'] is True
+    active=check(post(mobile,BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],
+        generation=route['generation'],supports_live_updates=True)))
+    assert active['map_origin']=={'latitude':49.25,'longitude':-123.12,'source':'GPS'}
+    check(mobile.get(BASE+f'/driver/routes/{route["id"]}/road-path'))
+    assert captured['addresses'][0]['latitude']==49.25
+    assert w['client'].get(BASE+f'/driver/routes/{route["id"]}/road-path').status_code==403
+    assert mobile.get(BASE+f'/driver/routes/{uuid4()}/road-path').status_code==404
+
+
+def test_driver_route_road_path_uses_owned_route_and_vehicle_origin(setup,monkeypatch):
+    w=setup;mobile=w['mobile'];order=new_order(w);route=assign(w,order)
+    from app.operations import driver_route_path
+    captured={}
+    monkeypatch.setattr(driver_route_path.travel,'dispatch_provider',lambda:'tomtom')
+    def road(addresses,vehicle,**options):
+        captured.update(addresses=addresses,options=options)
+        return {'points':[[49.26,-123.11],[49.27,-123.11]]}
+    monkeypatch.setattr(driver_route_path.tomtom,'route',road)
+    view=check(mobile.get(BASE+f'/driver/routes/{route["id"]}'))
+    assert view['map_origin']=={'latitude':49.26,'longitude':-123.11,'source':'PARKING'}
+    result=check(mobile.get(BASE+f'/driver/routes/{route["id"]}/road-path'))
+    assert result['points']==[[49.26,-123.11],[49.27,-123.11]] and result['provider']=='TOMTOM'
+    assert result['truck_profile_applied'] is True
+    assert captured['addresses'][0]['latitude']==49.26 and len(captured['addresses'])==3
+    assert captured['options']['geometry'] is True
+    assert w['client'].get(BASE+f'/driver/routes/{route["id"]}/road-path').status_code==403
+    assert mobile.get(BASE+f'/driver/routes/{uuid4()}/road-path').status_code==404
 
 
 def test_order_tracking_live_location_privacy(setup):

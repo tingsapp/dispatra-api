@@ -115,8 +115,51 @@ def test_places_fallback_resolves_a_complete_address_with_the_routes_credential(
     monkeypatch.setattr(geocode.urllib.request, 'urlopen', lambda request, **kwargs: requests.append(request) or Response())
     resolved = geocode.verify('4567 Lougheed Highway, Burnaby, BC V5C 3Z6, Canada', 'V5C 3Z6')
     assert resolved == {'text': '4567 Lougheed Highway, Burnaby, BC V5C 3Z6, Canada', 'latitude': 49.267, 'longitude': -123.001,
-        'city': 'Burnaby', 'province': 'BC', 'postal_code': 'V5C 3Z6'}
+        'city': 'Burnaby', 'province': 'BC', 'postal_code': 'V5C 3Z6', 'country': 'CA'}
     assert requests[0].full_url == 'https://places.googleapis.com/v1/places:searchText'
+    assert json.loads(requests[0].data)['regionCode'] == 'CA'
+
+
+def test_places_fallback_resolves_a_us_address_and_its_zip_plus_four(monkeypatch):
+    monkeypatch.delenv('GOOGLE_GEOCODING_API_KEY', raising=False)
+    monkeypatch.setenv('GOOGLE_ROUTES_API_KEY', 'routes-test')
+    payload = {'places': [{'formattedAddress': '400 Broad St, Seattle, WA 98109, USA',
+        'location': {'latitude': 47.6205, 'longitude': -122.3493}, 'addressComponents': [
+            {'types': ['street_number'], 'longText': '400', 'shortText': '400'},
+            {'types': ['locality'], 'longText': 'Seattle', 'shortText': 'Seattle'},
+            {'types': ['administrative_area_level_1'], 'longText': 'Washington', 'shortText': 'WA'},
+            {'types': ['country'], 'longText': 'United States', 'shortText': 'US'},
+            {'types': ['postal_code'], 'longText': '98109', 'shortText': '98109'}]}]}
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, *args): return json.dumps(payload).encode()
+    requests = []
+    monkeypatch.setattr(geocode.urllib.request, 'urlopen', lambda request, **kwargs: requests.append(request) or Response())
+    resolved = geocode.verify('400 Broad St, Seattle, WA 98109-4607', '98109-4607')
+    assert resolved == {'text': '400 Broad St, Seattle, WA 98109, USA', 'latitude': 47.6205, 'longitude': -122.3493,
+        'city': 'Seattle', 'province': 'WA', 'postal_code': '98109', 'country': 'US'}
+    assert json.loads(requests[0].data)['regionCode'] == 'US'
+
+
+def test_geocoding_without_a_postal_code_keeps_only_canada_or_us_matches(monkeypatch):
+    monkeypatch.setenv('GOOGLE_GEOCODING_API_KEY', 'geo-test')
+    def result(country, postal):
+        return {'formatted_address': f'10 Main St, Springfield, XX {postal}', 'geometry': {'location_type': 'ROOFTOP', 'location': {'lat': 1, 'lng': 2}},
+            'address_components': [{'types': ['street_number'], 'long_name': '10', 'short_name': '10'},
+                {'types': ['locality'], 'long_name': 'Springfield', 'short_name': 'Springfield'},
+                {'types': ['administrative_area_level_1'], 'long_name': 'Illinois', 'short_name': 'IL'},
+                {'types': ['country'], 'long_name': country, 'short_name': country},
+                {'types': ['postal_code'], 'long_name': postal, 'short_name': postal}]}
+    payload = {'status': 'OK', 'results': [result('US', '62701'), result('MX', '01000')]}
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, *args): return json.dumps(payload).encode()
+    urls = []
+    monkeypatch.setattr(geocode.urllib.request, 'urlopen', lambda url, **kwargs: urls.append(url) or Response())
+    assert geocode.verify('10 Main St, Springfield, IL', '')['country'] == 'US'
+    assert 'components=' not in urls[0]
 
 
 @pytest.mark.parametrize('supplied,expected', [('Bunaby', True), ('Buranby', True), ('burnaby', True),

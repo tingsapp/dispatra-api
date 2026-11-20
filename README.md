@@ -254,6 +254,8 @@ For an unassigned, priced Order the agent lists every active driver: drivers tha
 .venv/bin/python -m app.dispatch.worker
 ```
 
+On this local workspace, install and enable the dedicated assignment worker with `bash scripts/local-dispatch install`; inspect, start or stop it with `status`, `start` or `stop`. The user-systemd service loads the existing private `.env`, restarts after failure, starts with the user session/API, and remains separate from `dispatra-local-operational.service`, which monitors orders without assigning them. AUTO only evaluates orders while the company is open in its configured timezone; driver duty, route feasibility and all assignment checks still apply.
+
 `--interval` defaults to 30 s (minimum 10 s); `--once` runs one cycle. After AI ranking, the worker rechecks the dispatch mode under the company lock before saving, so switching to MANUAL stops an in-flight automatic assignment. Late-delivery re-planning and reassignment of already assigned Orders are not part of this agent yet.
 
 ## Driver push notifications

@@ -1,3 +1,36 @@
+2026-11-20: Browser driver logout now revokes its login session without ending operational duty; sign-in preserves the saved state. Native logout retains its End Duty boundary.
+Checks: reproduced the old logout reset in isolated PostgreSQL; browser logout/login, session revocation and explicit Off Duty regression passes. Native concurrent-assignment/logout check passed; combined native-workflow run interrupted. Local API restarted and /ready confirmed; no migration.
+
+2026-11-20: Restored localhost AUTO assignment with scripts/local-dispatch, a dedicated enabled user-systemd worker loading the private API environment and starting with the API/user session. Supervisor monitoring remains separate.
+Checks: bash syntax, systemd unit verification and git diff checks pass; live dispatch cycle SUCCEEDED. DDO-5121/DDO-9861 record NO_CANDIDATE: Xia off duty; the other driver has an old route that cannot fit today’s orders.
+
+2026-11-20: Driver planned and active route origins now follow dispatcher policy: fresh accurate open-duty GPS first, assigned vehicle parking coordinates as fallback. Driver route vehicle summaries include only parking latitude/longitude.
+Checks: Python syntax checked; local API restarted and active; tests not run; no migration.
+
+2026-11-20: Driver route projections now return only assigned vehicle parking coordinates in the vehicle summary, allowing the driver map to show a parking-origin marker when map_origin is absent.
+Checks: no tests run for this projection-only change; no migration.
+
+2026-11-20: Driver road-path API now rejects Google/demo routing and returns geometry only from truck-restricted TomTom or openrouteservice providers.
+Checks: driver route unit tests 7/7 and Python compilation pass; integration collection unavailable without TEST_OWNER_DATABASE_URL; no migration.
+
+2026-11-20: Planned driver routes use the assigned vehicle's parking address as their map origin even when fresh GPS exists; executing routes use fresh GPS with parking fallback for both route projection and road geometry.
+Checks: route-origin unit tests 2/2 and Python compilation pass; integration test blocked by missing TEST_OWNER_DATABASE_URL; no migration.
+
+2026-11-20: Driver route projections expose only their own GPS/parking map origin; added an own-route road-path endpoint using configured operational routing providers and stop sequence.
+Checks: OpenAPI export, client type generation and Python compilation pass; integration test blocked (TEST_OWNER_DATABASE_URL unavailable); no migration.
+
+2026-11-20: Order stops and Shipper warehouses carry coordinates: `common.located` geocodes an address sent without them (`geocode.verify`) or refuses 422 naming the address; applied to every stop on order create/edit (`orders.located_stops`) and to the warehouse on Shipper create/edit and Shipper profile. TMS API-key shipper test fixture given coordinates. No migration or schema change; local API not restarted.
+Checks: database-free unit tests 33/33 (3 new in `tests/unit/test_located_addresses.py`); on dispatra_events_test, shipper logo/assigned-driver 7 passed, 1 failed (`test_migration_preserves_existing_shipper_details`: FSA migration cannot downgrade, unrelated); `test_manual_operations.py` killed by the time limit twice, not verified.
+
+2026-11-20: Canada and US: `Address.country` is CA|US (ZIP implies US; postal code and state must match the country), new `app/regions.py` for provinces/states/postal codes; email/TMS intake and geocoding accept US addresses; pricing/dispatch zones take FSAs or US ZIP/3-digit prefixes; AI prompts and static maps no longer assume Canada. OpenAPI regenerated, no migration.
+Checks: regions, intake-resolution and zone unit tests 22/22; TMS fleet sync and vehicle parking 6/7 on dispatra_events_test (failure is a stale parking-fact wording assertion from 2026-11-13, unrelated).
+
+2026-11-20: Drivers carry `load_sizes` (default all three, kept when omitted); assignment refuses an Order of a size the driver doesn't handle. OpenAPI regenerated.
+Checks: new `test_driver_load_sizes_limit_assignment` passed on dispatra_events_test.
+
+2026-11-20: New default Accessorial Holiday / Weekend Delivery (`HOLIDAY_WEEKEND`, $25 per order), added by pricing when any drop-off (window start, else deadline, else pickup) falls on Sat/Sun or a company holiday; manual picks ignored, inactive entry not charged. Seed + migration 0075 backfill.
+Checks: new `test_holiday_weekend_accessorial_follows_delivery_day` and existing pricing units 3/3 passed (--noconftest); migration 0075 applied on dispatra_events_test; `test_demo` count updated to 35 but not run (test DB busy with other sessions); local DB migrated to 0075 (1 company has it), local API restarted.
+
 2026-11-20: ShipperView adds `rate_card_load_sizes`; `/booking-preferences` adds `default_package_type_id`. OpenAPI regenerated, local API restarted.
 Checks: `test_shipper_rate_cards_one_per_load_size` passed on dispatra_events_test.
 
@@ -529,4 +562,3 @@ Email intake matching (2026-10-30): sender email matching now trims whitespace a
 
 - Live post-release verification: three public entry pages match the release, all 21 application assets match when read from the live origin, availability/readiness pass, anonymous draft access returns 401, all 14 services are active, and API/intake/email journals contain no new error markers. A public asset request timed out during the first broad check; final public-entry checks and direct-origin asset verification passed.
 2026-11-11: Zone-based Rate Cards and optional dispatch zones now canonicalize Canadian postal input to three-character Forward Sortation Areas (FSAs): `V6A 1E9` stores as `V6A`; invalid entries state the expected `V6A` format. New dispatcher provisioning seeds Zone 1 (31 Vancouver FSAs), Zone 2 (7 Burnaby FSAs), and Zone 3 (8 Richmond FSAs), with a $20 0–99 lb starter band for each zone. Migration `0067_zone_fsa_prefixes` converts existing Zone and dispatch configuration without changing frozen Order pricing snapshots; it deliberately cannot be downgraded because the discarded final characters are unrecoverable. Focused schema normalization checks and seed JSON validation passed. The PostgreSQL integration suite was not run here because disposable test-database credentials are unavailable.
-

@@ -8,9 +8,9 @@ from app.routes import DB, OperationKey
 from . import execution, dispatch
 from .common import record, version, command, changed, settings
 from .models import Route, Driver, Evidence, OrderStop, Order, DutySession, Vehicle, Catalog
-from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, RouteView, ProofEvidence
+from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, DriverRouteView, ProofEvidence
 
-from .schemas import RouteStartCommand
+from .schemas import RouteStartCommand, RoadPathView
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Driver execution'])
 
@@ -70,29 +70,36 @@ def location(slug: str, data: Telemetry, db: DB, idempotency_key: OperationKey, 
     return execution.telemetry(db,user,data,idempotency_key)
 
 
-@router.get('/driver/routes', response_model=list[RouteView])
+@router.get('/driver/routes', response_model=list[DriverRouteView])
 def routes(slug: str, db: DB, after: UUID | None = None, limit: int = Query(50,ge=1,le=100), user: User = Depends(auth.driver)):
     query = select(Route).where(Route.organization_id == user.organization_id, Route.driver_id == user.driver_id).order_by(Route.id).limit(limit)
     if after: query = query.where(Route.id > after)
     return [dispatch.route_view(db,user,r) for r in db.scalars(query)]
 
 
-@router.get('/driver/routes/{identity}', response_model=RouteView)
+@router.get('/driver/routes/{identity}', response_model=DriverRouteView)
 def get_route(slug: str, identity: UUID, db: DB, user: User = Depends(auth.driver)):
     return dispatch.route_view(db,user,execution.own_route(db,user,identity))
 
 
-@router.post('/driver/routes/{identity}/start', response_model=RouteView)
+@router.get('/driver/routes/{identity}/road-path', response_model=RoadPathView)
+def route_road_path(slug: str, identity: UUID, db: DB, user: User = Depends(auth.driver)):
+    from . import driver_route_path
+    execution.own_route(db, user, identity)
+    return driver_route_path.path(db, user, identity)
+
+
+@router.post('/driver/routes/{identity}/start', response_model=DriverRouteView)
 def start(slug: str, identity: UUID, data: RouteStartCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return execution.start_route(db,user,identity,data,idempotency_key)
 
 
-@router.post('/driver/routes/{identity}/stops/{visit_id}/complete', response_model=RouteView)
+@router.post('/driver/routes/{identity}/stops/{visit_id}/complete', response_model=DriverRouteView)
 def complete(slug: str, identity: UUID, visit_id: UUID, data: StopCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return execution.complete_stop(db,user,identity,visit_id,data,idempotency_key)
 
 
-@router.post('/driver/routes/{identity}/finish', response_model=RouteView)
+@router.post('/driver/routes/{identity}/finish', response_model=DriverRouteView)
 def finish(slug: str, identity: UUID, data: RouteCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return execution.finish_route(db,user,identity,data,idempotency_key)
 
@@ -129,7 +136,7 @@ def download(slug: str, identity: UUID, db: DB, user: User = Depends(auth.compan
 from .schemas import ArrivalCommand
 
 
-@router.post('/driver/routes/{identity}/stops/{visit_id}/arrive', response_model=RouteView)
+@router.post('/driver/routes/{identity}/stops/{visit_id}/arrive', response_model=DriverRouteView)
 def arrive(slug: str, identity: UUID, visit_id: UUID, data: ArrivalCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return execution.arrive_stop(db,user,identity,visit_id,data,idempotency_key)
 
@@ -155,6 +162,6 @@ def read_notification(slug: str, identity: UUID, data: Version, db: DB, idempote
     return mark_read(db, user, identity, data, idempotency_key, DriverNotificationView)
 
 
-@router.post('/driver/routes/{identity}/acknowledge', response_model=RouteView)
+@router.post('/driver/routes/{identity}/acknowledge', response_model=DriverRouteView)
 def acknowledge(slug: str, identity: UUID, data: RouteCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
     return execution.acknowledge_route(db, user, identity, data, idempotency_key)

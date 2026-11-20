@@ -8,8 +8,11 @@ from app.models import now
 from .models import Catalog, RateCard
 from .schemas import Booking, RateData, CatalogData, SettingsData, Discount
 from .common import record, settings, operational_shipper
+from .calendar import delivered_off_day
 
 ZERO = Decimal('0')
+# Added once per Order when a delivery falls on a weekend or company holiday; never selected by hand.
+OFF_DAY_CODE = 'HOLIDAY_WEEKEND'
 CENT = Decimal('0.01')
 
 
@@ -94,7 +97,7 @@ def price_context(db, actor, booking):
     accessorials = []
     for selection in booking.accessorials:
         accessory = catalog(db,actor,selection.id,'ACCESSORIAL')
-        if accessory.code in package_counts: continue
+        if accessory.code in package_counts or accessory.code == OFF_DAY_CODE: continue
         accessorials.append({**accessory.data,'code':accessory.code,'quantity':str(selection.quantity),'id':str(selection.id)})
     for code, quantity in package_counts.items():
         if quantity == 0: continue
@@ -102,6 +105,11 @@ def price_context(db, actor, booking):
             Catalog.kind == 'ACCESSORIAL', Catalog.code == code, Catalog.active.is_(True)))
         if not accessory: raise HTTPException(409, f'{code} package handling Accessorial is unavailable.')
         accessorials.append({**accessory.data, 'code': code, 'quantity': str(quantity), 'id': str(accessory.id)})
+    if delivered_off_day(config, booking):
+        # A company that deactivated or deleted the charge does not bill it.
+        accessory = db.scalar(select(Catalog).where(Catalog.organization_id == actor.organization_id,
+            Catalog.kind == 'ACCESSORIAL', Catalog.code == OFF_DAY_CODE, Catalog.active.is_(True)))
+        if accessory: accessorials.append({**accessory.data, 'code': OFF_DAY_CODE, 'quantity': '1', 'id': str(accessory.id)})
     distance, minutes = booking.distance_km, booking.estimated_minutes
     # Road travel only when the card needs it: distance cards need km, hourly cards need service minutes.
     if (card.data['method'] == 'BASE_PLUS_DISTANCE' and distance is None) or (card.data['method'] == 'HOURLY' and minutes is None):

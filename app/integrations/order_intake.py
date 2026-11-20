@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from app.database import context, engine
+from app import regions
 from app.intake import booking as normalize, geocode
 from app.models import now
 from app.operations import directory, orders
@@ -66,15 +67,16 @@ def _address(source, mapping, prefix, label, missing, required=True):
     street, city = text(get(source, mapping, f'{prefix}address')), text(get(source, mapping, f'{prefix}city'), 160)
     code = normalize.province(text(get(source, mapping, f'{prefix}province')))
     postal = normalize.postal(text(get(source, mapping, f'{prefix}postal_code')))
-    if not (street and city and code and postal):
-        if required or street or city: missing.append(f'{label}: complete address with street, city, province and postal code')
+    country = regions.country(code, postal)
+    if not (street and city and code and postal and country):
+        if required or street or city: missing.append(f'{label}: complete address with street, city, province or state, and postal or ZIP code')
         return None
-    full = f'{street}, {city}, {code} {postal}, Canada'
+    full = f'{street}, {city}, {code} {postal}, {normalize.COUNTRY_NAMES[country]}'
     verified = geocode.verify(full, postal)
     if verified is None:
         missing.append(f'{label}: address could not be verified on the map')
-        return {'text': full, 'city': city, 'province': code, 'postal_code': postal, 'country': 'CA'}
-    return {'text': verified['text'], 'city': city, 'province': code, 'postal_code': postal, 'country': 'CA',
+        return {'text': full, 'city': city, 'province': code, 'postal_code': postal, 'country': country}
+    return {'text': verified['text'], 'city': city, 'province': code, 'postal_code': postal, 'country': country,
         'latitude': verified['latitude'], 'longitude': verified['longitude']}
 
 

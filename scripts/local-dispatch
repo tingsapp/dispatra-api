@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Supervise AUTO assignment separately from traffic and order monitoring.
+set -euo pipefail
+api_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+unit=dispatra-local-dispatch.service
+case "${1:-status}" in
+  install)
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    unit_file="$unit_dir/$unit"
+    mkdir -p "$unit_dir"
+    if [[ -e "$unit_file" ]] && ! rg -q '^# Dispatra local auto dispatch$' "$unit_file"; then
+      echo "Existing service configuration needs review: $unit_file" >&2
+      exit 1
+    fi
+    cat > "$unit_file" <<EOF
+# Dispatra local auto dispatch
+[Unit]
+Description=Dispatra local auto-dispatch worker
+After=dispatra-local-db.service dispatra-local-api.service
+Requires=dispatra-local-db.service
+Wants=dispatra-local-api.service
+PartOf=dispatra-local-api.service
+
+[Service]
+WorkingDirectory=$api_dir
+ExecStart=$api_dir/.venv/bin/python -u -c "from dotenv import load_dotenv; load_dotenv('.env'); from app.dispatch.worker import main; main()"
+Restart=on-failure
+RestartSec=5
+MemoryMax=1G
+TasksMax=128
+
+[Install]
+WantedBy=default.target dispatra-local-api.service
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable "$unit"
+    systemctl --user restart "$unit"
+    ;;
+  start) systemctl --user start "$unit" ;;
+  stop) systemctl --user stop "$unit" ;;
+  status) systemctl --user status --no-pager "$unit" ;;
+  *) echo 'Usage: bash scripts/local-dispatch install|start|stop|status' >&2; exit 2 ;;
+esac

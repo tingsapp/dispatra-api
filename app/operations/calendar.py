@@ -1,4 +1,4 @@
-"""Company work hours and holidays applied to an Order's scheduled pickup, in the company time zone."""
+"""Company work hours and holidays applied to an Order's scheduled pickup and planned deliveries, in the company time zone."""
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -17,3 +17,15 @@ def closed_reason(config, at: datetime) -> str | None:
     end = '24:00' if day.end == '23:59' else day.end
     if not day.start <= f'{local:%H:%M}' < end: return f'{name} pickups are {day.start}–{end}.'
     return None
+
+
+def off_day(config, at: datetime) -> bool:
+    """Whether `at` falls on a Saturday, Sunday or company holiday, whatever the company's work hours."""
+    local = at.astimezone(ZoneInfo(config.time_zone))
+    return local.weekday() >= 5 or any(h.date == local.date() for h in config.holidays)
+
+
+def delivered_off_day(config, booking) -> bool:
+    """Whether any drop-off is planned on an off day: its window start, else its deadline, else the scheduled pickup day."""
+    return any(off_day(config, stop.window_start or stop.window_end or booking.scheduled_at)
+        for stop in booking.stops if stop.kind == 'DROPOFF')

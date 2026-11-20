@@ -13,7 +13,7 @@ class DraftAddress(Input):
     city: str = Field(default='', max_length=160)
     province: str = Field(default='', max_length=30)
     postal_code: str = Field(default='', max_length=20)
-    country: Literal['CA'] = 'CA'
+    country: Literal['CA', 'US'] = 'CA'
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
 

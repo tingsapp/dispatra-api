@@ -1,6 +1,6 @@
 """Deterministic step after extraction: map facts onto the shared `Booking` contract and list what is missing.
 
-Nothing here guesses. Units are converted exactly. A map lookup enriches a complete Canadian address with
+Nothing here guesses. Units are converted exactly. A map lookup enriches a complete Canada/US address with
 coordinates when it is available, but a temporary lookup failure must not make an otherwise complete address
 unprocessable. The result is validated by the same `Booking` schema the portals use.
 """
@@ -10,26 +10,20 @@ from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 from pydantic import ValidationError
+from app import regions
 from app.operations.schemas import Booking
 from .geocode import same_city
 
-POSTAL = re.compile(r'^[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d$')
-PROVINCES = {'AB': 'alberta', 'BC': 'british columbia', 'MB': 'manitoba', 'NB': 'new brunswick', 'NL': 'newfoundland and labrador',
-    'NS': 'nova scotia', 'NT': 'northwest territories', 'NU': 'nunavut', 'ON': 'ontario', 'PE': 'prince edward island',
-    'QC': 'quebec', 'SK': 'saskatchewan', 'YT': 'yukon'}
-ALIASES = {'b.c.': 'BC', 'p.e.i.': 'PE', 'pei': 'PE', 'newfoundland': 'NL', 'québec': 'QC', 'nwt': 'NT', 'yukon territory': 'YT'}
 KG_PER_LB, CM_PER_IN = Decimal('0.45359237'), Decimal('2.54')
+COUNTRY_NAMES = {'CA': 'Canada', 'US': 'USA'}
 
 
 def province(value):
-    text = (value or '').strip().lower()
-    if text.upper() in PROVINCES: return text.upper()
-    return ALIASES.get(text) or next((code for code, name in PROVINCES.items() if name == text), None)
+    return regions.province(value)
 
 
 def postal(value):
-    text = ''.join((value or '').split()).upper()
-    return f'{text[:3]} {text[3:]}' if POSTAL.match(text) else None
+    return regions.postal(value)
 
 
 def moment(value, zone):
@@ -85,31 +79,34 @@ def address(stop, number, context, verify, missing):
     found = stop.address
     street, city = (found.street or '').strip() if found else '', (found.city or '').strip() if found else ''
     code, zip_code = province(found.province if found else None), postal(found.postal_code if found else None)
+    country = regions.country(code, zip_code)
+    if code and zip_code and not country: code = zip_code = None  # A province/state and postal code from different countries.
     if street and city:
-        text = ', '.join(value for value in [street, city, ' '.join(value for value in [code, zip_code] if value), 'Canada'] if value)
+        text = ', '.join(value for value in [street, city, ' '.join(value for value in [code, zip_code] if value), COUNTRY_NAMES.get(country)] if value)
         verified = verify(text, zip_code or '')
         if verified:
             resolved_city = verified.get('city') or city
             resolved_province = verified.get('province') or code
             resolved_postal = verified.get('postal_code') or zip_code
-            if same_city(city, resolved_city) and (not code or code == resolved_province) and resolved_province and resolved_postal:
-                return {'text': verified['text'], 'city': resolved_city, 'province': resolved_province, 'postal_code': resolved_postal, 'country': 'CA',
+            resolved_country = verified.get('country') or regions.country(resolved_province, resolved_postal)
+            if same_city(city, resolved_city) and (not code or code == resolved_province) and (not country or country == resolved_country) and resolved_province and resolved_postal:
+                return {'text': verified['text'], 'city': resolved_city, 'province': resolved_province, 'postal_code': resolved_postal, 'country': resolved_country,
                     'latitude': verified['latitude'], 'longitude': verified['longitude']}
     if not (street and city and code and zip_code):
-        missing.append(f'{label} is incomplete. Add street, city, province and postal code.')
+        missing.append(f'{label} is incomplete. Add street, city, province or state, and postal or ZIP code.')
         text = ', '.join(value for value in [street, city, ' '.join(value for value in [code or (found.province if found else ''), zip_code or (found.postal_code if found else '')] if value)] if value)
         return {'text': text, 'city': city, 'province': code or (found.province or '' if found else ''),
-            'postal_code': zip_code or (found.postal_code or '' if found else ''), 'country': 'CA'} if text else None
-    text = f'{street}, {city}, {code} {zip_code}, Canada'
+            'postal_code': zip_code or (found.postal_code or '' if found else ''), 'country': country or 'CA'} if text else None
+    text = f'{street}, {city}, {code} {zip_code}, {COUNTRY_NAMES[country]}'
     # The external map service is an enrichment, not the authority for a stated
-    # Canadian street address.  Do not leave a shipment in review forever when
+    # Canada/US street address.  Do not leave a shipment in review forever when
     # that service is unavailable but the sender gave a deliverable address.
     # Requiring a civic number avoids treating a road or neighbourhood alone as
     # a complete street address.
     if re.match(r'^\s*\d+[A-Za-z0-9 -]*\s+\S', street):
-        return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': 'CA'}
-    missing.append(f'{label} could not be verified on the map. Choose a complete suggested address or add its postal code.')
-    return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': 'CA'}
+        return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': country}
+    missing.append(f'{label} could not be verified on the map. Choose a complete suggested address or add its postal or ZIP code.')
+    return {'text': text, 'city': city, 'province': code, 'postal_code': zip_code, 'country': country}
 
 
 def build(extraction, context, verify):

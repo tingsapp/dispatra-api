@@ -160,7 +160,7 @@ def test_sync_imports_matched_records_and_reports_the_rest(client, fleet_tms):
     assert result['vehicles'] == {'created': 1, 'updated': 0, 'unchanged': 0, 'skipped': 1, 'archived': 0}
     assert result['drivers'] == {'created': 2, 'updated': 0, 'unchanged': 0, 'skipped': 1, 'archived': 0}
     reasons = {(issue['kind'], issue['id']): issue['reason'] for issue in result['issues']}
-    assert 'REEFER' in reasons[('vehicle', 'U-21')] and 'Canadian address' in reasons[('driver', 'DRV-3')]
+    assert 'REEFER' in reasons[('vehicle', 'U-21')] and 'Canada/US address' in reasons[('driver', 'DRV-3')]
     vehicle = next(v for v in directory(client, 'vehicles') if v['data']['unit_number'] == 'T-12')
     # 2,000 lb payload converted with the company weight unit; size comes from the vehicle type.
     assert vehicle['plate'] == 'NXT 482' and vehicle['data']['payload_kg'] == '907.18'
@@ -457,7 +457,7 @@ def test_api_keys_act_as_the_company_on_documented_endpoints_only(client, tms):
     assert api.get('/api/v1/companies/acme/orders', headers=auth).status_code == 200
     catalog = api.get('/api/v1/companies/acme/catalog', headers=auth)
     assert catalog.status_code == 200 and catalog.json()
-    address = dict(text='1 Main Street, Vancouver, BC V6B 1A1', city='Vancouver', province='BC', postal_code='V6B 1A1')
+    address = dict(text='1 Main Street, Vancouver, BC V6B 1A1', city='Vancouver', province='BC', postal_code='V6B 1A1', latitude=49.28, longitude=-123.11)
     shipper = api.post('/api/v1/companies/acme/shippers', headers={**auth, 'Idempotency-Key': 'api-key-shipper-0001'},
         json=dict(name='Api Shipper', kind='BUSINESS', company_name='Api Co', email='api@shipper.example', warehouse=address))
     assert shipper.status_code == 201, shipper.text

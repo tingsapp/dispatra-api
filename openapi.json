@@ -11003,7 +11003,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/RouteView"
+                    "$ref": "#/components/schemas/DriverRouteView"
                   },
                   "title": "Response Routes Api V1 Companies  Slug  Driver Routes Get"
                 }
@@ -11127,7 +11127,129 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RouteView"
+                  "$ref": "#/components/schemas/DriverRouteView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/driver/routes/{identity}/road-path": {
+      "get": {
+        "tags": [
+          "Driver execution"
+        ],
+        "summary": "Route Road Path",
+        "operationId": "route_road_path_api_v1_companies__slug__driver_routes__identity__road_path_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadPathView"
                 }
               }
             }
@@ -11271,7 +11393,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RouteView"
+                  "$ref": "#/components/schemas/DriverRouteView"
                 }
               }
             }
@@ -11425,7 +11547,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RouteView"
+                  "$ref": "#/components/schemas/DriverRouteView"
                 }
               }
             }
@@ -11569,7 +11691,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RouteView"
+                  "$ref": "#/components/schemas/DriverRouteView"
                 }
               }
             }
@@ -12113,7 +12235,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RouteView"
+                  "$ref": "#/components/schemas/DriverRouteView"
                 }
               }
             }
@@ -12673,7 +12795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RouteView"
+                  "$ref": "#/components/schemas/DriverRouteView"
                 }
               }
             }
@@ -29403,12 +29525,15 @@
           },
           "postal_code": {
             "type": "string",
-            "pattern": "^[A-Za-z]\\d[A-Za-z] ?\\d[A-Za-z]\\d$",
+            "pattern": "^(?:[A-Za-z]\\d[A-Za-z] ?\\d[A-Za-z]\\d|\\d{5}(?:-\\d{4})?)$",
             "title": "Postal Code"
           },
           "country": {
             "type": "string",
-            "const": "CA",
+            "enum": [
+              "CA",
+              "US"
+            ],
             "title": "Country",
             "default": "CA"
           },
@@ -34481,7 +34606,7 @@
           "postal_codes": {
             "items": {
               "type": "string",
-              "pattern": "^[A-Za-z]\\d[A-Za-z]$"
+              "pattern": "^(?:[A-Za-z]\\d[A-Za-z]|\\d{3}|\\d{5})$"
             },
             "type": "array",
             "maxItems": 200,
@@ -34716,7 +34841,10 @@
           },
           "country": {
             "type": "string",
-            "const": "CA",
+            "enum": [
+              "CA",
+              "US"
+            ],
             "title": "Country",
             "default": "CA"
           },
@@ -35096,7 +35224,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -35232,7 +35360,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -35642,6 +35770,21 @@
             "title": "Crew Size",
             "default": 1
           },
+          "load_sizes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "FTL",
+                "LTL",
+                "SMALL_PARCEL"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Load Sizes",
+            "description": "Load sizes the driver handles; an Order of another size cannot be assigned to them. Drivers saved before this field handle all three."
+          },
           "shift_start": {
             "anyOf": [
               {
@@ -35732,6 +35875,33 @@
           "password"
         ],
         "title": "DriverLogin"
+      },
+      "DriverMapOrigin": {
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "title": "Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "title": "Longitude"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "GPS",
+              "PARKING"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "latitude",
+          "longitude",
+          "source"
+        ],
+        "title": "DriverMapOrigin"
       },
       "DriverNotificationView": {
         "properties": {
@@ -36103,6 +36273,140 @@
           "location_permission"
         ],
         "title": "DriverProfileView"
+      },
+      "DriverRouteView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "driver_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Driver Id"
+          },
+          "vehicle_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Vehicle Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked"
+          },
+          "generation": {
+            "type": "integer",
+            "title": "Generation"
+          },
+          "planned_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Planned At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Plan"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/RouteVisitView"
+            },
+            "type": "array",
+            "title": "Stops"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ItemInput-Output"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items"
+          },
+          "vehicle": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vehicle"
+          },
+          "map_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriverMapOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "created_at",
+          "driver_id",
+          "vehicle_id",
+          "status",
+          "locked",
+          "generation",
+          "planned_at",
+          "started_at",
+          "completed_at",
+          "plan",
+          "stops"
+        ],
+        "title": "DriverRouteView"
       },
       "DriverSession": {
         "properties": {
@@ -37915,7 +38219,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -38033,7 +38337,7 @@
               }
             ],
             "title": "Package Type Id",
-            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized…). Describes the item; it does not change price."
+            "description": "Company Package Type (Envelope, Parcel, Pallet, Oversized\u2026). Describes the item; it does not change price."
           }
         },
         "additionalProperties": false,
@@ -44746,7 +45050,7 @@
           "postal_codes": {
             "items": {
               "type": "string",
-              "pattern": "^[A-Za-z]\\d[A-Za-z]$"
+              "pattern": "^(?:[A-Za-z]\\d[A-Za-z]|\\d{3}|\\d{5})$"
             },
             "type": "array",
             "minItems": 1,

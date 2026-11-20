@@ -66,7 +66,9 @@ def logout(request: Request, response: Response, db: DB):
             from .database import context
             context(db,login_session.organization_id)
             account = db.get(User,login_session.user_id)
-            if account and account.driver_id:
+            # Browser sign-out ends access, not the driver's operational availability.
+            # Native sign-out retains its explicit End Duty / sensor-stop boundary.
+            if token.startswith('dm_') and account and account.driver_id:
                 from .operations.execution import close_duty_on_logout
                 close_duty_on_logout(db,account)
             db.delete(login_session)

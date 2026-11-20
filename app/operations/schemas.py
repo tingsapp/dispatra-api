@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, EmailStr, AwareDatetime, StrictBool, field_validator, model_validator
+from app import regions
 from app.schemas import Input, Name, Password
 
 Money = Annotated[Decimal, Field(ge=0, le=10000000, max_digits=16, decimal_places=4)]
@@ -16,17 +17,7 @@ Text = Annotated[str, Field(max_length=2000)]
 LoadSize = Literal['FTL', 'LTL', 'SMALL_PARCEL']
 
 
-def normalize_fsa(value):
-    """Store Canadian pricing/dispatch areas as their three-character FSA."""
-    if not isinstance(value, str):
-        return value
-    compact = value.replace(' ', '').upper()
-    if len(compact) in {3, 6} and compact[0].isalpha() and compact[1].isdigit() and compact[2].isalpha() and (len(compact) == 3 or (compact[3].isdigit() and compact[4].isalpha() and compact[5].isdigit())):
-        return compact[:3]
-    raise ValueError('Use a Canadian three-character postal area, such as V6A.')
-
-
-Fsa = Annotated[str, BeforeValidator(normalize_fsa), Field(pattern=r'^[A-Za-z]\d[A-Za-z]$')]
+Fsa = Annotated[str, BeforeValidator(regions.area), Field(pattern=regions.AREA_PATTERN)]
 
 
 def validate_logo(value: str) -> str:
@@ -49,15 +40,27 @@ class Address(Input):
     text: Annotated[str, Field(min_length=5, max_length=500)]
     city: Name
     province: Annotated[str, Field(min_length=2, max_length=30)]
-    postal_code: Annotated[str, Field(pattern=r'^[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d$')]
-    country: Literal['CA'] = 'CA'
+    postal_code: Annotated[str, Field(pattern=regions.POSTAL_PATTERN)]
+    country: Literal['CA', 'US'] = 'CA'
     latitude: Annotated[float, Field(ge=-90, le=90)] | None = None
     longitude: Annotated[float, Field(ge=-180, le=180)] | None = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def infer_country(cls, data):
+        """Older clients omit country; a US ZIP code then identifies a US address."""
+        if isinstance(data, dict) and not data.get('country') and regions.postal(data.get('postal_code'), 'US'):
+            return {**data, 'country': 'US'}
+        return data
 
     @model_validator(mode='after')
     def coordinates(self):
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError('Provide both coordinates or neither')
+        if not regions.postal(self.postal_code, self.country):
+            raise ValueError('Use a Canadian postal code such as V6A 1A1' if self.country == 'CA' else 'Use a US ZIP code such as 98101')
+        if self.country == 'US' and self.province.strip().upper() not in regions.STATES:
+            raise ValueError('Use the two-letter US state code, such as WA')
         return self
 
 
@@ -387,6 +390,8 @@ class DriverData(Input):
     vehicle_id: UUID | None = None
     qualifications: list[Name] = Field(default_factory=list, max_length=30)
     crew_size: int = Field(default=1, ge=1, le=10)
+    load_sizes: list[LoadSize] = Field(default_factory=lambda: ['FTL', 'LTL', 'SMALL_PARCEL'], min_length=1, max_length=3,
+        description='Load sizes the driver handles; an Order of another size cannot be assigned to them. Drivers saved before this field handle all three.')
     shift_start: AwareDatetime | None = None
     shift_end: AwareDatetime | None = None
     maximum_work_minutes: int = Field(default=480, ge=1, le=1440)
@@ -395,6 +400,7 @@ class DriverData(Input):
     def validate_driver(self):
         self.email = str(self.email).lower()
         if (self.shift_start is None) != (self.shift_end is None): raise ValueError('Provide both shift boundaries')
+        if len(set(self.load_sizes)) != len(self.load_sizes): raise ValueError('Duplicate load size')
         if self.shift_start and self.shift_end <= self.shift_start: raise ValueError('Shift end must follow start')
         return self
 
@@ -742,6 +748,12 @@ class RouteVisitView(RecordView):
     stop: StopInput
 
 
+class DriverMapOrigin(BaseModel):
+    latitude: float
+    longitude: float
+    source: Literal['GPS', 'PARKING']
+
+
 class RouteView(RecordView):
     driver_id: UUID
     vehicle_id: UUID
@@ -755,6 +767,10 @@ class RouteView(RecordView):
     stops: list[RouteVisitView]
     items: list[ItemInput] | None = None
     vehicle: dict | None = None
+
+
+class DriverRouteView(RouteView):
+    map_origin: DriverMapOrigin | None = None
 
 
 class AssignmentView(BaseModel):

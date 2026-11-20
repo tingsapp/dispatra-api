@@ -47,5 +47,14 @@ def command(db, actor, key, name, payload, run):
     return once(db, actor, key, name, payload, run)
 
 
+def located(address, what):
+    """Saved addresses carry a map point: one sent without coordinates is geocoded, or refused naming `what`."""
+    if address.latitude is not None: return address
+    from app.intake import geocode
+    found = geocode.verify(address.text, address.postal_code)
+    if not found: raise HTTPException(422, f'We couldn’t place the {what} “{address.text}” on the map. Choose it from the address suggestions.')
+    return address.model_copy(update={'latitude': found['latitude'], 'longitude': found['longitude']})
+
+
 def dump(row):
     return {column.key: getattr(row, column.key) for column in row.__table__.columns if column.key != 'organization_id'}

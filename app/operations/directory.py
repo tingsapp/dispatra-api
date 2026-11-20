@@ -10,7 +10,7 @@ from app.services import audit
 from .models import Catalog, RateCard, Shipper, ShipperRateCard, Driver, Vehicle, Route, Settings, DutySession
 from .identifiers import issue_number, vehicle_number
 from .schemas import SettingsView, CatalogView, RateView
-from .common import record, version, company_lock, command, changed, dump, settings, operational_shipper
+from .common import record, version, company_lock, command, changed, dump, settings, operational_shipper, located
 
 # Older clients omit these lists; keep the saved values instead of resetting them to defaults.
 PRESERVED_WHEN_OMITTED = ('dispatch_zones', 'work_hours', 'holidays')
@@ -179,6 +179,9 @@ def shipper_view(db, actor, row):
 
 def save_shipper(db, actor, data, key, identity=None):
     password = None
+    # The warehouse is the shipper's default pickup, so it must be on the map.
+    if identity: data = data.model_copy(update={'data': data.data.model_copy(update={'warehouse': located(data.data.warehouse, 'warehouse address')})})
+    else: data = data.model_copy(update={'warehouse': located(data.warehouse, 'warehouse address')})
     def run():
         nonlocal password
         company_lock(db, actor)
@@ -362,7 +365,10 @@ def save_driver(db, actor, data, key, identity=None):
         row.address = payload.address.model_dump(mode='json')
         row.service_city = ' '.join(payload.address.city.casefold().split())
         row.vehicle_id, row.active = payload.vehicle_id, payload.active
-        row.data = payload.model_dump(mode='json', exclude={'name', 'email', 'phone', 'address', 'vehicle_id', 'active'})
+        values = payload.model_dump(mode='json', exclude={'name', 'email', 'phone', 'address', 'vehicle_id', 'active'})
+        # Older clients that omit load sizes keep the saved ones.
+        if identity and 'load_sizes' not in payload.model_fields_set and 'load_sizes' in (row.data or {}): values['load_sizes'] = row.data['load_sizes']
+        row.data = values
         db.flush()
         if not identity: db.add(user)
         if user.login_id != payload.email or user.active != payload.active:
@@ -388,7 +394,10 @@ def save_driver(db, actor, data, key, identity=None):
         else:
             db.flush(); audit(db, actor, 'driver.created', row.id, actor.organization_id)
         return driver_view(db, actor, row)
-    result = command(db, actor, key, 'driver:' + str(identity or 'new'), data.model_dump(mode='json'), run)
+    hashed = data.model_dump(mode='json')
+    driver_payload = data.data if identity else data
+    if 'load_sizes' not in driver_payload.model_fields_set: (hashed['data'] if identity else hashed).pop('load_sizes', None)
+    result = command(db, actor, key, 'driver:' + str(identity or 'new'), hashed, run)
     return {**result, 'initial_password': password}
 
 
@@ -432,6 +441,7 @@ def change_directory_password(db, actor, identity, data, key, kind):
 
 
 def update_shipper_profile(db, actor, data, key):
+    data = data.model_copy(update={'warehouse': located(data.warehouse, 'warehouse address')})
     def run():
         row = customer = operational_shipper(db,actor,actor.shipper_id,True); version(row,data.version)
         if 'logo_url' in data.model_fields_set:

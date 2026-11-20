@@ -80,7 +80,7 @@ def sign(path_and_query, secret):
 
 def map_url(tracking, road, key, secret=None):
     point = lambda lat, lng: f'{lat:.6f},{lng:.6f}'
-    query = [('size', '640x320'), ('scale', '2'), ('maptype', 'roadmap'), ('language', 'en'), ('region', 'CA')]
+    query = [('size', '640x320'), ('scale', '2'), ('maptype', 'roadmap'), ('language', 'en')]
     if road: query.append(('path', f'color:0x2563eb99|weight:5|enc:{road}'))
     for kind in ('PICKUP', 'DROPOFF'):
         spots = [point(s['address']['latitude'], s['address']['longitude']) for s in tracking['stops']

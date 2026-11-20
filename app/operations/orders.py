@@ -8,7 +8,7 @@ from app.models import now
 from app.services import audit
 from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
 from .schemas import Booking, OrderView
-from .common import record, command, version, changed, company_lock, operational_shipper, settings
+from .common import record, command, version, changed, company_lock, operational_shipper, settings, located
 from .pricing import quote, prepare_booking
 from .calendar import closed_reason
 from .identifiers import issue_number
@@ -119,8 +119,14 @@ def save_children(db, actor, row, booking):
     db.flush()
 
 
+def located_stops(booking):
+    """Every stop needs a map point for dispatch, routing and the Monitor."""
+    return booking.model_copy(update={'stops': [stop.model_copy(update={'address': located(stop.address, 'pickup address' if stop.kind == 'PICKUP' else 'delivery address')})
+        for stop in booking.stops]})
+
+
 def create_order(db, actor, data, key, source=None):
-    requested = authorized_booking(actor, data)
+    requested = located_stops(authorized_booking(actor, data))
     def run():
         company_lock(db, actor)
         booking = prepare_booking(db, actor, requested)
@@ -141,7 +147,7 @@ def create_order(db, actor, data, key, source=None):
 
 
 def update_order(db, actor, identity, data, key):
-    requested = authorized_booking(actor, data.booking)
+    requested = located_stops(authorized_booking(actor, data.booking))
     def run():
         company_lock(db, actor)
         booking = prepare_booking(db, actor, requested)

@@ -43,6 +43,8 @@ def test_zone_postal_codes_are_stored_as_three_character_fsa_prefixes():
     settings = SettingsData(dispatch_zones=[{'name': 'Vancouver', 'postal_codes': ['V6A 1E9']}])
     assert card.zones[0].postal_codes == ['V6A', 'V5Y']
     assert settings.dispatch_zones[0].postal_codes == ['V6A']
+    us = RateData(name='Zone', method='ZONE', zones=[{'id': 'sea', 'name': 'Seattle', 'postal_codes': ['981', '98101-1234']}])
+    assert us.zones[0].postal_codes == ['981', '98101']
     with pytest.raises(ValueError, match='Canadian three-character postal area'):
         RateData(name='Zone', method='ZONE', zones=[{'id': 'bad', 'name': 'Bad', 'postal_codes': ['not-a-postal-code']}])
 
@@ -82,6 +84,40 @@ def test_package_handling_accessorials_follow_item_quantities(monkeypatch):
     legacy = calculate(data, {key: value for key, value in context.items() if key != 'package_handling_unit_pricing'})
     assert [line['amount'] for line in legacy['lines'] if line['group'] == 'ACCESSORIAL'] == ['15.00', '25.00']
 
+
+
+def test_holiday_weekend_accessorial_follows_delivery_day(monkeypatch):
+    from types import SimpleNamespace
+    from app.operations import pricing
+    org_id, card_id = uuid4(), uuid4()
+    accessory = SimpleNamespace(id=uuid4(), code='HOLIDAY_WEEKEND', data=CatalogData(name='Holiday / Weekend Delivery', amount=25).model_dump(mode='json'))
+    card = SimpleNamespace(id=card_id, version=1, active=True, data=RateData(name='Fixed', method='FIXED', fixed_amount=100).model_dump(mode='json'))
+    class Database:
+        def scalar(self, statement):
+            return accessory if 'HOLIDAY_WEEKEND' in statement.compile().params.values() else None
+    config = SettingsData(fuel_enabled=False, gst_enabled=False, time_zone='America/Vancouver', holidays=[{'date': '2026-12-25', 'name': 'Christmas Day'}])
+    monkeypatch.setattr(pricing, 'settings', lambda *_: (None, config))
+    monkeypatch.setattr(pricing, 'operational_shipper', lambda *_: None)
+    monkeypatch.setattr(pricing, 'record', lambda *_: card)
+    monkeypatch.setattr(pricing, 'catalog', lambda _db, _actor, _id, kind: accessory if kind == 'ACCESSORIAL'
+        else SimpleNamespace(data=CatalogData(name='Standard').model_dump(mode='json')))
+    def priced(scheduled, delivery_start=None, selected=False):
+        raw = booking(uuid4(), uuid4(), None, card_id)
+        raw['scheduled_at'] = scheduled
+        if delivery_start: raw['stops'][1]['window_start'] = delivery_start
+        if selected: raw['accessorials'] = [{'id': str(accessory.id), 'quantity': 3}]
+        data = Booking.model_validate(raw)
+        context = pricing.price_context(Database(), SimpleNamespace(organization_id=org_id), data)
+        return [(line['label'], line['amount']) for line in calculate(data, context)['lines'] if line['group'] == 'ACCESSORIAL']
+    charged = [('Holiday / Weekend Delivery', '25.00')]
+    # Friday 2026-11-20 is a weekday; Saturday 2026-11-21 and Christmas are off days in Vancouver time.
+    assert priced('2026-11-20T18:00:00Z') == []
+    assert priced('2026-11-20T18:00:00Z', selected=True) == []
+    assert priced('2026-11-21T18:00:00Z') == charged
+    assert priced('2026-11-20T18:00:00Z', delivery_start='2026-11-21T18:00:00Z') == charged
+    assert priced('2026-12-24T18:00:00Z', delivery_start='2026-12-25T18:00:00Z') == charged
+    # 2026-11-21 05:00 UTC is still Friday evening in Vancouver.
+    assert priced('2026-11-20T18:00:00Z', delivery_start='2026-11-21T05:00:00Z') == []
 
 def test_route_intermediate_load_precedence_and_unknown_coordinates():
     first=booking(uuid4(),uuid4(),uuid4());second=booking(uuid4(),uuid4(),uuid4())

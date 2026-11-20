@@ -25,7 +25,7 @@ def remove_fixture_admin():
 def test_demo_logins_pricing_and_repeat_preserve_edits():
     remove_fixture_admin()
     initial = seed()
-    assert initial['pricing']['created'] == 34
+    assert initial['pricing']['created'] == 35
     assert all(account['initial_password'] == '123456' for account in initial['accounts'])
     for account in initial['accounts']:
         with TestClient(app, headers=HEADERS) as client:

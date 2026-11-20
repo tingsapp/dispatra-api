@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from app import regions
 from app.database import context, engine
 from app.intake import booking, geocode, vault
 from app.models import now
@@ -94,8 +95,9 @@ def vehicle_data(record: dict, mapping: dict, setup: dict) -> tuple[str, dict]:
         street, city = text(get(record, mapping, 'parking.address')), text(get(record, mapping, 'parking.city'), 160)
         province = booking.province(text(get(record, mapping, 'parking.province')))
         postal = booking.postal(text(get(record, mapping, 'parking.postal_code')))
-        if not (street and city and province and postal): raise Skip('Vehicle parking address is incomplete', external)
-        data['parking_address'] = {'text': f'{street}, {city}, {province} {postal}', 'city': city, 'province': province, 'postal_code': postal, 'country': 'CA'}
+        country = regions.country(province, postal)
+        if not (street and city and province and postal and country): raise Skip('Vehicle parking address is incomplete', external)
+        data['parking_address'] = {'text': f'{street}, {city}, {province} {postal}', 'city': city, 'province': province, 'postal_code': postal, 'country': country}
     try: return external, VehicleData.model_validate(data).model_dump(mode='json', exclude_unset=True)
     except ValidationError as error: raise Skip(_invalid(error), external) from None
 
@@ -106,11 +108,12 @@ def driver_data(record: dict, mapping: dict) -> tuple[str, dict, str | None]:
     if not external: raise Skip('TMS driver ID missing')
     street, city = text(get(record, mapping, 'address')), text(get(record, mapping, 'city'), 160)
     province, postal = booking.province(text(get(record, mapping, 'province'))), booking.postal(text(get(record, mapping, 'postal_code')))
-    if not (street and city and province and postal): raise Skip('Home address is incomplete or not a Canadian address', external)
+    country = regions.country(province, postal)
+    if not (street and city and province and postal and country): raise Skip('Home address is incomplete or not a Canada/US address', external)
     full = street if postal.replace(' ', '') in street.upper().replace(' ', '') else f'{street}, {city}, {province} {postal}'
     active = boolean(get(record, mapping, 'active'))
     data = {'name': text(get(record, mapping, 'name'), 160), 'email': text(get(record, mapping, 'email'), 254).lower(), 'phone': text(get(record, mapping, 'phone'), 50),
-        'address': {'text': full, 'city': city, 'province': province, 'postal_code': postal, 'country': 'CA'}, 'active': True if active is None else active}
+        'address': {'text': full, 'city': city, 'province': province, 'postal_code': postal, 'country': country}, 'active': True if active is None else active}
     unit = text(get(record, mapping, 'vehicle_unit'), 50).upper() if mapping.get('vehicle_unit') else None
     try: DriverData.model_validate(data)
     except ValidationError as error: raise Skip(_invalid(error), external) from None
