@@ -187,3 +187,32 @@ def test_prompt_supplies_company_local_received_date_and_service_meaning():
     assert 'Cargo Van as its standard default' in extract.INSTRUCTIONS
     assert 'EVERY requested additional service' in extract.INSTRUCTIONS
     assert 'dangerous_goods true' in extract.INSTRUCTIONS
+
+
+def test_load_size_is_ftl_only_when_asked_otherwise_small_parcel_or_ltl_from_the_cargo():
+    service, van, trailer = str(uuid4()), str(uuid4()), str(uuid4())
+    ctx={'time_zone':'America/Vancouver','dimension_unit':'in','weight_unit':'lb','services':[{'id':service,'code':'SAME_DAY','name':'Same-Day Standard'}],
+        'vehicle_types':[{'id':van,'code':'veh_1_ton','name':'Cargo Van','load_sizes':['LTL']},{'id':trailer,'code':'veh_trailer','name':'Dry Van Trailer','load_sizes':['FTL']}],
+        'shipper':{'id':str(uuid4()),'warehouse':{'text':'100 Warehouse St, Vancouver, BC V5Y 1V4','city':'Vancouver','province':'BC','postal_code':'V5Y 1V4','latitude':49.2,'longitude':-123.1}}}
+    def order(**changes):
+        item={'pickup_index':0,'delivery_index':1,'quantity':2,'weight_each':20,'weight_unit':'lb','length':12,'width':10,'height':8,'dimension_unit':None,
+            'pallets_each':0,'fragile':False,'dangerous_goods':False,'description':'Boxes',**changes.pop('item',{})}
+        return extract.Extraction.model_validate({'is_order_request':True,'summary':'Boxes.','service':'SAME_DAY','vehicle_type':None,'scheduled_at':'2030-11-07T09:00:00','reference':None,
+            'stops':[{'kind':'PICKUP','use_shipper_warehouse':True,'address':None,'contact_name':None,'phone':None,'instructions':None,'window_start':None,'window_end':None},
+                {'kind':'DROPOFF','use_shipper_warehouse':False,'address':{'street':'500 Granville Street','city':'Vancouver','province':'BC','postal_code':'V6C 1W6'},
+                    'contact_name':None,'phone':None,'instructions':None,'window_start':None,'window_end':None}],
+            'items':[item],**changes})
+    def build(value): return booking.build(value,ctx,lambda *_:None)
+    # Two 20 lb boxes are a small parcel, which books no vehicle type.
+    draft,_=build(order())
+    assert (draft['load_size'],draft['service_id'],draft['vehicle_type_id'])==('SMALL_PARCEL',service,None)
+    # Pallets, a heavy piece, a heavy total, an unknown weight or a requested vehicle type are less than truckload.
+    for value in (order(item={'pallets_each':1}),order(item={'weight_each':80}),order(item={'quantity':4,'weight_each':40}),order(item={'weight_each':None}),order(vehicle_type='Cargo Van')):
+        draft,_=build(value)
+        assert (draft['load_size'],draft['vehicle_type_id'])==('LTL',van)
+    # Saved extractions from before the field read as not a full truckload.
+    assert extract.Extraction.model_validate(order().model_dump(exclude={'full_truckload'})).full_truckload is False
+    # A full truckload takes a type offered for FTL, no service level, and needs no package weight or size.
+    draft,missing=build(order(full_truckload=True,service='DIRECT',item={'weight_each':None,'length':None,'width':None,'height':None}))
+    assert (draft['load_size'],draft['service_id'],draft['vehicle_type_id'])==('FTL',None,trailer)
+    assert not missing

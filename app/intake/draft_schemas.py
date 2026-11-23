@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, Field, AwareDatetime
 from app.schemas import Input
-from app.operations.schemas import StopInput, ItemInput, AccessorialSelection, Adjustment, Money, Positive, Text
+from app.operations.schemas import LoadSize, StopInput, ItemInput, AccessorialSelection, Adjustment, Money, Positive, Text
 from .schemas import IntakeVersion
 
 
@@ -33,6 +33,7 @@ class DraftItem(ItemInput):
 
 
 class DraftShipment(Input):
+    load_size: LoadSize | None = None
     service_id: UUID | None = None
     vehicle_type_id: UUID | None = None
     preferred_driver_id: UUID | None = None

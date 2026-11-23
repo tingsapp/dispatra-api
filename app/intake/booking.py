@@ -11,6 +11,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from app import regions
+from app.operations.pricing import PARCEL_PIECE_KG, PARCEL_TOTAL_KG
 from app.operations.schemas import Booking
 from .geocode import same_city
 
@@ -58,6 +59,23 @@ def best_vehicle_type(items, options, requested=None):
     general = [item for item in options if item['code'].startswith('veh_')]
     cargo_van = next((item for item in general if item['code'] == 'veh_1_ton'), None)
     return cargo_van['id'] if cargo_van else (general[0]['id'] if general else (options[0]['id'] if options else None))
+
+
+def load_size(extraction, items):
+    """FTL only when the email asks for a whole or exclusive vehicle. Otherwise Small parcel when every piece has a stated
+    weight, no pallet and the parcel limits of `pricing.suggested_load_size`, and no vehicle type is requested (Small parcel
+    books none); else LTL."""
+    if extraction.full_truckload: return 'FTL'
+    if extraction.vehicle_type or not items: return 'LTL'
+    if any(i['weight_kg'] is None or not i['quantity'] or i['pallets'] for i in items): return 'LTL'
+    weights = [(Decimal(i['weight_kg']), i['quantity']) for i in items]
+    parcel = all(weight <= PARCEL_PIECE_KG for weight, _ in weights) and sum(w * q for w, q in weights) <= PARCEL_TOTAL_KG
+    return 'SMALL_PARCEL' if parcel else 'LTL'
+
+
+def offered(options, size):
+    """Vehicle types offered for a load size (Settings → Vehicle Types); records without the field offer both."""
+    return [o for o in options if size in (o.get('load_sizes') or ['FTL', 'LTL'])]
 
 
 def package_type(item, options, default=None):
@@ -113,8 +131,10 @@ def build(extraction, context, verify):
     """Return (draft, missing). `draft` is a JSON Booking body; it is complete only when `missing` is empty.
     Without a matched Shipper (`context['shipper']` is None) the draft has no Shipper and no warehouse pickup address."""
     zone, missing = ZoneInfo(context['time_zone']), []
-    service = pick(extraction.service, context['services'])
-    if service is None: missing.append('Service level')
+    # A full truckload has no service level and no package weights or sizes: the vehicle type's payload and space apply.
+    full = extraction.full_truckload
+    service = None if full else pick(extraction.service, context['services'])
+    if service is None and not full: missing.append('Service level')
     shipper = context['shipper'] or {}
     contact = shipper.get('contact_name') or shipper.get('name') or shipper.get('company_name') or ''
     stops = []
@@ -143,8 +163,8 @@ def build(extraction, context, verify):
         factor = CM_PER_IN if dimension_unit == 'in' else Decimal('1')
         sizes = [measure(v, factor) if dimension_unit else None for v in (item.length, item.width, item.height)]
         if not item.quantity or item.quantity < 1: missing.append(f'{label}: quantity')
-        if weight is None: missing.append(f'{label}: weight')
-        if None in sizes: missing.append(f'{label}: length, width and height')
+        if weight is None and not full: missing.append(f'{label}: weight')
+        if None in sizes and not full: missing.append(f'{label}: length, width and height')
         type_id = package_type(item, context.get('package_types', []), context.get('default_package_type_id'))
         pallet_type = any(o['id'] == type_id and o['code'].upper() == 'PALLET' for o in context.get('package_types', []))
         items.append({'id': str(uuid4()), 'pickup_id': pickup_id, 'delivery_id': delivery_id, 'quantity': item.quantity,
@@ -162,8 +182,10 @@ def build(extraction, context, verify):
         identity = pick(requested, context.get('accessorials', []))
         if identity and not any(item['id'] == identity for item in accessorials): accessorials.append({'id': identity, 'quantity': '1'})
         elif not identity: missing.append(f'Requested additional service: {requested}')
-    draft = {'shipper_id': context['shipper']['id'] if context['shipper'] else None, 'service_id': service,
-        'vehicle_type_id': best_vehicle_type(items, context['vehicle_types'], extraction.vehicle_type), 'scheduled_at': scheduled,
+    size = load_size(extraction, items)
+    vehicle = None if size == 'SMALL_PARCEL' else best_vehicle_type(items, offered(context['vehicle_types'], size), extraction.vehicle_type)
+    draft = {'shipper_id': context['shipper']['id'] if context['shipper'] else None, 'load_size': size, 'service_id': service,
+        'vehicle_type_id': vehicle, 'scheduled_at': scheduled,
         'stops': stops, 'items': items, 'accessorials': accessorials, 'external_reference': (extraction.reference or '')[:160]}
     if not missing:
         try: Booking.model_validate(draft)

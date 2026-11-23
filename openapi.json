@@ -35301,6 +35301,22 @@
       },
       "DraftBooking": {
         "properties": {
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
+          },
           "service_id": {
             "anyOf": [
               {
@@ -35792,6 +35808,22 @@
       },
       "DraftShipment-Input": {
         "properties": {
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
+          },
           "service_id": {
             "anyOf": [
               {
@@ -35877,6 +35909,22 @@
       },
       "DraftShipment-Output": {
         "properties": {
+          "load_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FTL",
+                  "LTL",
+                  "SMALL_PARCEL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Size"
+          },
           "service_id": {
             "anyOf": [
               {
