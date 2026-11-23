@@ -1,3 +1,6 @@
+2026-11-23: Live data fix on request: moved DTO-4868 and its route back to Nov 22 09:00 America/Vancouver (the company's current day at 22:04 local; order version 9, route version 4) so it shows on the driver timeline now; the delivery window still ends 2026-11-23T00:00Z (17:00 local).
+Checks: pre-change backup /var/backups/dispatra/dto-4868-reschedule-20261123T050513Z/before.json; driver Today timeline showed both stops.
+
 2026-11-23: Live data fix on request: moved DTO-4868 and its unstarted route another day, to Nov 23 09:00 America/Vancouver (order version 8, route version 3); it shows on the driver Today timeline from Vancouver midnight.
 Checks: pre-change backup /var/backups/dispatra/dto-4868-reschedule-20261123T045307Z/before.json; no Nov 22 times remain on the order.
 
