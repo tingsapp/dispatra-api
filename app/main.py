@@ -17,6 +17,9 @@ app = FastAPI(title='Dispatra API', version='0.2.0', responses={
 origins = {origin.strip() for origin in os.environ.get('WEB_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()}
 origins.add('https://dispatra.vercel.app')
 TMS_WEBHOOK = re.compile(r'^/api/v1/companies/[a-z0-9-]{1,63}/integrations/tms/events$')
+# Unauthenticated native app calls: driver sign-in and forgotten-password reset (no session or bearer exists yet).
+NATIVE_PUBLIC = {'/api/v1/auth/driver/login', '/api/v1/auth/password/reset/request',
+                 '/api/v1/auth/password/reset/resend', '/api/v1/auth/password/reset/confirm'}
 
 def error(request, status, message, fields=None):
     return JSONResponse(status_code=status, content={'error': {
@@ -37,7 +40,7 @@ async def boundary(request: Request, call_next):
     api_key = not request.cookies.get('dispatra_session') and request.headers.get('authorization', '').startswith('Bearer dsp_')
     native_request = not request.url.path.startswith(('/api/v1/auth/signup', '/api/v1/auth/verification')) and (tms_webhook or stripe_webhook or api_key or (not request.headers.get('origin') and not request.cookies.get('dispatra_session')
         and request.headers.get('x-requested-with') == 'Dispatra'
-        and (request.url.path == '/api/v1/auth/driver/login'
+        and (request.url.path in NATIVE_PUBLIC
              or request.headers.get('authorization', '').startswith('Bearer dm_'))))
     if request.method not in {'GET','HEAD','OPTIONS'} and not native_request and (
         request.headers.get('origin') not in origins or request.headers.get('x-requested-with') != 'Dispatra'

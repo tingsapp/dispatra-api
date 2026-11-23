@@ -94,3 +94,23 @@ def test_resend_replaces_the_request_and_tokens_stay_out_of_verification(setup):
         stranger.cookies.set('dispatra_verification', second)
         assert post(stranger, '/api/v1/auth/verification/confirm', {'code': code(email)}).status_code == 401
     assert post(w['client'], CONFIRM, {'reset_token': second, 'code': code(email), 'new_password': NEW_PASSWORD}).status_code == 200
+
+
+def test_native_app_can_reset_without_browser_origin(setup):
+    email = 'dana@example.com'
+    with TestClient(app, headers={'X-Requested-With': 'Dispatra'}) as native:
+        started = native.post(REQUEST, json={'portal': 'driver', 'login_id': email})
+        assert started.status_code == 200, started.text
+        with owner_engine.begin() as db:
+            db.execute(text("UPDATE email_verifications SET resend_at=now()-interval '1 second'"))
+        resent = native.post(RESEND, json={'reset_token': started.json()['reset_token']})
+        assert resent.status_code == 200, resent.text
+        token = resent.json()['reset_token']
+        response = native.post(CONFIRM, json={'reset_token': token, 'code': code(email), 'new_password': NEW_PASSWORD})
+        assert response.status_code == 200, response.text
+        assert native.post('/api/v1/auth/driver/login', json={'login_id': email, 'password': NEW_PASSWORD}).status_code == 200
+    # A browser still needs a trusted Origin, and a session cookie never rides the native exemption.
+    with TestClient(app, headers={'X-Requested-With': 'Dispatra', 'Origin': 'https://evil.example'}) as browser:
+        assert browser.post(REQUEST, json={'portal': 'driver', 'login_id': email}).status_code == 403
+    with TestClient(app, headers={'X-Requested-With': 'Dispatra'}, cookies={'dispatra_session': 'x'}) as cookie:
+        assert cookie.post(REQUEST, json={'portal': 'driver', 'login_id': email}).status_code == 403
