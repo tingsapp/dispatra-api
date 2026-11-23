@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 from app.database import engine, context
-from app.email_templates import verification
+from app.email_templates import password_reset, verification
 from app.models import EmailVerification, OutboxEvent, now
 from app.intake import vault
 from app.operations import outbox, smtp_transport
@@ -26,8 +26,13 @@ def process(org_id, event_id, worker):
             outbox.acknowledge(db, org_id, event_id, worker); return
         code = vault.unseal(row.secret, 'verification message')
         row.delivery_status = 'SENDING'
-        body_text, body_html = verification(code)
-        message = SimpleNamespace(recipient=row.email, subject='Verify your Dispatra account',
+        if row.purpose == 'PASSWORD_RESET':
+            body_text, body_html = password_reset(code)
+            subject = 'Reset your Dispatra password'
+        else:
+            body_text, body_html = verification(code)
+            subject = 'Verify your Dispatra account'
+        message = SimpleNamespace(recipient=row.email, subject=subject,
             message_id=f'<verification-{row.id}@dispatra.com>',
             body_text=body_text, body_html=body_html)
     status, failure = 'SENT', None

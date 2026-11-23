@@ -9,7 +9,7 @@ from .models import User, LoginSession
 from .operations.models import Shipper
 from .schemas import (Login, AccountView, CustomerCreate, TrialSignup,
                       CustomerAccessView, CustomerView, ProfileUpdate, PasswordChange, PasswordReset, DriverLogin, DriverSession,
-                      VerificationView, VerificationCode)
+                      VerificationView, VerificationCode, PasswordResetRequest, PasswordResetView, PasswordResetCode, PasswordResetResend)
 from .security import digest
 
 router = APIRouter(prefix='/api/v1')
@@ -41,6 +41,26 @@ def verification_resend(request: Request, response: Response, db: DB, idempotenc
 def verification_confirm(data: VerificationCode, request: Request, response: Response, db: DB, idempotency_key: OperationKey):
     from .verification import confirm
     return confirm(db, data, request, response, idempotency_key)
+
+@router.post('/auth/password/reset/request', response_model=PasswordResetView)
+def password_reset_request(data: PasswordResetRequest, request: Request, response: Response, db: DB):
+    from .password_reset import request_reset
+    return request_reset(db, request, response, data)
+
+@router.get('/auth/password/reset/status', response_model=PasswordResetView)
+def password_reset_status(request: Request, db: DB):
+    from .password_reset import status
+    return status(db, request)
+
+@router.post('/auth/password/reset/resend', response_model=PasswordResetView)
+def password_reset_resend(data: PasswordResetResend, request: Request, response: Response, db: DB):
+    from .password_reset import resend
+    return resend(db, request, response, data.reset_token)
+
+@router.post('/auth/password/reset/confirm')
+def password_reset_confirm(data: PasswordResetCode, request: Request, response: Response, db: DB):
+    from .password_reset import confirm
+    return confirm(db, request, response, data)
 
 @router.post('/auth/driver/login', response_model=DriverSession)
 def driver_login(data: DriverLogin, request: Request, response: Response, db: DB):

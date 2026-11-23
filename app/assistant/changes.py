@@ -101,8 +101,6 @@ def normalized(db, actor, op, body):
 
 
 def update(db, actor, entity, name, op, plan, row, subject):
-    if entity == 'ORDER' and row.status != 'NEW':
-        return reply(f'Order {row.number} is {STATUS[row.status].lower()}. Only unassigned orders can be edited; unassign it first.', reference(entity, row))
     before = records.editable(db, actor, entity, row)
     shown = drafting.humanize(db, actor.organization_id, before)
     zone, facts = context(db, actor)

@@ -6,7 +6,7 @@ from app.database import context
 from sqlalchemy import select, delete
 from app.models import now
 from app.services import audit
-from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop
+from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop, Vehicle
 from .schemas import Booking, OrderView
 from .common import record, command, version, changed, company_lock, operational_shipper, settings, located
 from .pricing import quote, prepare_booking
@@ -119,6 +119,40 @@ def save_children(db, actor, row, booking):
     db.flush()
 
 
+def revise_children(db, actor, row, booking, route):
+    """Keep OrderStop identities: Route visits, POD evidence and watch incidents reference them."""
+    from .models import Evidence
+    from app.order_watch.models import Incident
+    tenant = actor.organization_id
+    db.execute(delete(OrderItem).where(OrderItem.order_id == row.id, OrderItem.organization_id == tenant))
+    current = {stop.id: stop for stop in db.scalars(select(OrderStop).where(
+        OrderStop.order_id == row.id, OrderStop.organization_id == tenant).with_for_update())}
+    wanted = {stop.id: stop for stop in booking.stops}
+    removed = [identity for identity in current if identity not in wanted]
+    removed += [stop.id for stop in booking.stops if stop.id in current and current[stop.id].kind != stop.kind]
+    if removed:
+        if route is not None and route.status == 'PLANNED':
+            # The planned Route is rebuilt from the revised Order right after this.
+            db.execute(delete(RouteStop).where(RouteStop.organization_id == tenant, RouteStop.route_id == route.id,
+                RouteStop.stop_id.in_(removed), RouteStop.status == 'PENDING'))
+        for model in (RouteStop, Evidence, Incident):
+            if db.scalar(select(model.id).where(model.organization_id == tenant, model.stop_id.in_(removed)).limit(1)):
+                raise HTTPException(409, 'Stops already on a Route or with delivery records cannot be removed or change type. Keep those stops, or unassign the Order first.')
+        db.execute(delete(OrderStop).where(OrderStop.organization_id == tenant, OrderStop.id.in_(removed)))
+        db.flush()
+    for stop in booking.stops:
+        existing = current.get(stop.id)
+        if existing is not None and stop.id not in removed:
+            existing.data = stop.model_dump(mode='json')
+        else:
+            db.add(OrderStop(id=stop.id, organization_id=tenant, order_id=row.id, kind=stop.kind, data=stop.model_dump(mode='json')))
+    db.flush()
+    for item in booking.items:
+        db.add(OrderItem(id=item.id, organization_id=tenant, order_id=row.id,
+            pickup_id=item.pickup_id, delivery_id=item.delivery_id, quantity=item.quantity, data=item.model_dump(mode='json')))
+    db.flush()
+
+
 def located_stops(booking):
     """Every stop needs a map point for dispatch, routing and the Monitor."""
     return booking.model_copy(update={'stops': [stop.model_copy(update={'address': located(stop.address, 'pickup address' if stop.kind == 'PICKUP' else 'delivery address')})
@@ -152,7 +186,13 @@ def update_order(db, actor, identity, data, key):
         company_lock(db, actor)
         booking = prepare_booking(db, actor, requested)
         row = visible_order(db, actor, identity, True); version(row, data.version)
-        if row.status != 'NEW': raise HTTPException(409, 'Only unassigned orders can be edited. Report an issue instead.')
+        if actor.role == 'SHIPPER' and row.status != 'NEW':
+            raise HTTPException(409, 'Only unassigned orders can be edited. Ask the dispatcher to revise this order.')
+        revision_route = None
+        if actor.role == 'DISPATCHER' and row.route_id and row.status in {'ASSIGNED', 'IN_PROGRESS'}:
+            revision_route = record(db, Route, actor, row.route_id, True)
+            if revision_route.status == 'PLANNED' and revision_route.locked:
+                raise HTTPException(409, 'Locked planned Routes cannot be changed. Unlock or release the Route before editing this Order.')
         check_preferred_driver(db, actor, booking, row.facts.get('preferred_driver_id'))
         check_package_types(db, actor, booking, row.facts)
         if booking.scheduled_at != row.scheduled_at: check_open_hours(db, actor, booking)
@@ -163,9 +203,23 @@ def update_order(db, actor, identity, data, key):
         row.shipper_id, row.billing_shipper_id = booking.shipper_id, booking.billing_shipper_id or booking.shipper_id
         row.service_id = booking.service_id
         row.scheduled_at = booking.scheduled_at
-        db.execute(delete(OrderItem).where(OrderItem.order_id == row.id, OrderItem.organization_id == actor.organization_id))
-        db.execute(delete(OrderStop).where(OrderStop.order_id == row.id, OrderStop.organization_id == actor.organization_id))
-        save_children(db, actor, row, booking)
+        revise_children(db, actor, row, booking, revision_route)
+        if revision_route is not None:
+            route = revision_route
+            if route.status == 'PLANNED':
+                driver = record(db, Driver, actor, route.driver_id, True)
+                vehicle = record(db, Vehicle, actor, route.vehicle_id, True)
+                route_orders = list(db.scalars(select(Order).where(
+                    Order.organization_id == actor.organization_id, Order.route_id == route.id)))
+                from .dispatch import rebuild
+                rebuild(db, actor, route, route_orders, driver, vehicle, route.planned_at)
+            elif route.status == 'IN_PROGRESS':
+                driver = record(db, Driver, actor, route.driver_id, True)
+                vehicle = record(db, Vehicle, actor, route.vehicle_id, True)
+                route_orders = list(db.scalars(select(Order).where(
+                    Order.organization_id == actor.organization_id, Order.route_id == route.id)))
+                from .live_dispatch import apply
+                apply(db, actor, route, route_orders, driver, vehicle)
         changed(db, actor, row, 'order.updated')
         return order_view(row, actor)
     return command(db, actor, key, 'order-edit:' + str(identity), data.model_dump(mode='json'), run)

@@ -1,3 +1,12 @@
+2026-11-22: Fixed NameError in dispatcher order edits on planned routes (orders.py used Vehicle without importing it); found by the new lifecycle test on the VM.
+Checks: VM full suite live 32 failed/766 passed vs candidate 33/770, the only new failure being this test; after the fix lifecycle, password-reset and email-verification tests 22/22 pass. 0076 up/down/up on a live copy kept counts 6,2,8,7.
+
+2026-11-22: Live data fix on request: moved tingsapp order DTO-4868 (ASSIGNED, sole order on an unstarted PLANNED route) from Nov 17 to Nov 22 at the same time: orders.scheduled_at, facts/booking and stop windows, route planned_at/plan and both route-stop times shifted +5 days; order and route versions bumped.
+Checks: pre-change row backup /var/backups/dispatra/dto-4868-reschedule-20261122T090202Z/before.json; no Nov 17 times remain on the order; driver Today timeline shows it.
+
+2026-11-22: Password reset fixed before release: request takes the login portal and uses the role login policy, code lookups use the verification-token policy, wrong codes persist attempts, confirm/request are rate limited, unknown/non-email/admin logins get a matching decoy, reset and signup verification rows are kept apart. Order edits now keep OrderStop identities (409 for removing or retyping a stop on a Route or with delivery records). OpenAPI regenerated.
+Checks: new tests/test_password_reset.py and updated lifecycle-guard tests; full PostgreSQL suite and 0076 live-copy up/down/up run on the VM (results in the release entry).
+
 2026-11-20: Browser driver logout now revokes its login session without ending operational duty; sign-in preserves the saved state. Native logout retains its End Duty boundary.
 Checks: reproduced the old logout reset in isolated PostgreSQL; browser logout/login, session revocation and explicit Off Duty regression passes. Native concurrent-assignment/logout check passed; combined native-workflow run interrupted. Local API restarted and /ready confirmed; no migration.
 
@@ -562,3 +571,7 @@ Email intake matching (2026-10-30): sender email matching now trims whitespace a
 
 - Live post-release verification: three public entry pages match the release, all 21 application assets match when read from the live origin, availability/readiness pass, anonymous draft access returns 401, all 14 services are active, and API/intake/email journals contain no new error markers. A public asset request timed out during the first broad check; final public-entry checks and direct-origin asset verification passed.
 2026-11-11: Zone-based Rate Cards and optional dispatch zones now canonicalize Canadian postal input to three-character Forward Sortation Areas (FSAs): `V6A 1E9` stores as `V6A`; invalid entries state the expected `V6A` format. New dispatcher provisioning seeds Zone 1 (31 Vancouver FSAs), Zone 2 (7 Burnaby FSAs), and Zone 3 (8 Richmond FSAs), with a $20 0–99 lb starter band for each zone. Migration `0067_zone_fsa_prefixes` converts existing Zone and dispatch configuration without changing frozen Order pricing snapshots; it deliberately cannot be downgraded because the discarded final characters are unrecoverable. Focused schema normalization checks and seed JSON validation passed. The PostgreSQL integration suite was not run here because disposable test-database credentials are unavailable.
+2026-11-20: Dispatchers can edit Orders in every lifecycle stage. Planned unlocked routes rebuild, executing routes use validated live replanning, locked routes refuse edits, and Shipper edits remain NEW-only.
+Checks: changed API modules compile; assistant unit suite 34/34 passes. PostgreSQL lifecycle integration suite could not run because TEST_OWNER_DATABASE_URL/TEST_DATABASE_URL are not configured; no server release.
+2026-11-21: Added password-reset request/code models and migration 0076 for driver forgotten-password recovery. Existing login sessions are revoked and active duty closes on confirmed reset.
+Checks: API password-reset modules compile; PostgreSQL migration and disposable database integration tests remain pending.

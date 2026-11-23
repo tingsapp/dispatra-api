@@ -176,6 +176,7 @@ class EmailVerification(Base):
     attempts: Mapped[int] = mapped_column(default=0)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivery_status: Mapped[str] = mapped_column(String(16), default='PENDING')
+    purpose: Mapped[str] = mapped_column(String(24), default='VERIFICATION')
 
 class LoginBucket(Base):
     __tablename__ = 'login_buckets'

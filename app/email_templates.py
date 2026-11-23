@@ -74,6 +74,20 @@ def verification(code):
         footer='If you did not create a Dispatra account, you can safely ignore this email.')
 
 
+def password_reset(code):
+    text = f'Your Dispatra password reset code is {code}. It expires in 10 minutes. If you did not request a reset, ignore this email.'
+    content = paragraph('Use the code below to choose a new password for your Dispatra account.')
+    content += f'''<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:28px 0"><tr><td align="center" bgcolor="#f3f7f7" style="padding:24px 12px;border:1px solid #dce7e7;border-radius:8px">
+<p style="margin:0 0 10px;color:#557078;font-size:11px;line-height:18px;font-weight:700;letter-spacing:1.5px">YOUR PASSWORD RESET CODE</p>
+<p style="margin:0;color:#182c34;font-family:Consolas,'Courier New',monospace;font-size:36px;line-height:46px;font-weight:700;letter-spacing:7px">{escape(str(code))}</p>
+<p style="margin:10px 0 0;color:#64748b;font-size:12px;line-height:20px">Expires in 10 minutes</p></td></tr></table>'''
+    content += paragraph('For your security, do not share this code. Completing the reset signs out every session for this account.')
+    return text, layout(category='Password reset', title='Reset your Dispatra password',
+        preheader='A one-time code for your Dispatra account. It expires in 10 minutes.',
+        content=content,
+        footer='If you did not request this reset, you can safely ignore this email.')
+
+
 def quote(company, title, recipient, pricing, details):
     currency = str(pricing.get('currency', 'CAD'))
     lines = [(str(line['label']), str(line['amount'])) for line in pricing.get('lines', [])]

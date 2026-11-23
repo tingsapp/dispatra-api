@@ -28,10 +28,35 @@ def test_partial_route_completion_cannot_be_released_or_reassigned(setup):
         'version': completed['version'], 'driver_id': w['driver']['id'], 'vehicle_id': w['vehicle']['id'],
         'planned_at': completed['scheduled_at']})
     assert assigned.status_code == 409, assigned.text
-    edited = w['client'].put(BASE + f'/orders/{one["id"]}', headers={'Idempotency-Key': str(uuid4())}, json={
-        'version': completed['version'], 'booking': booking(w['shipper']['id'], w['service'], w['type_id'])})
-    assert edited.status_code == 409, edited.text
-    assert check(w['client'].get(BASE + f'/orders/{one["id"]}')) == completed
+    # Replacing the visited stops would orphan the Route visit; revising them in place keeps it.
+    replaced = edit(w, completed, booking(w['shipper']['id'], w['service'], w['type_id']))
+    assert replaced.status_code == 409, replaced.text
+    facts = completed['facts']
+    facts['stops'][0]['instructions'] = 'Use the loading dock'
+    revised = check(edit(w, completed, facts))
+    assert revised['status'] == 'COMPLETED'
+    assert [stop['id'] for stop in revised['facts']['stops']] == [stop['id'] for stop in completed['facts']['stops']]
+    after_route = next(row for row in check(w['client'].get(BASE + '/routes')) if row['id'] == route['id'])
+    assert [stop['status'] for stop in after_route['stops']] == [stop['status'] for stop in before_route['stops']]
+
+
+def edit(w, order, facts):
+    return w['client'].put(BASE + f'/orders/{order["id"]}', headers={'Idempotency-Key': str(uuid4())}, json={
+        'version': order['version'], 'booking': facts})
+
+
+def test_assigned_order_edit_keeps_stop_identities_and_planned_route(setup):
+    w = setup
+    order = new_order(w)
+    route = assign(w, order)
+    current = check(w['client'].get(BASE + f'/orders/{order["id"]}'))
+    facts = current['facts']
+    facts['stops'][1]['instructions'] = 'Call on arrival'
+    revised = check(edit(w, current, facts))
+    assert revised['status'] == 'ASSIGNED'
+    assert revised['facts']['stops'][1]['instructions'] == 'Call on arrival'
+    planned = next(row for row in check(w['client'].get(BASE + '/routes')) if row['id'] == route['id'])
+    assert sorted(stop['stop_id'] for stop in planned['stops']) == sorted(stop['id'] for stop in facts['stops'])
 
 
 def test_cancelled_order_cannot_be_assigned_or_completed(setup):

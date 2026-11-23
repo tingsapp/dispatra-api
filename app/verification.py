@@ -34,7 +34,7 @@ def create(db, user):
     configured()
     observed = now()
     db.execute(update(EmailVerification).where(EmailVerification.user_id == user.id,
-        EmailVerification.consumed_at.is_(None)).values(consumed_at=observed, secret=None))
+        EmailVerification.purpose == 'VERIFICATION', EmailVerification.consumed_at.is_(None)).values(consumed_at=observed, secret=None))
     code = f'{secrets.randbelow(1000000):06d}'
     row = EmailVerification(id=uuid4(), organization_id=user.organization_id, user_id=user.id,
         email=user.login_id, token_hash=digest(secrets.token_urlsafe(32)), code_hash=hash_password(code),
@@ -47,7 +47,7 @@ def create(db, user):
 
 def pending(db, user, response):
     row = db.scalar(select(EmailVerification).where(EmailVerification.user_id == user.id,
-        EmailVerification.consumed_at.is_(None)).order_by(EmailVerification.expires_at.desc()).with_for_update())
+        EmailVerification.purpose == 'VERIFICATION', EmailVerification.consumed_at.is_(None)).order_by(EmailVerification.expires_at.desc()).with_for_update())
     if not row or row.email != user.login_id or row.credential_hash != digest(user.password_hash) or row.expires_at <= now(): row = create(db, user)
     cookie(response, row)
     return view(row)
@@ -56,7 +56,7 @@ def current(db, request):
     token = request.cookies.get(COOKIE, '')
     if not token: raise HTTPException(401, 'Sign in to resume email verification.')
     db.execute(text("SELECT set_config('app.verification_token', :token, true)"), {'token':digest(token)})
-    try: identity = db.execute(select(EmailVerification.id, EmailVerification.organization_id, EmailVerification.user_id).where(EmailVerification.token_hash == digest(token))).first()
+    try: identity = db.execute(select(EmailVerification.id, EmailVerification.organization_id, EmailVerification.user_id).where(EmailVerification.token_hash == digest(token), EmailVerification.purpose == 'VERIFICATION')).first()
     finally: db.execute(text("SELECT set_config('app.verification_token', '', true)"))
     if not identity: raise HTTPException(401, 'Sign in to resume email verification.')
     context(db, identity.organization_id)

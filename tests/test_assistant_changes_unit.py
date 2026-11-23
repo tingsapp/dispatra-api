@@ -128,15 +128,13 @@ class PrepareTests(unittest.TestCase):
         self.assertIsNone(result['change'])
         self.assertIn('- What is their phone number?', result['message'])
 
-    def test_assigned_orders_are_not_cancelled_or_edited(self):
+    def test_assigned_orders_can_be_edited_but_not_cancelled_or_deleted(self):
         order = SimpleNamespace(id=uuid4(), number='DDO-8711', status='ASSIGNED', version=2, route_id=uuid4(), booking={'shipper': {'name': 'Shipper'}})
         with patch.object(records, 'find', return_value=[order]):
             cancel = changes.prepare(None, ACTOR, plan('ORDER', 'CANCEL', 'DDO-8711'))
             delete = changes.prepare(None, ACTOR, plan('ORDER', 'DELETE', 'DDO-8711'))
-            edit = changes.prepare(None, ACTOR, plan('ORDER', 'UPDATE', 'DDO-8711', 'pickup at 3pm'))
         self.assertIsNone(cancel['change']); self.assertIn('unassign it first', cancel['message'])
         self.assertIsNone(delete['change']); self.assertIn('Unassign or complete it first, then I can archive it', delete['message'])
-        self.assertIsNone(edit['change']); self.assertIn('Only unassigned orders can be edited', edit['message'])
 
     def test_cancelling_a_closed_order_says_it_is_already_closed(self):
         order = SimpleNamespace(id=uuid4(), number='DTO-2559', status='CANCELLED', version=5, route_id=None, booking={'shipper': {'name': 'Shipper'}})

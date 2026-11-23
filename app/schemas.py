@@ -120,6 +120,26 @@ class PasswordChange(Input):
 class PasswordReset(Input):
     password: Password
 
+class PasswordResetRequest(Input):
+    portal: Literal['platform','dispatch','customer','driver']
+    login_id: LoginID
+
+class PasswordResetView(BaseModel):
+    reset_required: bool = True
+    email: str
+    expires_at: datetime
+    resend_at: datetime
+    delivery_status: str
+    reset_token: str | None = None
+
+class PasswordResetCode(Input):
+    code: Annotated[str, Field(pattern=r'^[0-9]{6}$')]
+    new_password: Password
+    reset_token: Annotated[str, Field(min_length=32, max_length=64)]
+
+class PasswordResetResend(Input):
+    reset_token: Annotated[str, Field(min_length=32, max_length=64)]
+
 class AccountView(BaseModel):
     id: UUID
     login_id: str
