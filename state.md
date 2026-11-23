@@ -1,3 +1,6 @@
+Published to the Google VM at 2026-11-23T06:13Z as pulse_loader_20261123 (client 187373c only; driver a09a0ea pushed only; web bundle swapped, no API change, migration or service restart). Pages and workspaces show the Dispatra continuous pulse while loading, from first paint. Backup: /var/backups/dispatra/pulse-loader-20261123T061325Z; previous web kept at /opt/dispatra/.web-pulse-loader-old-547a7b76-c896-4639-a4fd-de254c92dc53.
+Checks: live entry and /dispatra-pulse.js served from the new bundle, site 200, availability ok, DispatraPulse loads on dispatra.com without console errors.
+
 2026-11-23: Live data fix on request: moved DTO-4868 and its route back to Nov 22 09:00 America/Vancouver (the company's current day at 22:04 local; order version 9, route version 4) so it shows on the driver timeline now; the delivery window still ends 2026-11-23T00:00Z (17:00 local).
 Checks: pre-change backup /var/backups/dispatra/dto-4868-reschedule-20261123T050513Z/before.json; driver Today timeline showed both stops.
 
