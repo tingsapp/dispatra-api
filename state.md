@@ -1,3 +1,12 @@
+2026-11-23: Live data on request, as the tingsapp dispatcher through update_order and assign in one transaction: DTO-4868 rescheduled to Nov 23 12:00 America/Vancouver (pickup window 12:00–13:00) and added to Alext’s route fee7e452 with DTO-3168. The planner sequenced pickup 3168 10:25, pickup 4868 12:00, delivery 4868 12:38, delivery 3168 13:17.
+Checks: DTO-4868 stayed PRICED; route PLANNED with both orders.
+
+2026-11-23: Live data on request, as the tingsapp dispatcher through the app commands in one transaction: DTO-3168 repriced with the Distance based (FTL) card (PRICED 61.19; the shipper’s zone card has no V7T zone), Alext’s planned route released (DTO-4868 back to NEW), and DTO-3168 assigned to Alext on new route fee7e452 (road ETA 56 min, visits 10:25 and 11:06 America/Vancouver).
+Checks: an earlier attempt was refused (needs pricing review) and fully rolled back; the new route holds only DTO-3168.
+
+2026-11-23: Live data on request: created tingsapp order DTO-3168 through orders.create_order as the company dispatcher (source DISPATCHER), copying DTO-4868's shipper, service, vehicle type and items: pickup Il Saltimbocca Food Truck, 401 Burrard St (49.2868161, -123.1176649) to WB Marine Dr @ Capilano River, West Vancouver (49.3269583, -123.1316646); drop-off text later corrected on request to "West Vancouver, BC V7T 1G4, Canada" via update_order (version 2, same point), scheduled Nov 23 10:00 America/Vancouver.
+Checks: stored as NEW with both stops at the given coordinates; pricing NEEDS_ATTENTION because the destination matches no configured pricing Zone; not yet dispatched (outside work hours).
+
 Published to the Google VM at 2026-11-23T06:13Z as pulse_loader_20261123 (client 187373c only; driver a09a0ea pushed only; web bundle swapped, no API change, migration or service restart). Pages and workspaces show the Dispatra continuous pulse while loading, from first paint. Backup: /var/backups/dispatra/pulse-loader-20261123T061325Z; previous web kept at /opt/dispatra/.web-pulse-loader-old-547a7b76-c896-4639-a4fd-de254c92dc53.
 Checks: live entry and /dispatra-pulse.js served from the new bundle, site 200, availability ok, DispatraPulse loads on dispatra.com without console errors.
 
