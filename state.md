@@ -1,3 +1,6 @@
+2026-11-23: Live data fix on request: moved DTO-4868 and its unstarted route another day, to Nov 23 09:00 America/Vancouver (order version 8, route version 3); it shows on the driver Today timeline from Vancouver midnight.
+Checks: pre-change backup /var/backups/dispatra/dto-4868-reschedule-20261123T045307Z/before.json; no Nov 22 times remain on the order.
+
 Published to the Google VM at 2026-11-23T04:47Z as reset_edit_20261122 (API 3fabb5d, client cdae426; driver 33d5705 pushed only; 11 API files hash-checked against live, no drift; migrated 0075 → 0076_password_reset, record counts unchanged; all 13 services restarted). Ships forgotten-password reset for company logins and dispatcher order edits in every stage with stable stop identities. Backup with database dump: /var/backups/dispatra/reset-edit-20261123T044630Z; previous web kept at /opt/dispatra/.web-reset-edit-old-0656e55a-df65-4b62-a763-59ffa19764d7.
 Checks: site 200, availability ok, live OpenAPI has the reset paths with portal, unknown-login reset returns the decoy and stores nothing, no API errors after restart.
 
