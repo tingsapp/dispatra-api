@@ -1,6 +1,9 @@
 2026-11-23: Order agent sets the load size (email and chat): `full_truckload` extraction flag → FTL (no service, vehicle type offered for FTL, no package sizes required); otherwise Small parcel by the pricing parcel limits (no vehicle type), else LTL. `DraftShipment.load_size` keeps it in drafts; OpenAPI regenerated.
 Checks: database-free unit tests 57/57 (new load-size test), compile ok; today's two local email drafts rebuild as SMALL_PARCEL; PostgreSQL intake tests not run (no TEST_OWNER_DATABASE_URL). Local API/intake restarted; not deployed.
 
+Published to the Google VM at 2026-11-23T14:32Z as native_reset_20261123 (API f97c1d2, app/main.py only; live file hash-checked against the pre-change version, no drift; no migration; only dispatra-api.service restarted). The driver app can now request, resend and confirm a password reset: NATIVE_PUBLIC exempts /auth/password/reset/{request,resend,confirm} alongside /auth/driver/login for no-Origin, no-cookie, X-Requested-With: Dispatra calls. Backup: /var/backups/dispatra/native-reset-20261123T143214Z; stage /opt/dispatra/native-reset-release-20261123.
+Checks: VM private PostgreSQL 16: password-reset (incl. new native test), mobile-driver, role-login and email-verification 31/31 passed. Live: site 200, availability ok, native empty reset 422 (past the boundary), foreign Origin 403, native /auth/login 403, no API errors after restart. Reset email from the phone not triggered by me.
+
 2026-11-23: Live data on request, as the tingsapp dispatcher through update_order and assign in one transaction: DTO-4868 rescheduled to Nov 23 12:00 America/Vancouver (pickup window 12:00–13:00) and added to Alext’s route fee7e452 with DTO-3168. The planner sequenced pickup 3168 10:25, pickup 4868 12:00, delivery 4868 12:38, delivery 3168 13:17.
 Checks: DTO-4868 stayed PRICED; route PLANNED with both orders.
 
