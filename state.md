@@ -1,3 +1,6 @@
+Published to the Google VM at 2026-11-23T04:47Z as reset_edit_20261122 (API 3fabb5d, client cdae426; driver 33d5705 pushed only; 11 API files hash-checked against live, no drift; migrated 0075 → 0076_password_reset, record counts unchanged; all 13 services restarted). Ships forgotten-password reset for company logins and dispatcher order edits in every stage with stable stop identities. Backup with database dump: /var/backups/dispatra/reset-edit-20261123T044630Z; previous web kept at /opt/dispatra/.web-reset-edit-old-0656e55a-df65-4b62-a763-59ffa19764d7.
+Checks: site 200, availability ok, live OpenAPI has the reset paths with portal, unknown-login reset returns the decoy and stores nothing, no API errors after restart.
+
 2026-11-22: Fixed NameError in dispatcher order edits on planned routes (orders.py used Vehicle without importing it); found by the new lifecycle test on the VM.
 Checks: VM full suite live 32 failed/766 passed vs candidate 33/770, the only new failure being this test; after the fix lifecycle, password-reset and email-verification tests 22/22 pass. 0076 up/down/up on a live copy kept counts 6,2,8,7.
 
