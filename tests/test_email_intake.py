@@ -232,6 +232,9 @@ def test_complete_verified_email_becomes_an_order_once(agent):
     assert item['status'] == 'ORDER_CREATED' and item['shipper_name'] == 'Fresh Test' and item['missing'] == []
     order = check(client.get(BASE + f'/orders/{item["order_id"]}'))
     assert order['source'] == 'EMAIL' and order['number'] == item['order_number'] and order['shipper_id'] == agent['shipper']['id']
+    source = check(client.get(INTAKE + f'/orders/{item["order_id"]}'))
+    assert source['id'] == item['id'] and 'Please pick up' in source['body']
+    assert client.get(INTAKE + f'/orders/{uuid4()}').status_code == 404
     assert order['service_id'] == agent['service'] and order['pricing']['status'] == 'PRICED'
     assert order['facts']['external_reference'] == 'PO-77' and order['facts']['internal_notes'] == ''
     assert order['facts']['stops'][0]['contact_name'] == 'Alice Shipper'
@@ -453,6 +456,7 @@ def test_intakes_are_isolated_between_companies(agent):
     other = '/api/v1/companies/other/email-intake'
     assert check(client.get(other + '/messages')) == []
     assert client.get(other + f'/messages/{item["id"]}').status_code == 404
+    assert client.get(other + f'/orders/{item["order_id"]}').status_code == 404
     assert client.get(INTAKE + f'/messages/{item["id"]}').status_code == 404
 
 

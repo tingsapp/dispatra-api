@@ -109,6 +109,15 @@ def message(slug: str, identity: UUID, db: DB, user: Dispatcher):
     return view(db, intake(db, user, identity), detail=True)
 
 
+@router.get('/orders/{identity}', response_model=IntakeDetail)
+def order_message(slug: str, identity: UUID, db: DB, user: Dispatcher):
+    """The email an order was created from, for the order's source link."""
+    row = db.scalar(select(EmailIntake).where(EmailIntake.organization_id == user.organization_id, EmailIntake.order_id == identity)
+        .order_by(EmailIntake.received_at.desc()).limit(1))
+    if row is None: raise HTTPException(404, 'Record not found.')
+    return view(db, row, detail=True)
+
+
 def change(db, user, key, name, identity, data, allowed, apply):
     def run():
         row = intake(db, user, identity, data.version)
