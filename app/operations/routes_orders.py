@@ -11,7 +11,7 @@ from . import orders, dispatch, quotes, issues, queries, mail
 from .common import record, settings
 from .models import Order, Route, Quote, Issue, Shipper, Catalog, EmailDelivery
 from .schemas import (Booking, OrderUpdate, OrderView, PriceView, QuoteView, Assignment,
-    AssignmentView, RouteView, RouteCommand, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView, TrackingView)
+    AssignmentView, RouteView, RouteCommand, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView, TrackingView, ExtraTimeDecision)
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Orders, quotes and delivery'])
 
@@ -127,6 +127,13 @@ def complete(slug: str, identity: UUID, data: Version, db: DB, idempotency_key: 
     return orders.complete_order(db,user,identity,data,idempotency_key)
 
 
+@router.post('/orders/{identity}/extra-time', response_model=OrderView)
+def extra_time(slug: str, identity: UUID, data: ExtraTimeDecision, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
+    """Waive or charge one stop's Extra time on a completed Order."""
+    from .pricing import decide_extra_time
+    return decide_extra_time(db,user,identity,data,idempotency_key)
+
+
 @router.post('/orders/{identity}/assign', response_model=AssignmentView)
 def assign(slug: str, identity: UUID, data: Assignment, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.dispatcher)):
     return dispatch.assign(db,user,identity,data,idempotency_key)
@@ -182,7 +189,7 @@ def delivery_proof(slug: str, identity: UUID, db: DB, user: User = Depends(booki
         OrderStop.kind == 'DROPOFF',RouteStop.status == 'COMPLETED')).all()
     result=[]
     for visit,stop in visits:
-        evidence=db.scalars(select(Evidence).where(Evidence.organization_id == user.organization_id,Evidence.stop_id == stop.id).order_by(Evidence.captured_at)).all()
+        evidence=db.scalars(select(Evidence).where(Evidence.organization_id == user.organization_id,Evidence.stop_id == stop.id,Evidence.kind.in_(('PHOTO','SIGNATURE'))).order_by(Evidence.captured_at)).all()
         accepted=visit.movements.get('evidence_ids')
         if accepted is not None: evidence=[e for e in evidence if str(e.id) in accepted]
         result.append({'stop_id':str(stop.id),'address':stop.data['address'],'completed_at':visit.completed_at,

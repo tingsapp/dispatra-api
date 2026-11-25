@@ -12,9 +12,9 @@ def archive_rate(db, actor, identity, data, key):
         row = record(db, RateCard, actor, identity, True)
         version(row, data.version)
         if not row.active:
-            raise HTTPException(409, 'Rate Card is already archived.')
+            raise HTTPException(409, 'Rate Card is already deleted.')
         if row.is_default:
-            raise HTTPException(409, 'Select another default Rate Card before archiving this one.')
+            raise HTTPException(409, 'Select another default Rate Card before deleting this one.')
         linked = select(ShipperRateCard.shipper_id).where(ShipperRateCard.organization_id == actor.organization_id,
             ShipperRateCard.rate_card_id == identity)
         attached = db.scalar(select(Shipper.id).where(

@@ -246,6 +246,10 @@ class Issue(TenantRecord, Base):
     description: Mapped[str] = mapped_column(Text)
     resolved: Mapped[bool] = mapped_column(default=False)
     resolution: Mapped[str] = mapped_column(Text, default='')
+    # Driver reasons (`stop_reasons`) and ISSUE_PHOTO evidence; delay-only reports do not hold completion.
+    reasons: Mapped[list] = mapped_column(JSONB, default=list)
+    photo_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    holds_completion: Mapped[bool] = mapped_column(default=True)
 
 
 class Quote(TenantRecord, Base):

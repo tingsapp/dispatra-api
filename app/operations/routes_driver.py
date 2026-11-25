@@ -8,7 +8,7 @@ from app.routes import DB, OperationKey
 from . import execution, dispatch
 from .common import record, version, command, changed, settings
 from .models import Route, Driver, Evidence, OrderStop, Order, DutySession, Vehicle, Catalog
-from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, DriverRouteView, ProofEvidence
+from .schemas import DutyStart, DutyEnd, DutyView, Telemetry, RouteCommand, StopCommand, EvidenceInput, DriverRouteView, ProofEvidence, ReasonChoice
 
 from .schemas import RouteStartCommand, RoadPathView
 
@@ -51,7 +51,7 @@ def driver_orders(slug: str, db: DB, user: User = Depends(auth.driver)):
         'load_size': o.facts.get('load_size'),
         'shipper': {k: o.booking['shipper'].get(k, '') for k in ('name','company_name','phone','email')},
         'stops': [{k: stop.get(k, default) for k, default in [('id',None),('kind',None),('address',None),('contact_name',''),('phone',''),('instructions',''),
-            ('window_start',None),('window_end',None),('unattended_allowed',False),('photo_required',False)]} for stop in o.facts['stops']],
+            ('window_start',None),('window_end',None),('unattended_allowed',False),('photo_required',False),('liftgate',False)]} for stop in o.facts['stops']],
         'items': o.facts['items']} for o, route_status in rows]
 
 
@@ -109,6 +109,18 @@ def evidence(slug: str, identity: UUID, data: EvidenceInput, db: DB, idempotency
     return execution.upload_evidence(db,user,identity,data,idempotency_key)
 
 
+@router.post('/driver/stops/{identity}/report-photos', response_model=dict, status_code=201)
+def report_photo(slug: str, identity: UUID, data: EvidenceInput, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
+    return execution.upload_report_photo(db,user,identity,data,idempotency_key)
+
+
+@router.get('/driver/report-reasons', response_model=list[ReasonChoice])
+def report_reasons(slug: str, user: User = Depends(auth.driver)):
+    """Dispatra's fixed stop report reasons, in display order."""
+    from .stop_reasons import choices
+    return choices()
+
+
 @router.get('/driver/stops/{identity}/evidence', response_model=list[ProofEvidence])
 def stop_evidence(slug: str, identity: UUID, db: DB, user: User = Depends(auth.driver)):
     stop = record(db, OrderStop, user, identity)
@@ -117,7 +129,7 @@ def stop_evidence(slug: str, identity: UUID, db: DB, user: User = Depends(auth.d
     route = execution.own_route(db, user, order.route_id)
     if route.status != 'IN_PROGRESS': return []
     return db.scalars(select(Evidence).where(Evidence.organization_id == user.organization_id,
-        Evidence.stop_id == identity, Evidence.driver_id == user.driver_id,
+        Evidence.stop_id == identity, Evidence.driver_id == user.driver_id, Evidence.kind.in_(('PHOTO', 'SIGNATURE')),
         Evidence.captured_at >= route.started_at).order_by(Evidence.captured_at)).all()
 
 
@@ -126,7 +138,8 @@ def download(slug: str, identity: UUID, db: DB, user: User = Depends(auth.compan
     row = record(db,Evidence,user,identity)
     stop = record(db,OrderStop,user,row.stop_id)
     order = record(db,Order,user,stop.order_id)
-    if user.role == 'SHIPPER' and order.shipper_id != user.shipper_id: raise HTTPException(404,'Evidence not found.')
+    # Report photos are internal operations evidence, not shipper delivery proof.
+    if user.role == 'SHIPPER' and (order.shipper_id != user.shipper_id or row.kind == 'ISSUE_PHOTO'): raise HTTPException(404,'Evidence not found.')
     if user.role == 'DRIVER' and row.driver_id != user.driver_id: raise HTTPException(404,'Evidence not found.')
     return Response(base64.b64decode(row.content),media_type=row.media_type,
         headers={'Content-Disposition': f'inline; filename="{row.id}.{"png" if row.media_type == "image/png" else "jpg"}"',

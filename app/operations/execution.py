@@ -11,6 +11,7 @@ from app.services import audit
 from .models import Driver, Route, RouteStop, Order, OrderStop, DutySession, Location, Evidence, Issue
 from .common import record, version, changed, command, company_lock, dump
 from .dispatch import route_view
+from .pricing import apply_extra_time
 
 
 def own_route(db, actor, identity, lock=False):
@@ -133,8 +134,27 @@ def upload_evidence(db, actor, stop_id, data, key):
     return command(db, actor, key, 'evidence:' + str(stop_id), data.model_dump(mode='json'), run)
 
 
+def upload_report_photo(db, actor, stop_id, data, key):
+    """A photo for a stop report (damage, access, missing items) at any pickup or drop-off of the driver's executing route."""
+    def run():
+        stop = record(db, OrderStop, actor, stop_id)
+        order = record(db, Order, actor, stop.order_id)
+        if not order.route_id: raise HTTPException(409, 'Order is not assigned.')
+        route = own_route(db, actor, order.route_id)
+        if route.status != 'IN_PROGRESS': raise HTTPException(409, 'Report photos require an executing route.')
+        if data.kind != 'PHOTO': raise HTTPException(422, 'Report evidence must be a photo.')
+        if data.captured_at < route.started_at or data.captured_at > now(): raise HTTPException(422, 'Photo capture time is outside this route.')
+        content = base64.b64decode(data.content_base64)
+        row = Evidence(organization_id=actor.organization_id, stop_id=stop.id, driver_id=actor.driver_id, kind='ISSUE_PHOTO',
+            captured_at=data.captured_at, media_type=data.media_type, content=data.content_base64, digest=hashlib.sha256(content).hexdigest())
+        db.add(row); db.flush(); audit(db, actor, 'evidence.report_photo', row.id, actor.organization_id)
+        return {'id': str(row.id), 'kind': row.kind, 'digest': row.digest}
+    return command(db, actor, key, 'report-photo:' + str(stop_id), data.model_dump(mode='json'), run)
+
+
 def validate_pod(db, actor, stop, route, data):
     evidence = [record(db, Evidence, actor, identity) for identity in data.evidence_ids]
+    if any(e.kind not in ('PHOTO', 'SIGNATURE') for e in evidence): raise HTTPException(422, 'Report photos are not delivery proof.')
     if any(e.stop_id != stop.id or e.driver_id != actor.driver_id or e.captured_at < route.started_at for e in evidence):
         raise HTTPException(422, 'Evidence must belong to this delivery and assignment.')
     kinds = {e.kind for e in evidence}
@@ -173,8 +193,9 @@ def complete_stop(db, actor, identity, visit_id, data, key):
             RouteStop.organization_id == actor.organization_id, RouteStop.route_id == identity,
             OrderStop.order_id == order.id, RouteStop.status != 'COMPLETED'))
         if not unfinished:
-            unresolved = db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.resolved.is_(False)))
+            unresolved = db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.resolved.is_(False), Issue.holds_completion.is_(True)))
             if not unresolved:
+                apply_extra_time(db, actor, order)
                 order.status, order.completed_at = 'COMPLETED', data.captured_at
                 changed(db, actor, order, 'order.completed')
         changed(db, actor, route, 'route.progress')

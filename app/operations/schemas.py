@@ -36,6 +36,8 @@ def validate_logo(value: str) -> str:
     raise ValueError('Use a PNG/JPEG logo up to 200 KB or an HTTP(S) image URL')
 
 
+from .stop_reasons import Reason
+
 class Address(Input):
     text: Annotated[str, Field(min_length=5, max_length=500)]
     city: Name
@@ -117,6 +119,13 @@ class SettingsData(Input):
     provincial_percent: Percent = Decimal('0')
     fuel_enabled: bool = True
     fuel_percent: Percent = Decimal('28.5')
+    # Extra time: the first N minutes at each stop are free, then each started N minutes costs the amount; 0 disables.
+    extra_time_minutes: int = Field(default=30, ge=5, le=480)
+    extra_time_amount: Money = Decimal('50')
+    # Planned time at each stop by load size; bookings that omit a stop's service minutes use it (routing, Hourly prices, Order Watch).
+    stop_minutes_small_parcel: int = Field(default=10, ge=0, le=480)
+    stop_minutes_ltl: int = Field(default=20, ge=0, le=480)
+    stop_minutes_ftl: int = Field(default=45, ge=0, le=480)
     # Legacy, not enforced: kept so saved settings and older clients still validate. Vehicle Maximum stops limits Routes.
     maximum_active_orders: int = Field(default=3, ge=1, le=100)
     quote_validity_days: int = Field(default=14, ge=1, le=365)
@@ -425,9 +434,10 @@ class StopInput(Input):
     instructions: Text = ''
     window_start: AwareDatetime | None = None
     window_end: AwareDatetime | None = None
-    service_minutes: int = Field(default=10, ge=0, le=480)
+    service_minutes: int = Field(default=10, ge=0, le=480, description='Planned minutes at the stop. Omit to use the company planned stop time for the load size.')
     unattended_allowed: bool = False
     photo_required: bool = False
+    liftgate: bool = Field(default=False, description='A power liftgate is needed at this stop; a pickup adds the active LIFTGATE and a drop-off the LIFTGATE_DROPOFF Accessorial, each once per Order with its vehicle equipment.')
     @model_validator(mode='after')
     def window(self):
         if self.window_start and self.window_end and self.window_end < self.window_start:
@@ -572,9 +582,23 @@ class Telemetry(Input):
 
 
 class IssueInput(Input):
+    """A stop report. Current drivers send `reasons` (Dispatra's fixed list) and notes; the kind and description follow.
+    Older clients send a kind and description only."""
     stop_id: UUID | None = None
-    kind: Literal['FAILED_PICKUP', 'FAILED_DELIVERY', 'SHORT_LOAD', 'WRONG_ADDRESS', 'UNSAFE', 'VEHICLE', 'OTHER']
-    description: Annotated[str, Field(min_length=3, max_length=2000)]
+    kind: Literal['FAILED_PICKUP', 'FAILED_DELIVERY', 'SHORT_LOAD', 'WRONG_ADDRESS', 'UNSAFE', 'VEHICLE', 'OTHER'] | None = None
+    description: Annotated[str, Field(max_length=2000)] = ''
+    reasons: list[Reason] = Field(default_factory=list, max_length=15)
+    photo_ids: list[UUID] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode='after')
+    def report(self):
+        if len(set(self.reasons)) != len(self.reasons) or len(set(self.photo_ids)) != len(self.photo_ids): raise ValueError('Duplicate reason or photo')
+        if 'NO_PROBLEM' in self.reasons: raise ValueError('Choose what went wrong at the stop')
+        if not self.reasons:
+            if self.kind is None or len(self.description.strip()) < 3: raise ValueError('Choose at least one reason')
+            return self
+        if 'OTHER' in self.reasons and len(self.description.strip()) < 3: raise ValueError('Describe the issue when choosing Another issue')
+        return self
 
 
 class IssueResolve(Version):
@@ -626,6 +650,29 @@ class ChargeLine(BaseModel):
     rate_percent: Decimal | None = None
 
 
+class ExtraTimeStop(BaseModel):
+    stop_id: UUID
+    stop: str
+    minutes_over: int
+    amount: Decimal
+    reasons: list[str] = Field(default_factory=list)
+    responsibility: Literal['SHIPPER', 'CARRIER', 'UNDECIDED']
+    # CHARGED by default, EXCLUDED when the driver reported a carrier reason, WAIVED or CHARGED by a dispatcher.
+    status: Literal['CHARGED', 'EXCLUDED', 'WAIVED']
+    decided_by_dispatcher: bool = False
+
+
+class ExtraTimeView(BaseModel):
+    minutes_free: int
+    amount: Decimal
+    stops: list[ExtraTimeStop]
+
+
+class ExtraTimeDecision(Version):
+    stop_id: UUID
+    charge: StrictBool
+
+
 class PriceView(BaseModel):
     status: Literal['PRICED', 'NEEDS_ATTENTION'] = 'PRICED'
     review_reason: str | None = None
@@ -640,6 +687,7 @@ class PriceView(BaseModel):
     expires_at: datetime | None = None
     stage: Literal['ESTIMATE', 'FINAL']
     context: dict = Field(default_factory=dict)
+    extra_time: ExtraTimeView | None = None
 
 
 class OrderView(RecordView):
@@ -791,6 +839,14 @@ class IssueView(RecordView):
     description: str
     resolved: bool
     resolution: str
+    reasons: list[str] = Field(default_factory=list)
+    photo_ids: list[UUID] = Field(default_factory=list)
+    holds_completion: bool = True
+
+
+class ReasonChoice(BaseModel):
+    value: Reason
+    label: str
 
 
 class DutyView(RecordView):
@@ -842,6 +898,7 @@ class DriverOrderStop(BaseModel):
     window_end: datetime | None
     unattended_allowed: bool
     photo_required: bool
+    liftgate: bool = False
 
 
 class DriverShipperContact(BaseModel):
@@ -930,6 +987,8 @@ class MonitorIssue(BaseModel):
     description: str
     # When the condition was recorded; the list is sorted newest first.
     at: datetime
+    # Driver report photos (GET /evidence/{id}); only reported Issues have them.
+    photo_ids: list[UUID] = Field(default_factory=list)
 
 
 class MonitorView(BaseModel):

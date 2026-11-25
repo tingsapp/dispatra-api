@@ -84,15 +84,18 @@ def notes(db, action, entity_id, audience, actor, recipients):
     if action == 'watch.question_created':
         return to(driver(), 'WARNING', 'Order progress question', f'{number}: please send a progress update.')
     if action == 'order.created' and order:
+        # One note per dispatcher per event: the notification dedupe key is the event, so a price review joins the booking note.
+        review = order.pricing.get('status') != 'PRICED'
+        severity, needs = ('WARNING', ' Needs a price review.') if review else ('INFO', '')
         result = []
         if actor.kind == 'AGENT':
             owner = db.get(m.Shipper, order.shipper_id)
-            result += to(dispatch(), 'INFO', 'New order from email', f'{number} from {owner.name if owner else "a Shipper"}.')
+            result += to(dispatch(), severity, 'New order from email', f'{number} from {owner.name if owner else "a Shipper"}.{needs}')
             result += to(shipper(), 'INFO', 'Order received', f'{number} created from your email.')
         elif by_shipper:
             owner = db.get(m.Shipper, order.shipper_id)
-            result += to(dispatch(), 'INFO', 'New order booked', f'{number} from {owner.name if owner else "a Shipper"}.')
-        if order.pricing.get('status') != 'PRICED':
+            result += to(dispatch(), severity, 'New order booked', f'{number} from {owner.name if owner else "a Shipper"}.{needs}')
+        elif review:
             result += to(dispatch(), 'WARNING', 'Price review needed', f'{number} needs a price review.')
         return result
     if action in {'order.updated', 'order.cancelled'} and order:

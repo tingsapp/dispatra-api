@@ -9,7 +9,7 @@ from app.services import audit
 from .models import Catalog, Order, OrderStop, OrderItem, Issue, Driver, Route, RouteStop, Vehicle
 from .schemas import Booking, OrderView
 from .common import record, command, version, changed, company_lock, operational_shipper, settings, located
-from .pricing import quote, prepare_booking
+from .pricing import quote, prepare_booking, apply_extra_time
 from .calendar import closed_reason
 from .identifiers import issue_number
 
@@ -75,6 +75,7 @@ def order_view(row, actor):
     if actor.role == 'SHIPPER':
         result['facts']['internal_notes'] = ''
         result['pricing']['context'] = {}
+        result['pricing']['extra_time'] = None
         if row.billing_shipper_id != actor.shipper_id:
             result['booking'] = {k: v for k, v in result['booking'].items() if k in {'shipper', 'assigned_driver'}}
     return result
@@ -277,6 +278,7 @@ def complete_order(db, actor, identity, data, key):
             visit.status, visit.completed_at = 'COMPLETED', completed_at
             visit.movements = {**(visit.movements or {}), 'completed_by': 'DISPATCHER'}
             changed(db, actor, visit, 'stop.completed')
+        apply_extra_time(db, actor, row)
         row.status, row.completed_at = 'COMPLETED', completed_at
         changed(db, actor, row, 'order.completed')
         remaining = db.scalar(select(Order.id).where(Order.organization_id == actor.organization_id, Order.route_id == route.id,

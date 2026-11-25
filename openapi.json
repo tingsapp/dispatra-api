@@ -9245,6 +9245,151 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/orders/{identity}/extra-time": {
+      "post": {
+        "tags": [
+          "Orders, quotes and delivery"
+        ],
+        "summary": "Extra Time",
+        "description": "Waive or charge one stop's Extra time on a completed Order.",
+        "operationId": "extra_time_api_v1_companies__slug__orders__identity__extra_time_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtraTimeDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/orders/{identity}/assign": {
       "post": {
         "tags": [
@@ -12382,6 +12527,269 @@
                     "$ref": "#/components/schemas/ProofEvidence"
                   },
                   "title": "Response Stop Evidence Api V1 Companies  Slug  Driver Stops  Identity  Evidence Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/driver/stops/{identity}/report-photos": {
+      "post": {
+        "tags": [
+          "Driver execution"
+        ],
+        "summary": "Report Photo",
+        "operationId": "report_photo_api_v1_companies__slug__driver_stops__identity__report_photos_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Report Photo Api V1 Companies  Slug  Driver Stops  Identity  Report Photos Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/companies/{slug}/driver/report-reasons": {
+      "get": {
+        "tags": [
+          "Driver execution"
+        ],
+        "summary": "Report Reasons",
+        "description": "Dispatra's fixed stop report reasons, in display order.",
+        "operationId": "report_reasons_api_v1_companies__slug__driver_report_reasons_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReasonChoice"
+                  },
+                  "title": "Response Report Reasons Api V1 Companies  Slug  Driver Report Reasons Get"
                 }
               }
             }
@@ -33027,13 +33435,16 @@
             "enum": [
               "ITEMS_NOT_READY",
               "WAITING_FOR_STAFF",
-              "ACCESS_BLOCKED",
               "HANDLING_IN_PROGRESS",
-              "VEHICLE_PROBLEM",
-              "TRAFFIC",
+              "ACCESS_BLOCKED",
               "RECIPIENT_UNAVAILABLE",
-              "NEED_HELPER",
+              "WRONG_ADDRESS",
+              "MISSING_ITEMS",
               "DAMAGED_ITEM",
+              "VEHICLE_PROBLEM",
+              "WRONG_EQUIPMENT",
+              "NEED_HELPER",
+              "TRAFFIC",
               "UNSAFE",
               "OTHER",
               "NO_PROBLEM"
@@ -36203,6 +36614,7 @@
             "maximum": 480.0,
             "minimum": 0.0,
             "title": "Service Minutes",
+            "description": "Planned minutes at the stop. Omit to use the company planned stop time for the load size.",
             "default": 10
           },
           "unattended_allowed": {
@@ -36213,6 +36625,12 @@
           "photo_required": {
             "type": "boolean",
             "title": "Photo Required",
+            "default": false
+          },
+          "liftgate": {
+            "type": "boolean",
+            "title": "Liftgate",
+            "description": "A power liftgate is needed at this stop; a pickup adds the active LIFTGATE and a drop-off the LIFTGATE_DROPOFF Accessorial, each once per Order with its vehicle equipment.",
             "default": false
           }
         },
@@ -36637,6 +37055,11 @@
           "photo_required": {
             "type": "boolean",
             "title": "Photo Required"
+          },
+          "liftgate": {
+            "type": "boolean",
+            "title": "Liftgate",
+            "default": false
           }
         },
         "type": "object",
@@ -37580,6 +38003,121 @@
           "reason"
         ],
         "title": "Exclusion"
+      },
+      "ExtraTimeDecision": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Stop Id"
+          },
+          "charge": {
+            "type": "boolean",
+            "title": "Charge"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "stop_id",
+          "charge"
+        ],
+        "title": "ExtraTimeDecision"
+      },
+      "ExtraTimeStop": {
+        "properties": {
+          "stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Stop Id"
+          },
+          "stop": {
+            "type": "string",
+            "title": "Stop"
+          },
+          "minutes_over": {
+            "type": "integer",
+            "title": "Minutes Over"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "responsibility": {
+            "type": "string",
+            "enum": [
+              "SHIPPER",
+              "CARRIER",
+              "UNDECIDED"
+            ],
+            "title": "Responsibility"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CHARGED",
+              "EXCLUDED",
+              "WAIVED"
+            ],
+            "title": "Status"
+          },
+          "decided_by_dispatcher": {
+            "type": "boolean",
+            "title": "Decided By Dispatcher",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "stop_id",
+          "stop",
+          "minutes_over",
+          "amount",
+          "responsibility",
+          "status"
+        ],
+        "title": "ExtraTimeStop"
+      },
+      "ExtraTimeView": {
+        "properties": {
+          "minutes_free": {
+            "type": "integer",
+            "title": "Minutes Free"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/ExtraTimeStop"
+            },
+            "type": "array",
+            "title": "Stops"
+          }
+        },
+        "type": "object",
+        "required": [
+          "minutes_free",
+          "amount",
+          "stops"
+        ],
+        "title": "ExtraTimeView"
       },
       "FleetSyncResult": {
         "properties": {
@@ -38572,32 +39110,70 @@
             "title": "Stop Id"
           },
           "kind": {
-            "type": "string",
-            "enum": [
-              "FAILED_PICKUP",
-              "FAILED_DELIVERY",
-              "SHORT_LOAD",
-              "WRONG_ADDRESS",
-              "UNSAFE",
-              "VEHICLE",
-              "OTHER"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FAILED_PICKUP",
+                  "FAILED_DELIVERY",
+                  "SHORT_LOAD",
+                  "WRONG_ADDRESS",
+                  "UNSAFE",
+                  "VEHICLE",
+                  "OTHER"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Kind"
           },
           "description": {
             "type": "string",
             "maxLength": 2000,
-            "minLength": 3,
-            "title": "Description"
+            "title": "Description",
+            "default": ""
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ITEMS_NOT_READY",
+                "WAITING_FOR_STAFF",
+                "HANDLING_IN_PROGRESS",
+                "ACCESS_BLOCKED",
+                "RECIPIENT_UNAVAILABLE",
+                "WRONG_ADDRESS",
+                "MISSING_ITEMS",
+                "DAMAGED_ITEM",
+                "VEHICLE_PROBLEM",
+                "WRONG_EQUIPMENT",
+                "NEED_HELPER",
+                "TRAFFIC",
+                "UNSAFE",
+                "OTHER",
+                "NO_PROBLEM"
+              ]
+            },
+            "type": "array",
+            "maxItems": 15,
+            "title": "Reasons"
+          },
+          "photo_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Photo Ids"
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "kind",
-          "description"
-        ],
-        "title": "IssueInput"
+        "title": "IssueInput",
+        "description": "A stop report. Current drivers send `reasons` (Dispatra's fixed list) and notes; the kind and description follow.\nOlder clients send a kind and description only."
       },
       "IssueResolve": {
         "properties": {
@@ -38669,6 +39245,26 @@
           "resolution": {
             "type": "string",
             "title": "Resolution"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "photo_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Photo Ids"
+          },
+          "holds_completion": {
+            "type": "boolean",
+            "title": "Holds Completion",
+            "default": true
           }
         },
         "type": "object",
@@ -39762,6 +40358,14 @@
             "type": "string",
             "format": "date-time",
             "title": "At"
+          },
+          "photo_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Photo Ids"
           }
         },
         "type": "object",
@@ -40983,6 +41587,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Context"
+          },
+          "extra_time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtraTimeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -41217,6 +41831,18 @@
             "type": "string",
             "title": "Prompt"
           },
+          "stop_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Id"
+          },
           "choices": {
             "items": {
               "$ref": "#/components/schemas/Choice"
@@ -41240,13 +41866,16 @@
                 "enum": [
                   "ITEMS_NOT_READY",
                   "WAITING_FOR_STAFF",
-                  "ACCESS_BLOCKED",
                   "HANDLING_IN_PROGRESS",
-                  "VEHICLE_PROBLEM",
-                  "TRAFFIC",
+                  "ACCESS_BLOCKED",
                   "RECIPIENT_UNAVAILABLE",
-                  "NEED_HELPER",
+                  "WRONG_ADDRESS",
+                  "MISSING_ITEMS",
                   "DAMAGED_ITEM",
+                  "VEHICLE_PROBLEM",
+                  "WRONG_EQUIPMENT",
+                  "NEED_HELPER",
+                  "TRAFFIC",
                   "UNSAFE",
                   "OTHER",
                   "NO_PROBLEM"
@@ -41257,6 +41886,30 @@
               }
             ],
             "title": "Reason"
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ITEMS_NOT_READY",
+                "WAITING_FOR_STAFF",
+                "HANDLING_IN_PROGRESS",
+                "ACCESS_BLOCKED",
+                "RECIPIENT_UNAVAILABLE",
+                "WRONG_ADDRESS",
+                "MISSING_ITEMS",
+                "DAMAGED_ITEM",
+                "VEHICLE_PROBLEM",
+                "WRONG_EQUIPMENT",
+                "NEED_HELPER",
+                "TRAFFIC",
+                "UNSAFE",
+                "OTHER",
+                "NO_PROBLEM"
+              ]
+            },
+            "type": "array",
+            "title": "Reasons"
           },
           "details": {
             "type": "string",
@@ -41838,6 +42491,41 @@
         ],
         "title": "ReadView"
       },
+      "ReasonChoice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "ITEMS_NOT_READY",
+              "WAITING_FOR_STAFF",
+              "HANDLING_IN_PROGRESS",
+              "ACCESS_BLOCKED",
+              "RECIPIENT_UNAVAILABLE",
+              "WRONG_ADDRESS",
+              "MISSING_ITEMS",
+              "DAMAGED_ITEM",
+              "VEHICLE_PROBLEM",
+              "WRONG_EQUIPMENT",
+              "NEED_HELPER",
+              "TRAFFIC",
+              "UNSAFE",
+              "OTHER",
+              "NO_PROBLEM"
+            ],
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ReasonChoice"
+      },
       "Reply": {
         "properties": {
           "version": {
@@ -41846,22 +42534,57 @@
             "title": "Version"
           },
           "reason": {
-            "type": "string",
-            "enum": [
-              "ITEMS_NOT_READY",
-              "WAITING_FOR_STAFF",
-              "ACCESS_BLOCKED",
-              "HANDLING_IN_PROGRESS",
-              "VEHICLE_PROBLEM",
-              "TRAFFIC",
-              "RECIPIENT_UNAVAILABLE",
-              "NEED_HELPER",
-              "DAMAGED_ITEM",
-              "UNSAFE",
-              "OTHER",
-              "NO_PROBLEM"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ITEMS_NOT_READY",
+                  "WAITING_FOR_STAFF",
+                  "HANDLING_IN_PROGRESS",
+                  "ACCESS_BLOCKED",
+                  "RECIPIENT_UNAVAILABLE",
+                  "WRONG_ADDRESS",
+                  "MISSING_ITEMS",
+                  "DAMAGED_ITEM",
+                  "VEHICLE_PROBLEM",
+                  "WRONG_EQUIPMENT",
+                  "NEED_HELPER",
+                  "TRAFFIC",
+                  "UNSAFE",
+                  "OTHER",
+                  "NO_PROBLEM"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Reason"
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ITEMS_NOT_READY",
+                "WAITING_FOR_STAFF",
+                "HANDLING_IN_PROGRESS",
+                "ACCESS_BLOCKED",
+                "RECIPIENT_UNAVAILABLE",
+                "WRONG_ADDRESS",
+                "MISSING_ITEMS",
+                "DAMAGED_ITEM",
+                "VEHICLE_PROBLEM",
+                "WRONG_EQUIPMENT",
+                "NEED_HELPER",
+                "TRAFFIC",
+                "UNSAFE",
+                "OTHER",
+                "NO_PROBLEM"
+              ]
+            },
+            "type": "array",
+            "maxItems": 15,
+            "title": "Reasons"
           },
           "details": {
             "type": "string",
@@ -41880,15 +42603,24 @@
               }
             ],
             "title": "Estimated Ready At"
+          },
+          "photo_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Photo Ids"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "version",
-          "reason"
+          "version"
         ],
-        "title": "Reply"
+        "title": "Reply",
+        "description": "Current drivers send `reasons` and photos from the shared report form; older apps send one `reason`."
       },
       "RevenueCurrency": {
         "properties": {
@@ -42470,6 +43202,49 @@
             "title": "Fuel Percent",
             "default": "28.5"
           },
+          "extra_time_minutes": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 5.0,
+            "title": "Extra Time Minutes",
+            "default": 30
+          },
+          "extra_time_amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Extra Time Amount",
+            "default": "50"
+          },
+          "stop_minutes_small_parcel": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Stop Minutes Small Parcel",
+            "default": 10
+          },
+          "stop_minutes_ltl": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Stop Minutes Ltl",
+            "default": 20
+          },
+          "stop_minutes_ftl": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Stop Minutes Ftl",
+            "default": 45
+          },
           "maximum_active_orders": {
             "type": "integer",
             "maximum": 100.0,
@@ -42687,6 +43462,40 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Fuel Percent",
             "default": "28.5"
+          },
+          "extra_time_minutes": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 5.0,
+            "title": "Extra Time Minutes",
+            "default": 30
+          },
+          "extra_time_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)",
+            "title": "Extra Time Amount",
+            "default": "50"
+          },
+          "stop_minutes_small_parcel": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Stop Minutes Small Parcel",
+            "default": 10
+          },
+          "stop_minutes_ltl": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Stop Minutes Ltl",
+            "default": 20
+          },
+          "stop_minutes_ftl": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Stop Minutes Ftl",
+            "default": 45
           },
           "maximum_active_orders": {
             "type": "integer",
@@ -43339,6 +44148,7 @@
             "maximum": 480.0,
             "minimum": 0.0,
             "title": "Service Minutes",
+            "description": "Planned minutes at the stop. Omit to use the company planned stop time for the load size.",
             "default": 10
           },
           "unattended_allowed": {
@@ -43349,6 +44159,12 @@
           "photo_required": {
             "type": "boolean",
             "title": "Photo Required",
+            "default": false
+          },
+          "liftgate": {
+            "type": "boolean",
+            "title": "Liftgate",
+            "description": "A power liftgate is needed at this stop; a pickup adds the active LIFTGATE and a drop-off the LIFTGATE_DROPOFF Accessorial, each once per Order with its vehicle equipment.",
             "default": false
           }
         },

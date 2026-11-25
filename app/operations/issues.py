@@ -3,9 +3,11 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from app.models import now
 from app.services import audit
-from .models import Issue, Order, OrderStop, Route, RouteStop
+from .models import Evidence, Issue, Order, OrderStop, Route, RouteStop
+from . import stop_reasons
 from .common import record, version, changed, command, dump
 from .schemas import IssueResolve
+from .pricing import apply_extra_time
 
 
 def report(db, actor, identity, data, key, *, monitor_incident_id=None):
@@ -19,14 +21,25 @@ def report(db, actor, identity, data, key, *, monitor_incident_id=None):
         if data.stop_id:
             stop = record(db, OrderStop, actor, data.stop_id)
             if stop.order_id != identity: raise HTTPException(404, 'Stop not found.')
-        row = Issue(organization_id=actor.organization_id, order_id=identity, **data.model_dump())
+        for photo in data.photo_ids:
+            evidence = db.get(Evidence, photo)
+            if (not evidence or evidence.organization_id != actor.organization_id or evidence.kind != 'ISSUE_PHOTO' or evidence.stop_id != data.stop_id
+                    or actor.role == 'DRIVER' and evidence.driver_id != actor.driver_id):
+                raise HTTPException(422, 'Report photos must be taken at this stop.')
+        fields = data.model_dump(exclude={'reasons', 'photo_ids'})
+        if data.reasons:
+            fields.update(kind=stop_reasons.issue_kind(data.reasons), description=stop_reasons.describe(data.reasons, data.description))
+        row = Issue(organization_id=actor.organization_id, order_id=identity, **fields, reasons=list(data.reasons),
+            photo_ids=[str(p) for p in data.photo_ids], holds_completion=not data.reasons or stop_reasons.holds_completion(data.reasons))
         db.add(row); db.flush(); audit(db, actor, 'issue.reported', row.id, actor.organization_id)
         from app.order_watch.commands import reported
         reported(db, actor, row, monitor_incident_id)
-        if order.status == 'COMPLETED':
+        if order.status == 'COMPLETED' and row.holds_completion:
             order.status = 'IN_PROGRESS'; order.completed_at = None; changed(db, actor, order, 'order.completion_held')
         return jsonable_encoder(dump(row))
-    return command(db, actor, key, 'issue:' + str(identity), data.model_dump(mode='json'), run)
+    # Empty new fields stay out of the request fingerprint, so older reports replay unchanged.
+    payload = {k: v for k, v in data.model_dump(mode='json').items() if k not in ('reasons', 'photo_ids') or v}
+    return command(db, actor, key, 'issue:' + str(identity), payload, run)
 
 
 def resolve(db, actor, identity, data, key):
@@ -37,8 +50,9 @@ def resolve(db, actor, identity, data, key):
         order = record(db, Order, actor, row.order_id, True)
         pending = db.scalar(select(RouteStop.id).join(OrderStop, OrderStop.id == RouteStop.stop_id).where(
             OrderStop.order_id == order.id, RouteStop.organization_id == actor.organization_id, RouteStop.status != 'COMPLETED'))
-        unresolved = db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.resolved.is_(False)))
+        unresolved = db.scalar(select(Issue.id).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.resolved.is_(False), Issue.holds_completion.is_(True)))
         if order.status == 'IN_PROGRESS' and order.route_id and not pending and not unresolved:
+            apply_extra_time(db, actor, order)
             order.status, order.completed_at = 'COMPLETED', now()
             changed(db, actor, order, 'order.completed')
         return jsonable_encoder(dump(row))

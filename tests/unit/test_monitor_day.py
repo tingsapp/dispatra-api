@@ -38,7 +38,7 @@ def test_monitor_lists_due_work_below_a_newer_alert():
     row=order(at=AT-timedelta(minutes=2))
     row.number='DUE-1'; row.route_id=None; row.pricing={'status':'PRICED'}
     issue=SimpleNamespace(id='new-alert',version=1,order_id=row.id,kind='OPEN_ISSUE',
-        description='New issue',created_at=AT-timedelta(minutes=1))
+        description='New issue',created_at=AT-timedelta(minutes=1),photo_ids=[])
     db=Mock(); db.scalars.side_effect=[[],[row],[issue],[],[],[]]
     with patch.object(reporting,'now',return_value=AT), \
          patch.object(reporting,'company_settings',return_value=(None,SimpleNamespace(time_zone='America/Vancouver'))), \

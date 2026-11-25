@@ -9,10 +9,13 @@ from .models import Catalog, RateCard
 from .schemas import Booking, RateData, CatalogData, SettingsData, Discount
 from .common import record, settings, operational_shipper
 from .calendar import delivered_off_day
+from . import stop_reasons
 
 ZERO = Decimal('0')
 # Added once per Order when a delivery falls on a weekend or company holiday; never selected by hand.
 OFF_DAY_CODE = 'HOLIDAY_WEEKEND'
+# Added once per Order when a pickup (LIFTGATE) or drop-off (LIFTGATE_DROPOFF) needs a power liftgate; their required equipment binds the vehicle.
+LIFTGATE_CODES = {'PICKUP': 'LIFTGATE', 'DROPOFF': 'LIFTGATE_DROPOFF'}
 CENT = Decimal('0.01')
 
 
@@ -42,12 +45,22 @@ def suggested_load_size(booking):
     return 'SMALL_PARCEL' if parcel else 'LTL'
 
 
+def planned_stop_minutes(db, actor, booking):
+    """Stops that state no service minutes take the company's planned stop time for the booking's load size."""
+    if all('service_minutes' in stop.model_fields_set for stop in booking.stops): return booking
+    _, config = settings(db, actor)
+    minutes = {'SMALL_PARCEL': config.stop_minutes_small_parcel, 'LTL': config.stop_minutes_ltl, 'FTL': config.stop_minutes_ftl}[booking.load_size]
+    return booking.model_copy(update={'stops': [stop if 'service_minutes' in stop.model_fields_set else
+        stop.model_copy(update={'service_minutes': minutes}) for stop in booking.stops]})
+
+
 def prepare_booking(db, actor, booking):
     """Complete load facts before pricing or saving: a missing load size is suggested, a stated FTL/LTL load refuses vehicle
     types not offered for it, and a full truckload takes the chosen vehicle type's payload and cargo space for lines without
     a weight or size (the load fills the truck)."""
     stated = booking.load_size
     if stated is None: booking = booking.model_copy(update={'load_size': suggested_load_size(booking)})
+    booking = planned_stop_minutes(db, actor, booking)
     bay = catalog(db, actor, booking.vehicle_type_id, 'VEHICLE_TYPE').data if booking.vehicle_type_id else None
     # A stated FTL or LTL load only takes vehicle types offered for it; a suggested load size refuses nothing.
     if bay and stated in ('FTL', 'LTL') and stated not in bay.get('load_sizes', ['FTL', 'LTL']):
@@ -105,6 +118,12 @@ def price_context(db, actor, booking):
             Catalog.kind == 'ACCESSORIAL', Catalog.code == code, Catalog.active.is_(True)))
         if not accessory: raise HTTPException(409, f'{code} package handling Accessorial is unavailable.')
         accessorials.append({**accessory.data, 'code': code, 'quantity': str(quantity), 'id': str(accessory.id)})
+    # Pickups and drop-offs that need a power liftgate add their own Liftgate charge once per Order; a company without one bills nothing extra.
+    for kind, code in LIFTGATE_CODES.items():
+        if not any(stop.liftgate and stop.kind == kind for stop in booking.stops) or any(item['code'] == code for item in accessorials): continue
+        accessory = db.scalar(select(Catalog).where(Catalog.organization_id == actor.organization_id,
+            Catalog.kind == 'ACCESSORIAL', Catalog.code == code, Catalog.active.is_(True)))
+        if accessory: accessorials.append({**accessory.data, 'code': code, 'quantity': '1', 'id': str(accessory.id)})
     if delivered_off_day(config, booking):
         # A company that deactivated or deleted the charge does not bill it.
         accessory = db.scalar(select(Catalog).where(Catalog.organization_id == actor.organization_id,
@@ -238,3 +257,120 @@ def retain_price(db, order):
     from .models import PricingRevision
     db.add(PricingRevision(organization_id=order.organization_id, order_id=order.id,
         order_version=order.version, snapshot=order.pricing))
+
+
+def blocks_over(minutes_free, arrived, completed):
+    """Whole minutes past a stop's free time and the started blocks they make; each block is `minutes_free` long."""
+    over = int((completed - arrived).total_seconds() // 60) - minutes_free
+    return (over, -(-over // minutes_free)) if over > 0 else (0, 0)
+
+
+def stop_reasons_by_stop(db, actor, order):
+    """Driver reasons per stop from stop reports and answered progress questions; older reports read from their kind."""
+    from app.order_watch.models import Incident, Question
+    from .models import Issue
+    result = {}
+    for issue in db.scalars(select(Issue).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.stop_id.is_not(None))):
+        result.setdefault(issue.stop_id, []).extend(issue.reasons or [stop_reasons.LEGACY_KIND.get(issue.kind, 'OTHER')])
+    for question, stop_id in db.execute(select(Question, Incident.stop_id).join(Incident, Incident.id == Question.incident_id).where(
+            Question.organization_id == actor.organization_id, Question.order_id == order.id, Question.status == 'ANSWERED', Incident.stop_id.is_not(None))):
+        result.setdefault(stop_id, []).extend(question.reasons or ([question.reason] if question.reason else []))
+    return {stop: [r for r in dict.fromkeys(reasons) if r != 'NO_PROBLEM'] for stop, reasons in result.items()}
+
+
+def apply_extra_time(db, actor, order):
+    """On completion, price Extra time per driver-confirmed stop that ran past the free time. A stop whose driver
+    reported a carrier reason is EXCLUDED; every other stop is CHARGED until a dispatcher waives it.
+    The rule is the one saved in the Order's price; Orders priced before the rule, imported prices and
+    stops closed by a dispatcher override are not charged."""
+    from .models import OrderStop, RouteStop
+    pricing = order.pricing or {}
+    rule = (pricing.get('context') or {}).get('settings') or {}
+    if pricing.get('status') != 'PRICED' or pricing.get('method') == 'IMPORTED' or 'extra_time_minutes' not in rule: return
+    if pricing.get('extra_time') or any(l['group'] == 'EXTRA_TIME' for l in pricing['lines']): return
+    minutes_free, amount = int(rule['extra_time_minutes']), Decimal(str(rule['extra_time_amount']))
+    if not amount: return
+    visits = db.execute(select(RouteStop, OrderStop).join(OrderStop, OrderStop.id == RouteStop.stop_id).where(
+        RouteStop.organization_id == actor.organization_id, OrderStop.order_id == order.id, RouteStop.status == 'COMPLETED',
+        RouteStop.arrived_at.is_not(None), RouteStop.completed_at.is_not(None))).all()
+    names = stop_names(order)
+    reasons = stop_reasons_by_stop(db, actor, order)
+    stops = []
+    for visit, stop in sorted(visits, key=lambda row: row[0].arrived_at):
+        if (visit.movements or {}).get('completed_by') == 'DISPATCHER': continue
+        over, blocks = blocks_over(minutes_free, visit.arrived_at, visit.completed_at)
+        if not blocks: continue
+        said = reasons.get(stop.id, [])
+        side = stop_reasons.stop_responsibility(said) if said else 'UNDECIDED'
+        stops.append({'stop_id': str(stop.id), 'stop': names.get(str(stop.id), stop.kind.title()), 'minutes_over': over,
+            'amount': str(money(blocks * amount)), 'reasons': [stop_reasons.label(r) for r in said], 'responsibility': side,
+            'status': 'EXCLUDED' if side == 'CARRIER' else 'CHARGED', 'decided_by_dispatcher': False})
+    if not stops: return
+    retain_price(db, order)
+    order.pricing = priced_extra_time({**pricing, 'extra_time': {'minutes_free': minutes_free, 'amount': str(amount), 'stops': stops}})
+
+
+def decide_extra_time(db, actor, identity, data, key):
+    """Dispatcher waives or charges one stop's Extra time on a completed Order; the previous price is kept as a revision."""
+    from .common import command, company_lock, version, changed
+    from .models import Order
+    from .orders import visible_order
+    def run():
+        company_lock(db, actor)
+        if actor.role != 'DISPATCHER': raise HTTPException(403, 'Dispatcher access required.')
+        order = visible_order(db, actor, identity, True); version(order, data.version)
+        breakdown = (order.pricing or {}).get('extra_time')
+        if order.status != 'COMPLETED' or not breakdown: raise HTTPException(409, 'This Order has no Extra time to review.')
+        stop = next((s for s in breakdown['stops'] if s['stop_id'] == str(data.stop_id)), None)
+        if stop is None: raise HTTPException(404, 'This stop has no Extra time.')
+        status = 'CHARGED' if data.charge else 'WAIVED'
+        if stop['status'] == status: return orders_view(order, actor)
+        retain_price(db, order)
+        stops = [{**s, 'status': status, 'decided_by_dispatcher': True} if s is stop else s for s in breakdown['stops']]
+        order.pricing = priced_extra_time({**order.pricing, 'extra_time': {**breakdown, 'stops': stops}})
+        changed(db, actor, order, 'order.updated')
+        return orders_view(order, actor)
+    return command(db, actor, key, f'extra-time:{identity}:{data.stop_id}', data.model_dump(mode='json'), run)
+
+
+def orders_view(order, actor):
+    from .orders import order_view
+    return order_view(order, actor)
+
+
+def stop_names(order):
+    """Pickup 1, Drop-off 2… in booked stop order."""
+    counts, names = {}, {}
+    for stop in order.facts.get('stops', []):
+        kind = 'Pickup' if stop['kind'] == 'PICKUP' else 'Drop-off'
+        counts[kind] = counts.get(kind, 0) + 1
+        names[stop['id']] = f'{kind} {counts[kind]}'
+    return names
+
+
+def priced_extra_time(pricing):
+    """Rebuild the Extra time line from the CHARGED stops of the breakdown."""
+    charged = [s for s in pricing['extra_time']['stops'] if s['status'] == 'CHARGED']
+    total = sum((Decimal(s['amount']) for s in charged), ZERO)
+    label = 'Extra time (' + ', '.join(f"{s['stop']} {s['minutes_over']} min" for s in charged) + ')' if charged else 'Extra time'
+    return with_extra_time(pricing, total, label)
+
+
+def with_extra_time(pricing, charge, label):
+    """Replace the Extra time line, keeping the other lines; the minimum top-up and taxes follow the new subtotal."""
+    old_extra = sum((Decimal(l['amount']) for l in pricing['lines'] if l['group'] == 'EXTRA_TIME'), ZERO)
+    lines = [l for l in pricing['lines'] if l['group'] not in {'MINIMUM', 'TAX', 'EXTRA_TIME'}]
+    old_top_up = sum((Decimal(l['amount']) for l in pricing['lines'] if l['group'] == 'MINIMUM'), ZERO)
+    if charge:
+        at = next((i for i, l in enumerate(lines) if l['group'] in {'DISCOUNT', 'ADJUSTMENT'}), len(lines))
+        lines.insert(at, line('EXTRA_TIME', label, charge))
+    subtotal = sum((Decimal(l['amount']) for l in lines), ZERO)
+    top_up = max(ZERO, Decimal(str(pricing['context']['card'].get('minimum_subtotal') or 0)) - subtotal)
+    if top_up: lines.append(line('MINIMUM', 'Minimum Order subtotal', top_up)); subtotal += top_up
+    tax = ZERO
+    for old in (l for l in pricing['lines'] if l['group'] == 'TAX'):
+        base = money(Decimal(old['taxable_base']) - old_top_up - old_extra + charge + top_up)
+        amount = money(base * Decimal(old['rate_percent']) / 100)
+        tax += amount
+        lines.append({**old, 'amount': str(amount), 'taxable_base': str(base)})
+    return {**pricing, 'lines': lines, 'subtotal': str(money(subtotal)), 'tax': str(money(tax)), 'total': str(money(subtotal + tax))}

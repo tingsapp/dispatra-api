@@ -115,7 +115,7 @@ def analytics(slug: str, db: DB, date_from: datetime | None = None, date_to: dat
     observed = {str(stop.id): (visit, stop) for visit, stop in visits}
     evidence = defaultdict(list)
     if observed:
-        for row in db.execute(select(Evidence.id, Evidence.stop_id, Evidence.driver_id, Evidence.kind).where(Evidence.organization_id == user.organization_id, Evidence.stop_id.in_([stop.id for _, stop in visits]))):
+        for row in db.execute(select(Evidence.id, Evidence.stop_id, Evidence.driver_id, Evidence.kind).where(Evidence.organization_id == user.organization_id, Evidence.stop_id.in_([stop.id for _, stop in visits]), Evidence.kind.in_(('PHOTO', 'SIGNATURE')))):
             evidence[str(row.stop_id)].append(row)
     daily = defaultdict(lambda: {'orders': 0, 'completed': 0, 'on_time': 0, 'late': 0, 'not_measured': 0})
     rows = []
@@ -226,7 +226,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     estimates = collect_estimates(db, user.organization_id, routes, observed_at)
     attention = order_attention(db, user.organization_id, orders, visits_by_stop, observed_at)
     # Newest first, matching every other Monitor list; hidden warnings leave the list but keep the Order's flags.
-    needs_attention = [{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at} for i in issues]
+    needs_attention = [{'id':str(i.id),'version':i.version,'order_id':str(i.order_id),'kind':i.kind,'description':i.description,'at':i.created_at,'photo_ids':i.photo_ids or []} for i in issues]
     needs_attention.extend({'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':alert_time(o, row['flag'], observed_at, visits_by_stop) if row['flag'] in ('LATE_START','AT_RISK') else row['at']}
         for o in orders for row in attention[o.id] if not row['hidden'])
     for order in orders:

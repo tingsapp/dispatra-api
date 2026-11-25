@@ -1,3 +1,21 @@
+2026-11-25 Stop `liftgate` flag (StopInput, DriverOrderStop, driver list): a liftgate pickup adds LIFTGATE (now Power Liftgate at Pickup), a drop-off the new LIFTGATE_DROPOFF, each once per Order with equipment; migration 0078 seeds it per company; openapi.json regenerated.
+Checks: test_stop_liftgate.py 3/3 (--noconftest); unit suite 57/58 (test_monitor_day: uncommitted reporting.py work); 0078 applied to local demo DB, demo quote prices both $25 lines; API/workers restarted clean. PostgreSQL tests not run. Not deployed.
+
+2026-11-25 Fixed driver reason list (`stop_reasons.py`) shared by stop reports and progress replies (several reasons, up to 5 ISSUE_PHOTO photos via `/driver/stops/{id}/report-photos`); migration 0077; delay-only reports stop holding completion; Extra time priced per stop with responsibility (carrier reasons excluded) plus dispatcher `POST /orders/{id}/extra-time`; push data carries the notification kind; openapi.json regenerated.
+Checks: unit tests 58/58 (Extra time, reasons, schemas); migration 0077 and PostgreSQL integration tests not run (no TEST_OWNER_DATABASE_URL). Not deployed.
+
+2026-11-25 Planned stop time settings (10/20/45 min by load size) fill omitted stop `service_minutes` in `prepare_booking`; Order Watch `EXTRA_TIME_STARTED` alert notifies dispatch once when a stop's Extra time free block ends; openapi.json regenerated.
+Checks: unit tests 53/53 (new test_stop_time.py 4/4); PostgreSQL tests not run (no TEST_OWNER_DATABASE_URL). Not deployed.
+
+2026-11-25 Extra time: `extra_time_minutes`/`extra_time_amount` settings (30 min / $50) and `pricing.apply_extra_time` on every Order completion path add an `EXTRA_TIME` line per started block beyond each stop's free block (rule from the Order's saved price; dispatcher-closed visits and imported prices excluded); openapi.json regenerated.
+Checks: tests/unit/test_extra_time.py 4/4; PostgreSQL integration tests not run (no TEST_OWNER_DATABASE_URL). Not deployed.
+
+2026-11-25: Shipper (and email) bookings that need a price review, e.g. no matching pricing Zone, no longer fail with "Database unavailable": `order.created` gave each dispatcher two notes with the same dedupe key; now one WARNING note ending "Needs a price review." Spec updated.
+Checks: new `tests/unit/test_order_created_notes.py` 3/3 (2 fail without the fix); unit tests 49/49; PostgreSQL tests not run (no TEST_OWNER_DATABASE_URL); local API not restarted or retried; not deployed.
+
+2026-11-25 Rate Card archive errors shown to dispatchers now say "deleted"/"deleting" to match the client's Delete label; behavior unchanged.
+Checks: py_compile ok; PostgreSQL tests not run (no TEST_OWNER_DATABASE_URL); no test asserts these strings. Not deployed.
+
 Published to the Google VM at 2026-11-23T19:49Z as email_source_20261124 (client c4b089f; API 6b6487b: app/intake/routes.py, openapi.json, tests/test_email_intake.py; routes/openapi hash-checked against 70dfb90, no drift; the live intake test was an older unshipped copy and was replaced; no migration; only dispatra-api restarted). The dispatcher's Order source "Email" opens the source email. Backup: /var/backups/dispatra/email-source-20261123T194924Z; previous web /opt/dispatra/.web-email-source-old-060dacba-a0df-4881-bc80-3ecc22cbdc15; stage ../work/email-source-release-20261124.
 Checks: on-host unit gate candidate 19/21 = live 19/21 (same 2 reporting_attention failures); client tsc, emailDraftForm 3/4 (pre-existing collapsed-email failure), emailOrders 11/11, dialogDismissal 20/20, build. Live: route 401 unauthenticated (unknown path 404), availability ok, new bundle served, no API errors. Not exercised signed in: tingsapp has no email orders after the purge.
 

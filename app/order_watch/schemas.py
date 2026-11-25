@@ -4,23 +4,28 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from app.schemas import Input
 
-Reason = Literal['ITEMS_NOT_READY','WAITING_FOR_STAFF','ACCESS_BLOCKED','HANDLING_IN_PROGRESS','VEHICLE_PROBLEM','TRAFFIC','RECIPIENT_UNAVAILABLE','NEED_HELPER','DAMAGED_ITEM','UNSAFE','OTHER','NO_PROBLEM']
-CHOICES = [dict(value=value,label=label) for value,label in [
-    ('ITEMS_NOT_READY','Items not ready'), ('WAITING_FOR_STAFF','Waiting for staff'),
-    ('ACCESS_BLOCKED','Access blocked'), ('HANDLING_IN_PROGRESS','Loading or unloading'),
-    ('VEHICLE_PROBLEM','Vehicle problem'), ('TRAFFIC','Traffic delay'), ('RECIPIENT_UNAVAILABLE','Recipient unavailable'),
-    ('NEED_HELPER','Need handling assistance'), ('DAMAGED_ITEM','Item damaged'), ('UNSAFE','Unsafe situation'), ('OTHER','Another issue'), ('NO_PROBLEM','Progress is normal')]]
+from app.operations.stop_reasons import Reason, choices
+
+# The same Dispatra reason list as stop reports, plus "Progress is normal".
+CHOICES = choices(report=False)
 
 
 class Reply(Input):
+    """Current drivers send `reasons` and photos from the shared report form; older apps send one `reason`."""
     version: int = Field(ge=1)
-    reason: Reason
+    reason: Reason | None = None
+    reasons: list[Reason] = Field(default_factory=list, max_length=15)
     details: str = Field(default='', max_length=1000)
     estimated_ready_at: AwareDatetime | None = None
+    photo_ids: list[UUID] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode='after')
     def explain_other(self):
-        if self.reason == 'OTHER' and len(self.details.strip()) < 3:
+        if not self.reasons and self.reason: self.reasons = [self.reason]
+        if not self.reasons: raise ValueError('Choose at least one reason.')
+        if len(set(self.reasons)) != len(self.reasons) or len(set(self.photo_ids)) != len(self.photo_ids): raise ValueError('Duplicate reason or photo.')
+        if 'NO_PROBLEM' in self.reasons and len(self.reasons) > 1: raise ValueError('Progress is normal cannot be combined with a problem.')
+        if 'OTHER' in self.reasons and len(self.details.strip()) < 3:
             raise ValueError('Describe the issue when choosing Another issue.')
         return self
 
@@ -73,9 +78,11 @@ class QuestionView(BaseModel):
     order_id: UUID
     order_number: str
     prompt: str
+    stop_id: UUID | None = None
     choices: list[Choice]
     status: Literal['OPEN','ANSWERED','CLOSED']
     reason: Reason | None
+    reasons: list[Reason] = Field(default_factory=list)
     details: str
     estimated_ready_at: datetime | None
     created_at: datetime

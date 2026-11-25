@@ -56,6 +56,7 @@ class Question(TenantRecord, Base):
     prompt: Mapped[str] = mapped_column(String(600))
     status: Mapped[str] = mapped_column(String(16), default='OPEN')
     reason: Mapped[str | None] = mapped_column(String(32))
+    reasons: Mapped[list] = mapped_column(JSONB, default=list)
     details: Mapped[str] = mapped_column(String(1000), default='')
     estimated_ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

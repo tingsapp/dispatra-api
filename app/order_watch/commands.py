@@ -13,6 +13,7 @@ from app.operations.models import Order, Route
 from app.operations.orders import company_scope
 from .models import Incident, Question
 from .schemas import CHOICES
+from app.operations import stop_reasons
 from .evidence import fact
 from .playbooks import suggestions,advice_for_reason
 
@@ -92,7 +93,7 @@ def reported(db, actor, issue, monitor_incident_id=None):
         agent=system(actor.organization_id)
         order=record(db,Order,agent,issue.order_id,True)
         signal=dict(fingerprint=f'reported:{issue.id}',source_issue_id=issue.id,stop_id=issue.stop_id,kind='REPORTED',
-            title='Operational issue reported', description=issue.description[:1000],severity='CRITICAL',certainty='REPORTED',
+            title='Operational issue reported', description=issue.description[:1000],severity='CRITICAL' if issue.holds_completion else 'WARNING',certainty='REPORTED',
             evidence=[fact('Reported issue',issue.kind,'Operational issue report',issue.created_at)],
             suggestions=suggestions('REPORTED',issue.kind),response_due_at=now())
         # issue.reported already notifies owner/dispatch; avoid a second notification for the same report.
@@ -102,7 +103,7 @@ def reported(db, actor, issue, monitor_incident_id=None):
             row.source_issue_id=issue.id
             row.kind,row.title='REPORTED','Operational issue reported'
             row.description=issue.description[:1000]
-            row.certainty,row.severity='REPORTED','CRITICAL'
+            row.certainty,row.severity='REPORTED','CRITICAL' if issue.holds_completion else 'WARNING'
             row.suggestions=suggestions('REPORTED',issue.kind)
             db.flush()
             return row
@@ -115,8 +116,10 @@ def reported(db, actor, issue, monitor_incident_id=None):
 
 def question_view(db,row):
     order=db.get(Order,row.order_id)
+    incident=db.get(Incident,row.incident_id)
     return jsonable_encoder(dict(id=row.id,version=row.version,order_id=row.order_id,order_number=order.number if order else '',prompt=row.prompt,
-        choices=CHOICES,status=row.status,reason=row.reason,details=row.details,estimated_ready_at=row.estimated_ready_at,
+        stop_id=incident.stop_id if incident else None,choices=CHOICES,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
+        details=row.details,estimated_ready_at=row.estimated_ready_at,
         created_at=row.created_at,answered_at=row.answered_at))
 
 
@@ -139,12 +142,13 @@ def reply(db, actor, identity, data, key):
         current=now()
         if data.estimated_ready_at and data.estimated_ready_at<current:
             raise HTTPException(422,'Expected ready time must be in the future.')
-        q.status,q.reason,q.details='ANSWERED',data.reason,data.details.strip()
+        reasons=list(data.reasons);reason=stop_reasons.primary(reasons)
+        q.status,q.reason,q.reasons,q.details='ANSWERED',reason,reasons,data.details.strip()
         q.estimated_ready_at,q.answered_at=data.estimated_ready_at,current
         q.version+=1;q.updated_at=current;db.flush()
         with company_scope(db,actor):
             row=record(db,Incident,actor,q.incident_id,True)
-            label=next(choice['label'] for choice in CHOICES if choice['value']==data.reason)
+            label='; '.join(stop_reasons.label(r) for r in reasons)
             row.certainty='REPORTED'
             row.description=f'Driver reports: {label}.'+(f' {q.details}' if q.details else '')
             row.description=row.description[:1000]
@@ -160,15 +164,14 @@ def reply(db, actor, identity, data, key):
                     row.severity='CRITICAL'
                     row.evidence.insert(2,fact('Commitments threatened by reported ready time',', '.join(threatened),'Driver estimate compared with booked windows',current))
             # Acknowledgement/explanation is not proof of recovery. Only objective progress or explicit issue resolution closes it.
-            reason_kind={'VEHICLE_PROBLEM':'VEHICLE','UNSAFE':'UNSAFE','RECIPIENT_UNAVAILABLE':'FAILED_DELIVERY','ACCESS_BLOCKED':'WRONG_ADDRESS'}.get(data.reason)
-            row.suggestions=advice_for_reason(data.reason)
-            if data.reason in {'UNSAFE','DAMAGED_ITEM','VEHICLE_PROBLEM'}:row.severity='CRITICAL'
-            if data.reason=='NO_PROBLEM':row.suggestions=['Verify that the current milestone is recorded and continue monitoring the booked commitments.']
-            if data.reason in {'UNSAFE','VEHICLE_PROBLEM','DAMAGED_ITEM'}:
+            row.suggestions=advice_for_reason(reason)
+            if reason in {'UNSAFE','DAMAGED_ITEM','VEHICLE_PROBLEM'}:row.severity='CRITICAL'
+            if reason=='NO_PROBLEM':row.suggestions=['Verify that the current milestone is recorded and continue monitoring the booked commitments.']
+            # A reason that holds completion, or photos to keep, files the same stop report as the Report screen.
+            if reason!='NO_PROBLEM' and (stop_reasons.holds_completion(reasons) or data.photo_ids):
                 from app.operations.issues import report
                 from app.operations.schemas import IssueInput
-                issue_kind={'UNSAFE':'UNSAFE','VEHICLE_PROBLEM':'VEHICLE','DAMAGED_ITEM':'OTHER'}[data.reason]
-                report(db,actor,q.order_id,IssueInput(stop_id=row.stop_id,kind=issue_kind,description=row.description),
+                report(db,actor,q.order_id,IssueInput(stop_id=row.stop_id,reasons=reasons,description=q.details,photo_ids=data.photo_ids),
                     f'watch-report-{q.id}',monitor_incident_id=row.id)
                 touch(db,actor,row,'watch.updated')
             else:touch(db,actor,row,'watch.driver_replied')

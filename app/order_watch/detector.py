@@ -10,6 +10,14 @@ def signal(key,kind,title,description,evidence,stop_id=None,severity='WARNING',c
         source_issue_id=None,severity=severity,certainty=certainty,suggestions=suggestions(kind),response_due_at=due)
 
 
+def extra_time_free_minutes(order):
+    """Free minutes per stop from the Extra time rule saved in the Order's price; None when it is not charged."""
+    pricing=order.pricing or {}
+    rule=(pricing.get('context') or {}).get('settings') or {}
+    if pricing.get('status')!='PRICED' or pricing.get('method')=='IMPORTED' or 'extra_time_minutes' not in rule:return None
+    return int(rule['extra_time_minutes']) if float(rule['extra_time_amount']) > 0 else None
+
+
 def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
     result=[]
     if order.status in {'COMPLETED','CANCELLED'}:return result
@@ -60,9 +68,18 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
             # Exceeding the recorded plan triggers clarification, never an invented waiting/loading cause.
             if planned_minutes and elapsed>planned_minutes:
                 result.append(signal(f'stop:{visit.id}:{route.generation}','STOP_OVERRUN','Stop progress needs clarification',
-                    f'At stop {elapsed} min; plan allows {planned_minutes} min.',
+                    f'At stop {elapsed} min; planned stop time is {planned_minutes} min.',
                     [fact('Recorded arrival',visit.arrived_at.isoformat(),'Stop execution',visit.arrived_at),fact('Elapsed service-eligible time at stop',f'{elapsed} minutes','Recorded arrival and booked service window',current),
                      fact('Planned stop service',f'{planned_minutes} minutes','Booked stop plan')],stop.id,certainty='NEEDS_CONFIRMATION',due=due))
+            free=extra_time_free_minutes(order)
+            at_stop=int((current-visit.arrived_at).total_seconds()//60)
+            # Billable waiting starts: dispatch can tell the customer before the Order completes with an Extra time charge.
+            if free is not None and at_stop>free:
+                place='pickup' if stop.kind=='PICKUP' else 'drop-off'
+                result.append(signal(f'extra-time:{visit.id}:{route.generation}','EXTRA_TIME_STARTED','Extra time started',
+                    f'Free time ({free} min) ended at the {place}; Extra time now applies.',
+                    [fact('Recorded arrival',visit.arrived_at.isoformat(),'Stop execution',visit.arrived_at),
+                     fact('Free time at each stop',f'{free} minutes','Extra time rule saved in the Order price')],stop.id,due=due))
         if visit.arrived_at is not None or not estimate:continue
         prediction=next((e for e in estimate.data['stops'] if e['stop_id']==str(stop.id)),None)
         if prediction and due:

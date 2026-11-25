@@ -46,7 +46,7 @@ def queue(db, organization_id, user, kind, title, body, data):
 
 def for_notification(db, notification, user):
     queue(db, notification.organization_id, user, notification.kind, notification.title, notification.body,
-        {'type': 'notification', 'notification_id': notification.id, 'order_id': notification.order_id})
+        {'type': 'notification', 'kind': notification.kind, 'notification_id': notification.id, 'order_id': notification.order_id})
 
 
 def for_chat_message(db, organization_id, message_id):

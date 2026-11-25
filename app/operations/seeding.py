@@ -56,7 +56,7 @@ def seed_pricing(db, actor, organization=None):
             if kind == 'PACKAGE_TYPE':
                 payload.update(fuel_eligible=False, default_weight_kg=source.get('defaultWeightKg'),
                     length_cm=source.get('lengthCm'), width_cm=source.get('widthCm'), height_cm=source.get('heightCm'))
-            if code == 'LIFTGATE': payload['required_equipment'] = ['LIFTGATE']
+            if code in ('LIFTGATE', 'LIFTGATE_DROPOFF'): payload['required_equipment'] = ['LIFTGATE']
             if code == 'HELPER': payload['required_crew'] = 2
             db.add(Catalog(id=identity, organization_id=org_id, kind=kind, code=code,
                 active=source['active'], data=CatalogData(**payload).model_dump(mode='json', exclude=set() if kind == 'VEHICLE_TYPE' else {'road_profile'})))
