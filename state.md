@@ -1,3 +1,6 @@
+2026-11-25: Live data on request, as the tingsapp dispatcher through release/update_order/assign in one transaction (dry run first): all four orders moved from Nov 23 to today Nov 25, same America/Vancouver times (DTO-8011 14:00, DTO-7479 14:30, DTO-4762 14:30, DTO-5701 15:00); route 2cb869cf released, DTO-7479 and DTO-8011 reassigned to Emma Clarke on new PLANNED route ae7e0780 (visits 14:09, 14:40, 15:17, 15:27).
+Checks: all four stay PRICED; DTO-4762/5701 NEW (AUTO dispatch may assign them); script work/live-today-20261125/move_today.py.
+
 Published to the Google VM at 2026-11-25T17:57Z as reports_liftgate_20261125 (API c91aac9, client 4117517, driver 86f5802 pushed only): stop reports/photos, Extra time, planned stop time, Fragile/DG form links, pickup/drop-off liftgates; migrations 0076→0078 (catalog 37→38, record counts unchanged). Backup: /var/backups/dispatra/reports-liftgate-20261125T175641Z; previous web /opt/dispatra/.web-reports-liftgate-old-61863da5-24d8-494b-b27f-ad209b1ebdec; stage ../work/reports-liftgate-release-20261125.
 Checks: local unit 58/58, client/driver typecheck, build; on-host unit gate candidate 19/21 = live 19/21 (same 2 reporting_attention failures). Live: 0078, both Liftgate entries active, services active, /ready ok, dispatra.com and new bundle served, no errors after restart. Not exercised signed in.
 
