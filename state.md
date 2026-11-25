@@ -1,3 +1,6 @@
+Published to the Google VM at 2026-11-25T17:57Z as reports_liftgate_20261125 (API c91aac9, client 4117517, driver 86f5802 pushed only): stop reports/photos, Extra time, planned stop time, Fragile/DG form links, pickup/drop-off liftgates; migrations 0076→0078 (catalog 37→38, record counts unchanged). Backup: /var/backups/dispatra/reports-liftgate-20261125T175641Z; previous web /opt/dispatra/.web-reports-liftgate-old-61863da5-24d8-494b-b27f-ad209b1ebdec; stage ../work/reports-liftgate-release-20261125.
+Checks: local unit 58/58, client/driver typecheck, build; on-host unit gate candidate 19/21 = live 19/21 (same 2 reporting_attention failures). Live: 0078, both Liftgate entries active, services active, /ready ok, dispatra.com and new bundle served, no errors after restart. Not exercised signed in.
+
 2026-11-25 Stop `liftgate` flag (StopInput, DriverOrderStop, driver list): a liftgate pickup adds LIFTGATE (now Power Liftgate at Pickup), a drop-off the new LIFTGATE_DROPOFF, each once per Order with equipment; migration 0078 seeds it per company; openapi.json regenerated.
 Checks: test_stop_liftgate.py 3/3 (--noconftest); unit suite 57/58 (test_monitor_day: uncommitted reporting.py work); 0078 applied to local demo DB, demo quote prices both $25 lines; API/workers restarted clean. PostgreSQL tests not run. Not deployed.
 
