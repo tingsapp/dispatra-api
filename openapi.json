@@ -10627,6 +10627,133 @@
         }
       }
     },
+    "/api/v1/companies/{slug}/orders/{identity}/progress-updates": {
+      "get": {
+        "tags": [
+          "Orders, quotes and delivery"
+        ],
+        "summary": "Progress Updates",
+        "description": "The Order's driver progress feed, newest first: progress questions with their answers, and stop reports (resolved\nones included) with reasons, responsibility, notes and photos. A report filed by a reply is shown on that reply.",
+        "operationId": "progress_updates_api_v1_companies__slug__orders__identity__progress_updates_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProgressUpdateView"
+                  },
+                  "title": "Response Progress Updates Api V1 Companies  Slug  Orders  Identity  Progress Updates Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/companies/{slug}/booking-preferences": {
       "get": {
         "tags": [
@@ -41651,6 +41778,141 @@
           "version"
         ],
         "title": "ProfileUpdate"
+      },
+      "ProgressUpdateView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "QUESTION",
+              "REPORT"
+            ],
+            "title": "Kind"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "stop_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PICKUP",
+                  "DROPOFF"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Kind"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ANSWERED",
+              "CLOSED",
+              "RESOLVED"
+            ],
+            "title": "Status"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "responsibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SHIPPER",
+                  "CARRIER",
+                  "UNDECIDED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "photo_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Photo Ids"
+          },
+          "replied_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replied At"
+          },
+          "estimated_ready_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Ready At"
+          },
+          "resolution": {
+            "type": "string",
+            "title": "Resolution",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "at",
+          "stop_kind",
+          "address",
+          "prompt",
+          "status",
+          "reasons",
+          "responsibility",
+          "notes",
+          "photo_ids"
+        ],
+        "title": "ProgressUpdateView",
+        "description": "One entry of an Order's driver progress feed for dispatch: a progress question with the driver's answer, or a stop report.\nPhotos are internal operations evidence; shippers never see them."
       },
       "ProofEvidence": {
         "properties": {

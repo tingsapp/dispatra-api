@@ -1,3 +1,6 @@
+2026-11-26 Dispatcher progress feed GET /orders/{id}/progress-updates (ProgressUpdateView: questions with answers + stop reports, a reply's filed report merged into it). Extra time reads answered questions' reasons in company scope (stop_reasons_by_stop), so a driver completing the Order keeps them. openapi.json regenerated. Not released.
+Checks: ready-time follow-up now asserts the driver-scope reasons (fails without the fix); feed asserted in the stopless-photo and reported-issue tests; earlier run with extra-time units 9/9; feed tests 3/3 (stopless-photo reply merged with its report, kind-only report as REPORT, driver-scope reasons).
+
 2026-11-26 Report and progress-reply photos capped at 4 (IssueInput.photo_ids and Reply.photo_ids max_length 5→4); openapi.json regenerated (schema.d.ts unchanged, no maxItems there). Not released.
 Checks: new test_reports_and_progress_replies_take_at_most_four_photos plus a no-DB neighbour 2/2.
 

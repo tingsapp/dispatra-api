@@ -10,7 +10,7 @@ from app.routes import DB, OperationKey
 from . import orders, dispatch, quotes, issues, queries, mail
 from .common import record, settings
 from .models import Order, Route, Quote, Issue, Shipper, Catalog, EmailDelivery
-from .schemas import (Booking, OrderUpdate, OrderView, PriceView, QuoteView, Assignment,
+from .schemas import (ProgressUpdateView, Booking, OrderUpdate, OrderView, PriceView, QuoteView, Assignment,
     AssignmentView, RouteView, RouteCommand, Version, IssueInput, IssueView, IssueResolve, CatalogView, DeliveryProofView, BookingPreferences, BookingDriverView, RoadPathView, QuoteSend, EmailDeliveryView, TrackingView, ExtraTimeDecision)
 
 router = APIRouter(prefix='/api/v1/companies/{slug}', tags=['Orders, quotes and delivery'])
@@ -197,6 +197,46 @@ def delivery_proof(slug: str, identity: UUID, db: DB, user: User = Depends(booki
             'completed_by_dispatcher':visit.movements.get('completed_by') == 'DISPATCHER',
             'evidence':[{'id':str(e.id),'kind':e.kind,'captured_at':e.captured_at} for e in evidence]})
     return result
+
+
+
+@router.get('/orders/{identity}/progress-updates', response_model=list[ProgressUpdateView])
+def progress_updates(slug: str, identity: UUID, db: DB, user: User = Depends(auth.dispatcher)):
+    """The Order's driver progress feed, newest first: progress questions with their answers, and stop reports (resolved
+    ones included) with reasons, responsibility, notes and photos. A report filed by a reply is shown on that reply."""
+    from datetime import timedelta
+    from .models import Issue, OrderStop
+    from . import stop_reasons
+    from app.order_watch.models import Incident, Question
+    order=orders.visible_order(db,user,identity)
+    stops={s.id:s for s in db.scalars(select(OrderStop).where(OrderStop.organization_id == user.organization_id,OrderStop.order_id == order.id))}
+    issues=list(db.scalars(select(Issue).where(Issue.organization_id == user.organization_id,Issue.order_id == order.id)))
+    def place(stop_id):
+        stop=stops.get(stop_id)
+        return {'stop_kind':stop.kind if stop else None,'address':stop.data['address']['text'] if stop else ''}
+    def said(reasons):
+        reasons=[r for r in reasons if r != 'NO_PROBLEM'] or reasons
+        return {'reasons':[stop_reasons.label(r) for r in reasons],'responsibility':stop_reasons.stop_responsibility(reasons) if reasons else None}
+    result,shown=[],set()
+    for q,incident in db.execute(select(Question,Incident).join(Incident,Incident.id == Question.incident_id).where(
+            Question.organization_id == user.organization_id,Question.order_id == order.id)):
+        reasons=q.reasons or ([q.reason] if q.reason else [])
+        # A reply that needed a report filed it in the same transaction, with the same reasons, at a stop of this Order.
+        filed=next((i for i in issues if q.answered_at and i.reasons == reasons and abs(i.created_at-q.answered_at) < timedelta(seconds=5)),None)
+        if filed: shown.add(filed.id)
+        result.append({'id':q.id,'kind':'QUESTION','at':q.created_at,**place(filed.stop_id if filed else incident.stop_id),
+            'prompt':q.prompt.removeprefix(f'{order.number}:').strip(),'status':q.status if q.status in ('OPEN','ANSWERED') else 'CLOSED',
+            **(said(reasons) if q.answered_at else {'reasons':[],'responsibility':None}),'notes':q.details if q.answered_at else '',
+            'photo_ids':filed.photo_ids if filed else [],'replied_at':q.answered_at,'estimated_ready_at':q.estimated_ready_at,
+            'resolution':filed.resolution if filed and filed.resolved else ''})
+    for row in issues:
+        if row.id in shown: continue
+        reasons=row.reasons or [stop_reasons.LEGACY_KIND.get(row.kind,'OTHER')]
+        # Reason reports store "<labels>\n\n<notes>" (stop_reasons.describe); older ones are free text.
+        notes=row.description.split('\n\n',1)[1] if row.reasons and '\n\n' in row.description else '' if row.reasons else row.description
+        result.append({'id':row.id,'kind':'REPORT','at':row.created_at,**place(row.stop_id),'prompt':'','status':'RESOLVED' if row.resolved else 'OPEN',
+            **said(reasons),'notes':notes,'photo_ids':row.photo_ids or [],'resolution':row.resolution if row.resolved else ''})
+    return sorted(result,key=lambda r:r['at'],reverse=True)
 
 
 @router.get('/quotes', response_model=list[QuoteView])

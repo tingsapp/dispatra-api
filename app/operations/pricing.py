@@ -272,8 +272,12 @@ def stop_reasons_by_stop(db, actor, order):
     result = {}
     for issue in db.scalars(select(Issue).where(Issue.organization_id == actor.organization_id, Issue.order_id == order.id, Issue.stop_id.is_not(None))):
         result.setdefault(issue.stop_id, []).extend(issue.reasons or [stop_reasons.LEGACY_KIND.get(issue.kind, 'OTHER')])
-    for question, stop_id in db.execute(select(Question, Incident.stop_id).join(Incident, Incident.id == Question.incident_id).where(
-            Question.organization_id == actor.organization_id, Question.order_id == order.id, Question.status == 'ANSWERED', Incident.stop_id.is_not(None))):
+    # The driver who completes the Order cannot read incidents under RLS; their answered questions still count.
+    from .orders import company_scope
+    with company_scope(db, actor):
+        answered = db.execute(select(Question, Incident.stop_id).join(Incident, Incident.id == Question.incident_id).where(
+            Question.organization_id == actor.organization_id, Question.order_id == order.id, Question.status == 'ANSWERED', Incident.stop_id.is_not(None))).all()
+    for question, stop_id in answered:
         result.setdefault(stop_id, []).extend(question.reasons or ([question.reason] if question.reason else []))
     return {stop: [r for r in dict.fromkeys(reasons) if r != 'NO_PROBLEM'] for stop, reasons in result.items()}
 

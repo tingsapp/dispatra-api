@@ -48,6 +48,9 @@ def test_reported_issues_immediately_enter_operational_monitor_without_technical
     key=str(uuid4())
     report=check(post(w['client'],BASE+f'/orders/{order["id"]}/issues',data,key),201)
     assert check(post(w['client'],BASE+f'/orders/{order["id"]}/issues',data,key),201)==report
+    # The Order's progress feed lists the report: an older kind-only report reads as its reason, with its text as notes.
+    feed=check(w['client'].get(BASE+f'/orders/{order["id"]}/progress-updates'))
+    assert [(r['kind'],r['status'],r['reasons'],r['responsibility'],r['notes'],r['photo_ids']) for r in feed]==[('REPORT','OPEN',['Vehicle problem'],'CARRIER',data['description'],[])]
     rows=owner_reports(w)
     assert len(rows)==1 and rows[0]['certainty']=='REPORTED' and rows[0]['description']==data['description']
     monitor=check(w['client'].get('/api/v1/platform/agents/monitor'))
@@ -224,6 +227,14 @@ def test_reported_ready_time_drives_followup_without_repeated_unchanged_question
     monkeypatch.setattr(scan,'now',lambda:now()+timedelta(minutes=11));review(w)
     q=check(w['mobile'].get(BASE+'/driver/operational/questions'))[0]
     check(post(w['mobile'],BASE+f'/driver/operational/questions/{q["id"]}/reply',dict(version=q['version'],reason='ITEMS_NOT_READY',details='Waiting for packing',estimated_ready_at=(now()+timedelta(minutes=20)).isoformat())))
+    # Extra time is priced as the driver completes the Order: their answered question's reason must count though RLS hides incidents.
+    from app.operations.pricing import stop_reasons_by_stop
+    with Session(owner_engine) as db:
+        org=db.get(Order,UUID(order['id'])).organization_id
+    driver=SimpleNamespace(organization_id=org,role='DRIVER',shipper_id=None,driver_id=UUID(w['driver']['id']))
+    with Session(engine) as db,db.begin():
+        context(db,org,False,None,driver.driver_id)
+        assert 'ITEMS_NOT_READY' in stop_reasons_by_stop(db,driver,db.get(Order,UUID(order['id']))).get(UUID(visit['stop_id']),[])
     monkeypatch.setattr(scan,'now',lambda:now()+timedelta(minutes=21));review(w)
     pending=check(w['mobile'].get(BASE+'/driver/operational/questions'));assert len(pending)==1
     assert pending[0]['version']==q['version']+2 and 'estimated readiness' in pending[0]['prompt']
@@ -258,6 +269,12 @@ def test_stopless_question_reply_files_photos_at_a_remaining_stop_of_its_order(s
     with Session(owner_engine) as db:
         issue=db.scalar(select(Issue).where(Issue.order_id==UUID(order['id'])))
         assert str(issue.stop_id)==stop and issue.photo_ids==[photo['id']]
+    # Dispatch sees the reply with the report it filed (one entry, with its photos) in the Order's progress feed; drivers cannot list it.
+    feed=check(w['client'].get(BASE+f'/orders/{order["id"]}/progress-updates'))
+    assert [(r['id'],r['kind'],r['status'],r['reasons'],r['responsibility'],r['notes'],r['photo_ids'],r['stop_kind']) for r in feed]==[
+        (q['id'],'QUESTION','ANSWERED',['Access or parking problem'],'SHIPPER','Gate locked',[photo['id']],route['stops'][0]['stop']['kind'])]
+    assert feed[0]['prompt'] and not feed[0]['prompt'].startswith(order['number'])
+    assert w['mobile'].get(BASE+f'/orders/{order["id"]}/progress-updates').status_code==403
 
 
 def test_reports_and_progress_replies_take_at_most_four_photos():

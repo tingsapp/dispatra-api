@@ -1057,6 +1057,26 @@ class DeliveryProofView(BaseModel):
     evidence: list[ProofEvidence]
 
 
+class ProgressUpdateView(BaseModel):
+    """One entry of an Order's driver progress feed for dispatch: a progress question with the driver's answer, or a stop report.
+    Photos are internal operations evidence; shippers never see them."""
+    id: UUID
+    kind: Literal['QUESTION', 'REPORT']
+    at: datetime
+    stop_kind: Literal['PICKUP', 'DROPOFF'] | None
+    address: str
+    prompt: str
+    # QUESTION: OPEN, ANSWERED or CLOSED; REPORT: OPEN or RESOLVED.
+    status: Literal['OPEN', 'ANSWERED', 'CLOSED', 'RESOLVED']
+    reasons: list[str]
+    responsibility: Literal['SHIPPER', 'CARRIER', 'UNDECIDED'] | None
+    notes: str
+    photo_ids: list[UUID]
+    replied_at: datetime | None = None
+    estimated_ready_at: datetime | None = None
+    resolution: str = ''
+
+
 class TrackingStop(BaseModel):
     id: UUID
     kind: str
