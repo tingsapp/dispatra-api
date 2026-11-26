@@ -134,6 +134,18 @@ def own_question(db, actor, identity, lock=False):
     return q
 
 
+def report_stop(db, actor, q, row, data):
+    """The stop a reply's report is filed at: the incident's stop, else a remaining stop of the question's Order."""
+    if not data.stop_id or data.stop_id==row.stop_id:return row.stop_id
+    if row.stop_id:raise HTTPException(422,'Photos must be taken at this question\'s stop.')
+    from app.operations.models import OrderStop,RouteStop
+    stop=db.get(OrderStop,data.stop_id)
+    remaining=stop and stop.organization_id==actor.organization_id and stop.order_id==q.order_id and db.scalar(select(RouteStop.id).where(
+        RouteStop.organization_id==actor.organization_id,RouteStop.route_id==q.route_id,RouteStop.stop_id==stop.id,RouteStop.status!='COMPLETED'))
+    if not remaining:raise HTTPException(422,'Photos must be taken at a remaining stop of this order.')
+    return stop.id
+
+
 def reply(db, actor, identity, data, key):
     def run():
         company_lock(db,actor)
@@ -171,7 +183,7 @@ def reply(db, actor, identity, data, key):
             if reason!='NO_PROBLEM' and (stop_reasons.holds_completion(reasons) or data.photo_ids):
                 from app.operations.issues import report
                 from app.operations.schemas import IssueInput
-                report(db,actor,q.order_id,IssueInput(stop_id=row.stop_id,reasons=reasons,description=q.details,photo_ids=data.photo_ids),
+                report(db,actor,q.order_id,IssueInput(stop_id=report_stop(db,actor,q,row,data),reasons=reasons,description=q.details,photo_ids=data.photo_ids),
                     f'watch-report-{q.id}',monitor_incident_id=row.id)
                 touch(db,actor,row,'watch.updated')
             else:touch(db,actor,row,'watch.driver_replied')

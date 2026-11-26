@@ -42612,6 +42612,18 @@
             "type": "array",
             "maxItems": 5,
             "title": "Photo Ids"
+          },
+          "stop_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Id"
           }
         },
         "additionalProperties": false,

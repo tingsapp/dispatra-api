@@ -1,3 +1,8 @@
+2026-11-26 Progress replies may carry photos for questions without a stop: `Reply.stop_id` (a remaining stop of the question's Order) files the report there; report photos accepted on PLANNED routes from `planned_at`. openapi.json, driver and client schema.d.ts regenerated. Not released.
+Checks: new stopless-photo test plus existing reply/safety-reply tests 3/3 on dispatra_events_test (after migrating it to 0078); full test_order_watch + test_confirm_arrival_flow 15/16; the one failure (`test_waiting_requires_recorded_arrival…` expects old "Waiting versus handling" wording) is pre-existing: detector.py is unchanged and HEAD already says "planned stop time is".
+
+2026-11-26 Production test data (no release): opened test Order Watch incident 21e23753 "Progress check (test)" (kind PROGRESS_CHECK, no stop) and question bffd0016 on DTO-8011 for driver Emma Clarke (Tingsapp) via work/progress-question-test/progress_question.py, run with the API's own commands after a rolled-back dry run. Driver notification and push (sent 19:18:52Z) and a dispatcher notification were produced. Still open; close with the script's `close` mode.
+
 2026-11-25: Live data on request, as the tingsapp dispatcher through release/update_order/assign in one transaction (dry run first): all four orders moved from Nov 23 to today Nov 25, same America/Vancouver times (DTO-8011 14:00, DTO-7479 14:30, DTO-4762 14:30, DTO-5701 15:00); route 2cb869cf released, DTO-7479 and DTO-8011 reassigned to Emma Clarke on new PLANNED route ae7e0780 (visits 14:09, 14:40, 15:17, 15:27).
 Checks: all four stay PRICED; DTO-4762/5701 NEW (AUTO dispatch may assign them); script work/live-today-20261125/move_today.py.
 

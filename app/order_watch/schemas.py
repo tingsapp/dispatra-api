@@ -18,6 +18,8 @@ class Reply(Input):
     details: str = Field(default='', max_length=1000)
     estimated_ready_at: AwareDatetime | None = None
     photo_ids: list[UUID] = Field(default_factory=list, max_length=5)
+    # Where the photos were taken, for a question that names no stop: a remaining stop of the question's Order.
+    stop_id: UUID | None = None
 
     @model_validator(mode='after')
     def explain_other(self):

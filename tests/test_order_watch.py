@@ -236,3 +236,24 @@ def overdue_order(w):
     body['scheduled_at']=(now()-timedelta(hours=1)).isoformat()
     body['stops'][0]['window_end']=(now()-timedelta(minutes=1)).isoformat()
     return new_order(w,**body)
+
+
+def test_stopless_question_reply_files_photos_at_a_remaining_stop_of_its_order(setup,monkeypatch):
+    import base64
+    w=setup;order=new_order(w,scheduled_at=now().isoformat());route=assign(w,order)
+    monkeypatch.setattr(scan,'now',lambda:now()+timedelta(minutes=5));review(w)
+    q=check(w['mobile'].get(BASE+'/driver/operational/questions'))[0]
+    assert q['stop_id'] is None  # Route start needs confirmation names no stop.
+    stop=route['stops'][0]['stop_id']
+    # Report photos are accepted on a planned route, from its planned time.
+    photo=check(post(w['mobile'],BASE+f'/driver/stops/{stop}/report-photos',dict(kind='PHOTO',media_type='image/png',
+        captured_at=now().isoformat(),content_base64=base64.b64encode(b'\x89PNG\r\n\x1a\nramp').decode())),201)
+    path=BASE+f'/driver/operational/questions/{q["id"]}/reply'
+    body=dict(version=q['version'],reasons=['ACCESS_BLOCKED'],details='Gate locked',photo_ids=[photo['id']])
+    # Without a stop the photo cannot be filed; a stop outside this Order is refused.
+    assert post(w['mobile'],path,body).status_code==422
+    assert post(w['mobile'],path,{**body,'stop_id':str(uuid4())}).status_code==422
+    check(post(w['mobile'],path,{**body,'stop_id':stop}))
+    with Session(owner_engine) as db:
+        issue=db.scalar(select(Issue).where(Issue.order_id==UUID(order['id'])))
+        assert str(issue.stop_id)==stop and issue.photo_ids==[photo['id']]

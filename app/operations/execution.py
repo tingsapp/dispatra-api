@@ -135,15 +135,17 @@ def upload_evidence(db, actor, stop_id, data, key):
 
 
 def upload_report_photo(db, actor, stop_id, data, key):
-    """A photo for a stop report (damage, access, missing items) at any pickup or drop-off of the driver's executing route."""
+    """A photo for a stop report (damage, access, missing items) at any pickup or drop-off of the driver's current route.
+    A planned route accepts photos too, so a progress question asked before the start can carry them."""
     def run():
         stop = record(db, OrderStop, actor, stop_id)
         order = record(db, Order, actor, stop.order_id)
         if not order.route_id: raise HTTPException(409, 'Order is not assigned.')
         route = own_route(db, actor, order.route_id)
-        if route.status != 'IN_PROGRESS': raise HTTPException(409, 'Report photos require an executing route.')
+        if route.status not in ('PLANNED', 'IN_PROGRESS'): raise HTTPException(409, 'Report photos require a current route.')
         if data.kind != 'PHOTO': raise HTTPException(422, 'Report evidence must be a photo.')
-        if data.captured_at < route.started_at or data.captured_at > now(): raise HTTPException(422, 'Photo capture time is outside this route.')
+        since = route.started_at or route.planned_at
+        if data.captured_at < since or data.captured_at > now(): raise HTTPException(422, 'Photo capture time is outside this route.')
         content = base64.b64decode(data.content_base64)
         row = Evidence(organization_id=actor.organization_id, stop_id=stop.id, driver_id=actor.driver_id, kind='ISSUE_PHOTO',
             captured_at=data.captured_at, media_type=data.media_type, content=data.content_base64, digest=hashlib.sha256(content).hexdigest())
