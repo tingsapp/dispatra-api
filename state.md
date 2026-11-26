@@ -1,3 +1,6 @@
+Published 2026-11-26T16:07Z as stale_reload_20261126: web e06cad8 only (a tab left open over a release reloads once on a missing page file). No API files, migration or restart (dispatra-api up since 08:33). The release kept every previous asset (76 -> 94 files). Backup /var/backups/dispatra/stale-reload-20261126T160723Z; previous web /opt/dispatra/.web-stale-reload-old-ad4528d4-3c2c-47ca-b317-079e9ba7b5d0; stage ../work/stale-reload-release-20261126 (web-only deploy template).
+Checks: new index served with the reload, the 08:34 build's App chunk still 200, availability ok, no errors.
+
 2026-11-26 Live fix (no code release): login showed Failed to fetch in tabs opened before the 08:34 web swap, whose lazy page chunks were gone. Copied the previous releases' web assets into /opt/dispatra/web/assets (20 -> 76 files, nothing overwritten, index.html unchanged); the old App chunk serves 200 again. Release scripts now keep the previous build's assets (work/stop-reasons-clean-release-20261126/deploy.py, the template for the next release).
 Checks: dispatra.com and /api/v1/availability 200; login endpoint answers (422 on an empty body) from the page; old chunk 200.
 
