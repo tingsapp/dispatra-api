@@ -1,3 +1,6 @@
+2026-11-26 Report and progress-reply photos capped at 4 (IssueInput.photo_ids and Reply.photo_ids max_length 5→4); openapi.json regenerated (schema.d.ts unchanged, no maxItems there). Not released.
+Checks: new test_reports_and_progress_replies_take_at_most_four_photos plus a no-DB neighbour 2/2.
+
 2026-11-26 Driver question views now carry the incident's stop_id: RLS hid order_watch_incidents from drivers, so every QuestionView sent stop_id null (the driver app could not name the stop). question_view reads only Incident.stop_id in company scope for the given actor. Published 2026-11-26T04:37Z as question_stop_20261126 (API 70ca651: commands.py, queries.py, tests/test_order_watch.py; hash-checked against ac38e1b, no drift; no migration; dispatra-api and dispatra-operational restarted; driver 23cc917 committed, not pushed). Backup /var/backups/dispatra/question-stop-20261126T043644Z; stage ../work/question-stop-release-20261126.
 Checks: test_order_watch subset (ready-time follow-up now asserts the stop_id, stopless photos, versioned reply, safety reply, access): 5/5 on dispatra_events_test. No schema or openapi change. Live: services active, /health 200, no warnings; the phone's DTO-8011 card now shows Drop-off with its address.
 

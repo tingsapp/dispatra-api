@@ -258,3 +258,13 @@ def test_stopless_question_reply_files_photos_at_a_remaining_stop_of_its_order(s
     with Session(owner_engine) as db:
         issue=db.scalar(select(Issue).where(Issue.order_id==UUID(order['id'])))
         assert str(issue.stop_id)==stop and issue.photo_ids==[photo['id']]
+
+
+def test_reports_and_progress_replies_take_at_most_four_photos():
+    from pydantic import ValidationError
+    from app.operations.schemas import IssueInput
+    from app.order_watch.schemas import Reply
+    four,five=[uuid4() for _ in range(4)],[uuid4() for _ in range(5)]
+    Reply(version=1,reasons=['ACCESS_BLOCKED'],photo_ids=four);IssueInput(stop_id=uuid4(),reasons=['ACCESS_BLOCKED'],photo_ids=four)
+    with pytest.raises(ValidationError):Reply(version=1,reasons=['ACCESS_BLOCKED'],photo_ids=five)
+    with pytest.raises(ValidationError):IssueInput(stop_id=uuid4(),reasons=['ACCESS_BLOCKED'],photo_ids=five)

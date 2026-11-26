@@ -17,7 +17,7 @@ class Reply(Input):
     reasons: list[Reason] = Field(default_factory=list, max_length=15)
     details: str = Field(default='', max_length=1000)
     estimated_ready_at: AwareDatetime | None = None
-    photo_ids: list[UUID] = Field(default_factory=list, max_length=5)
+    photo_ids: list[UUID] = Field(default_factory=list, max_length=4)
     # Where the photos were taken, for a question that names no stop: a remaining stop of the question's Order.
     stop_id: UUID | None = None
 

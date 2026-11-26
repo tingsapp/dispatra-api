@@ -588,7 +588,7 @@ class IssueInput(Input):
     kind: Literal['FAILED_PICKUP', 'FAILED_DELIVERY', 'SHORT_LOAD', 'WRONG_ADDRESS', 'UNSAFE', 'VEHICLE', 'OTHER'] | None = None
     description: Annotated[str, Field(max_length=2000)] = ''
     reasons: list[Reason] = Field(default_factory=list, max_length=15)
-    photo_ids: list[UUID] = Field(default_factory=list, max_length=5)
+    photo_ids: list[UUID] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode='after')
     def report(self):

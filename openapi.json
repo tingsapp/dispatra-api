@@ -39166,7 +39166,7 @@
               "format": "uuid"
             },
             "type": "array",
-            "maxItems": 5,
+            "maxItems": 4,
             "title": "Photo Ids"
           }
         },
@@ -42610,7 +42610,7 @@
               "format": "uuid"
             },
             "type": "array",
-            "maxItems": 5,
+            "maxItems": 4,
             "title": "Photo Ids"
           },
           "stop_id": {
