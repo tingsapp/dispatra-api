@@ -38,4 +38,4 @@ def questions(db,actor):
             Route.driver_id==actor.driver_id,Route.generation==Question.generation,Order.route_id==Route.id,
             Order.status.in_(('ASSIGNED','IN_PROGRESS')),Route.status.in_(('PLANNED','IN_PROGRESS')))
         .order_by(Question.created_at).limit(100))
-    return [question_view(db,q) for q in db.scalars(query)]
+    return [question_view(db,q,actor) for q in db.scalars(query)]

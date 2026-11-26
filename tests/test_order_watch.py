@@ -82,6 +82,7 @@ def test_driver_reply_is_versioned_idempotent_reported_evidence_and_not_resoluti
     w=setup;order,route,visit=arrived(w)
     monkeypatch.setattr(scan,'now',lambda:now()+timedelta(minutes=11));review(w)
     q=check(w['mobile'].get(BASE+'/driver/operational/questions'))[0]
+    assert q['stop_id']==visit['stop_id']  # The driver sees which stop it asks about, though RLS hides the incident.
     body=dict(version=q['version'],reason='ITEMS_NOT_READY',details='Warehouse says another half hour',estimated_ready_at=(now()+timedelta(minutes=30)).isoformat())
     key=str(uuid4());path=BASE+f'/driver/operational/questions/{q["id"]}/reply'
     saved=check(post(w['mobile'],path,body,key));assert saved==check(post(w['mobile'],path,body,key))

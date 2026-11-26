@@ -114,11 +114,15 @@ def reported(db, actor, issue, monitor_incident_id=None):
         return row
 
 
-def question_view(db,row):
+def question_view(db,row,actor=None):
     order=db.get(Order,row.order_id)
-    incident=db.get(Incident,row.incident_id)
+    # RLS hides incidents from drivers: widen to company scope for the incident's stop id only.
+    stop=select(Incident.stop_id).where(Incident.organization_id==row.organization_id,Incident.id==row.incident_id)
+    if actor:
+        with company_scope(db,actor):stop_id=db.scalar(stop)
+    else:stop_id=db.scalar(stop)
     return jsonable_encoder(dict(id=row.id,version=row.version,order_id=row.order_id,order_number=order.number if order else '',prompt=row.prompt,
-        stop_id=incident.stop_id if incident else None,choices=CHOICES,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
+        stop_id=stop_id,choices=CHOICES,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
         details=row.details,estimated_ready_at=row.estimated_ready_at,
         created_at=row.created_at,answered_at=row.answered_at))
 
@@ -187,7 +191,7 @@ def reply(db, actor, identity, data, key):
                     f'watch-report-{q.id}',monitor_incident_id=row.id)
                 touch(db,actor,row,'watch.updated')
             else:touch(db,actor,row,'watch.driver_replied')
-        return question_view(db,q)
+        return question_view(db,q,actor)
     # Check current assignment even on an idempotent replay; released drivers lose access.
     own_question(db,actor,identity)
     return once(db,actor,key,f'watch-reply:{identity}',data.model_dump(mode='json'),run)
