@@ -12,7 +12,6 @@ from app.operations.common import company_lock, record, version
 from app.operations.models import Order, Route
 from app.operations.orders import company_scope
 from .models import Incident, Question
-from .schemas import CHOICES
 from app.operations import stop_reasons
 from .evidence import fact
 from .playbooks import suggestions,advice_for_reason
@@ -48,7 +47,7 @@ def apply(db, actor, order, signal):
         if row.certainty=='REPORTED' and not row.source_issue_id:
             updates.pop('certainty',None); updates.pop('description',None)
             question=db.scalar(select(Question).where(Question.organization_id==actor.organization_id,Question.incident_id==row.id))
-            updates['suggestions']=advice_for_reason(question.reason) if question and question.status=='ANSWERED' else row.suggestions
+            updates['suggestions']=advice_for_reason(stop_reasons.policy_for(db,actor.organization_id).base(question.reason)) if question and question.status=='ANSWERED' and question.reason else row.suggestions
             updates['evidence'] = [e for e in row.evidence if e['source'] in {'Driver reply','Driver estimate and stop execution'}] + signal['evidence']
         changed = any(getattr(row,key)!=value for key,value in updates.items())
         urgent = row.severity != signal['severity'] and signal['severity']=='CRITICAL'
@@ -121,8 +120,12 @@ def question_view(db,row,actor=None):
     if actor:
         with company_scope(db,actor):stop_id=db.scalar(stop)
     else:stop_id=db.scalar(stop)
+    from app.operations.models import OrderStop
+    kind=db.scalar(select(OrderStop.kind).where(OrderStop.organization_id==row.organization_id,OrderStop.id==stop_id)) if stop_id else None
+    # The company's reasons for this question's stop kind, plus Progress is normal.
+    choices=stop_reasons.policy_for(db,row.organization_id).choices(report=False,stop_kind=kind)
     return jsonable_encoder(dict(id=row.id,version=row.version,order_id=row.order_id,order_number=order.number if order else '',prompt=row.prompt,
-        stop_id=stop_id,choices=CHOICES,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
+        stop_id=stop_id,choices=choices,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
         details=row.details,estimated_ready_at=row.estimated_ready_at,
         created_at=row.created_at,answered_at=row.answered_at))
 
@@ -158,13 +161,15 @@ def reply(db, actor, identity, data, key):
         current=now()
         if data.estimated_ready_at and data.estimated_ready_at<current:
             raise HTTPException(422,'Expected ready time must be in the future.')
-        reasons=list(data.reasons);reason=stop_reasons.primary(reasons)
+        reasons=list(data.reasons);policy=stop_reasons.company_policy(db,actor)
+        if problem:=policy.check(reasons,data.details,data.photo_ids,report=False):raise HTTPException(422,problem)
+        reason=policy.primary(reasons)
         q.status,q.reason,q.reasons,q.details='ANSWERED',reason,reasons,data.details.strip()
         q.estimated_ready_at,q.answered_at=data.estimated_ready_at,current
         q.version+=1;q.updated_at=current;db.flush()
         with company_scope(db,actor):
             row=record(db,Incident,actor,q.incident_id,True)
-            label='; '.join(stop_reasons.label(r) for r in reasons)
+            label='; '.join(policy.label(r) for r in reasons)
             row.certainty='REPORTED'
             row.description=f'Driver reports: {label}.'+(f' {q.details}' if q.details else '')
             row.description=row.description[:1000]
@@ -180,11 +185,11 @@ def reply(db, actor, identity, data, key):
                     row.severity='CRITICAL'
                     row.evidence.insert(2,fact('Commitments threatened by reported ready time',', '.join(threatened),'Driver estimate compared with booked windows',current))
             # Acknowledgement/explanation is not proof of recovery. Only objective progress or explicit issue resolution closes it.
-            row.suggestions=advice_for_reason(reason)
-            if reason in {'UNSAFE','DAMAGED_ITEM','VEHICLE_PROBLEM'}:row.severity='CRITICAL'
+            row.suggestions=advice_for_reason(policy.base(reason))
+            if policy.base(reason) in {'UNSAFE','DAMAGED_ITEM','VEHICLE_PROBLEM'}:row.severity='CRITICAL'
             if reason=='NO_PROBLEM':row.suggestions=['Verify that the current milestone is recorded and continue monitoring the booked commitments.']
             # A reason that holds completion, or photos to keep, files the same stop report as the Report screen.
-            if reason!='NO_PROBLEM' and (stop_reasons.holds_completion(reasons) or data.photo_ids):
+            if reason!='NO_PROBLEM' and (policy.holds_completion(reasons) or data.photo_ids):
                 from app.operations.issues import report
                 from app.operations.schemas import IssueInput
                 report(db,actor,q.order_id,IssueInput(stop_id=report_stop(db,actor,q,row,data),reasons=reasons,description=q.details,photo_ids=data.photo_ids),

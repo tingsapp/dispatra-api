@@ -36,7 +36,7 @@ def validate_logo(value: str) -> str:
     raise ValueError('Use a PNG/JPEG logo up to 200 KB or an HTTP(S) image URL')
 
 
-from .stop_reasons import Reason
+from .stop_reasons import Reason, ReasonCode, Responsibility, Charge, Stops, BY_VALUE, CUSTOM_PREFIX
 
 class Address(Input):
     text: Annotated[str, Field(min_length=5, max_length=500)]
@@ -98,6 +98,35 @@ def default_work_hours():
     return [WorkDay(day=day, open=True, start='06:00', end='19:00') for day in WEEKDAYS]
 
 
+class ReasonPolicy(Input):
+    """One driver reason in a company's list: a built-in (code = its value, base ignored) or a CUSTOM_ reason on a built-in base."""
+    code: ReasonCode
+    base: Reason | None = None
+    label: Annotated[str, Field(min_length=2, max_length=60)]
+    stops: Stops = 'BOTH'
+    active: StrictBool = True
+    responsibility: Responsibility
+    charge: Charge
+    notes_required: StrictBool = False
+    photo_required: StrictBool = False
+
+    @model_validator(mode='after')
+    def known_base(self):
+        self.label = self.label.strip()
+        if self.code == 'NO_PROBLEM': raise ValueError('Progress is normal is not a stop reason')
+        if self.code in BY_VALUE: self.base = None
+        elif not self.code.startswith(CUSTOM_PREFIX): raise ValueError('Custom reason codes start with CUSTOM_')
+        elif self.base is None or self.base == 'NO_PROBLEM': raise ValueError('Choose what a custom reason means')
+        return self
+
+
+def default_reason_policies():
+    """Dispatra's built-in reasons with their defaults, so every company sees and edits a complete list."""
+    from .stop_reasons import DEFAULT
+    return [ReasonPolicy(code=r.code, label=r.label, stops=r.stops, responsibility=r.responsibility, charge=r.charge,
+        notes_required=r.notes_required, photo_required=r.photo_required) for r in DEFAULT.rows.values()]
+
+
 class SettingsData(Input):
     company_name: Name = 'Dispatra Logistics'
     tms_workspace: StrictBool = False
@@ -122,6 +151,10 @@ class SettingsData(Input):
     # Extra time: the first N minutes at each stop are free, then each started N minutes costs the amount; 0 disables.
     extra_time_minutes: int = Field(default=30, ge=5, le=480)
     extra_time_amount: Money = Decimal('50')
+    # Driver reasons in display order: the company's policy over Dispatra's built-ins (see stop_reasons).
+    stop_reasons: list[ReasonPolicy] = Field(default_factory=default_reason_policies, max_length=60)
+    # Extra time above this amount at one stop waits for dispatcher review even when its reasons charge automatically.
+    extra_time_review_above: Money | None = None
     # Planned time at each stop by load size; bookings that omit a stop's service minutes use it (routing, Hourly prices, Order Watch).
     stop_minutes_small_parcel: int = Field(default=10, ge=0, le=480)
     stop_minutes_ltl: int = Field(default=20, ge=0, le=480)
@@ -147,6 +180,15 @@ class SettingsData(Input):
         prefixes = [(p.replace(' ', '').upper(), i) for i,z in enumerate(self.dispatch_zones) for p in z.postal_codes]
         if any(i != j and (a.startswith(b) or b.startswith(a)) for a,i in prefixes for b,j in prefixes):
             raise ValueError('Dispatch zones must not have overlapping postal prefixes')
+        return self
+
+    @model_validator(mode='after')
+    def reason_list(self):
+        codes = [r.code for r in self.stop_reasons]
+        if len(set(codes)) != len(codes): raise ValueError('Each reason can be listed once')
+        labels = [r.label.casefold() for r in self.stop_reasons]
+        if len(set(labels)) != len(labels): raise ValueError('Reason names must be unique')
+        if self.stop_reasons and not any(r.active for r in self.stop_reasons): raise ValueError('Keep at least one reason active')
         return self
 
     @model_validator(mode='after')
@@ -582,12 +624,13 @@ class Telemetry(Input):
 
 
 class IssueInput(Input):
-    """A stop report. Current drivers send `reasons` (Dispatra's fixed list) and notes; the kind and description follow.
+    """A stop report. Current drivers send `reasons` (the company's list) and notes; the kind and description follow.
     Older clients send a kind and description only."""
     stop_id: UUID | None = None
     kind: Literal['FAILED_PICKUP', 'FAILED_DELIVERY', 'SHORT_LOAD', 'WRONG_ADDRESS', 'UNSAFE', 'VEHICLE', 'OTHER'] | None = None
     description: Annotated[str, Field(max_length=2000)] = ''
-    reasons: list[Reason] = Field(default_factory=list, max_length=15)
+    # Codes from the company's reason list (GET /driver/report-reasons); the company's rules are checked when filed.
+    reasons: list[ReasonCode] = Field(default_factory=list, max_length=15)
     photo_ids: list[UUID] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode='after')
@@ -597,7 +640,6 @@ class IssueInput(Input):
         if not self.reasons:
             if self.kind is None or len(self.description.strip()) < 3: raise ValueError('Choose at least one reason')
             return self
-        if 'OTHER' in self.reasons and len(self.description.strip()) < 3: raise ValueError('Describe the issue when choosing Another issue')
         return self
 
 
@@ -657,8 +699,9 @@ class ExtraTimeStop(BaseModel):
     amount: Decimal
     reasons: list[str] = Field(default_factory=list)
     responsibility: Literal['SHIPPER', 'CARRIER', 'UNDECIDED']
-    # CHARGED by default, EXCLUDED when the driver reported a carrier reason, WAIVED or CHARGED by a dispatcher.
-    status: Literal['CHARGED', 'EXCLUDED', 'WAIVED']
+    # CHARGED automatically; EXCLUDED for a carrier or never-charged reason; REVIEW waits for a dispatcher (a reason
+    # set to review, or above the company's review amount); WAIVED or CHARGED once a dispatcher decides.
+    status: Literal['CHARGED', 'EXCLUDED', 'REVIEW', 'WAIVED']
     decided_by_dispatcher: bool = False
 
 
@@ -845,8 +888,12 @@ class IssueView(RecordView):
 
 
 class ReasonChoice(BaseModel):
-    value: Reason
+    """A reason the driver can choose, with the company's rules for it."""
+    value: str
     label: str
+    stops: Literal['BOTH', 'PICKUP', 'DROPOFF'] = 'BOTH'
+    notes_required: bool = False
+    photo_required: bool = False
 
 
 class DutyView(RecordView):

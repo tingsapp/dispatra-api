@@ -285,3 +285,27 @@ def test_reports_and_progress_replies_take_at_most_four_photos():
     Reply(version=1,reasons=['ACCESS_BLOCKED'],photo_ids=four);IssueInput(stop_id=uuid4(),reasons=['ACCESS_BLOCKED'],photo_ids=four)
     with pytest.raises(ValidationError):Reply(version=1,reasons=['ACCESS_BLOCKED'],photo_ids=five)
     with pytest.raises(ValidationError):IssueInput(stop_id=uuid4(),reasons=['ACCESS_BLOCKED'],photo_ids=five)
+
+
+def test_company_reason_policy_drives_the_driver_list_report_rules_and_labels(setup):
+    w=setup;order=new_order(w,scheduled_at=now().isoformat());route=assign(w,order)
+    saved=check(w['client'].get(BASE+'/settings'))
+    policy=[dict(code='CUSTOM_DOCK_BUSY',base='WAITING_FOR_STAFF',label='Dock busy',stops='PICKUP',responsibility='SHIPPER',charge='AUTO',notes_required=True),
+        dict(code='DAMAGED_ITEM',label='Item damaged',responsibility='UNDECIDED',charge='REVIEW',photo_required=True),
+        dict(code='TRAFFIC',label='Traffic delay',responsibility='UNDECIDED',charge='AUTO',active=False)]
+    check(w['client'].put(BASE+'/settings',json={'version':saved['version'],'data':{**saved['data'],'stop_reasons':policy,'extra_time_review_above':'100'}},headers={'Idempotency-Key':str(uuid4())}))
+    # The driver's list follows the company's order, names, stops and rules; hidden reasons are gone.
+    choices=check(w['mobile'].get(BASE+'/driver/report-reasons'))
+    assert [c['value'] for c in choices][:2]==['CUSTOM_DOCK_BUSY','DAMAGED_ITEM'] and 'TRAFFIC' not in [c['value'] for c in choices]
+    assert choices[0]=={'value':'CUSTOM_DOCK_BUSY','label':'Dock busy','stops':'PICKUP','notes_required':True,'photo_required':False}
+    stop=route['stops'][0]['stop_id'];path=BASE+f'/driver/stops/{stop}/issue'
+    refused=post(w['mobile'],path,dict(reasons=['CUSTOM_DOCK_BUSY']))
+    assert refused.status_code==422 and 'Describe the issue when choosing Dock busy' in refused.text
+    assert 'Add a photo when choosing Item damaged' in post(w['mobile'],path,dict(reasons=['DAMAGED_ITEM'],description='Crushed')).text
+    assert 'no longer offered' in post(w['mobile'],path,dict(reasons=['TRAFFIC'])).text
+    check(post(w['mobile'],path,dict(reasons=['CUSTOM_DOCK_BUSY'],description='Two trucks ahead')),201)
+    with Session(owner_engine) as db:
+        issue=db.scalar(select(Issue).where(Issue.order_id==UUID(order['id'])))
+        assert issue.reasons==['CUSTOM_DOCK_BUSY'] and issue.kind=='OTHER' and issue.holds_completion is False
+    feed=check(w['client'].get(BASE+f'/orders/{order["id"]}/progress-updates'))
+    assert [(r['reasons'],r['responsibility'],r['notes']) for r in feed]==[(['Dock busy'],'SHIPPER','Two trucks ahead')]

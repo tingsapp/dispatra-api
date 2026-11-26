@@ -214,9 +214,10 @@ def progress_updates(slug: str, identity: UUID, db: DB, user: User = Depends(aut
     def place(stop_id):
         stop=stops.get(stop_id)
         return {'stop_kind':stop.kind if stop else None,'address':stop.data['address']['text'] if stop else ''}
+    policy=stop_reasons.company_policy(db,user)
     def said(reasons):
         reasons=[r for r in reasons if r != 'NO_PROBLEM'] or reasons
-        return {'reasons':[stop_reasons.label(r) for r in reasons],'responsibility':stop_reasons.stop_responsibility(reasons) if reasons else None}
+        return {'reasons':[policy.label(r) for r in reasons],'responsibility':policy.stop_responsibility(reasons) if reasons else None}
     result,shown=[],set()
     for q,incident in db.execute(select(Question,Incident).join(Incident,Incident.id == Question.incident_id).where(
             Question.organization_id == user.organization_id,Question.order_id == order.id)):

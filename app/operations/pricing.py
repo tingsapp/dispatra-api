@@ -282,11 +282,21 @@ def stop_reasons_by_stop(db, actor, order):
     return {stop: [r for r in dict.fromkeys(reasons) if r != 'NO_PROBLEM'] for stop, reasons in result.items()}
 
 
+def extra_time_status(policy, reasons, total, review_above):
+    """Who is responsible for a stop's Extra time and what happens to it under the company's policy."""
+    side = policy.stop_responsibility(reasons) if reasons else 'UNDECIDED'
+    charge = policy.charge(reasons) if reasons else 'AUTO'
+    if side == 'CARRIER' or charge == 'NEVER': return side, 'EXCLUDED'
+    return side, 'REVIEW' if charge == 'REVIEW' or review_above is not None and total > review_above else 'CHARGED'
+
+
 def apply_extra_time(db, actor, order):
-    """On completion, price Extra time per driver-confirmed stop that ran past the free time. A stop whose driver
-    reported a carrier reason is EXCLUDED; every other stop is CHARGED until a dispatcher waives it.
-    The rule is the one saved in the Order's price; Orders priced before the rule, imported prices and
-    stops closed by a dispatcher override are not charged."""
+    """On completion, price Extra time per driver-confirmed stop that ran past the free time, by the company's reason
+    policy at that moment (stored on the Order, so later settings changes never rewrite it): a stop whose reasons are
+    the carrier's or never charged is EXCLUDED; one with a review reason, or above the company's review amount, waits
+    in REVIEW for a dispatcher; every other stop is CHARGED until a dispatcher waives it. The free time and rate are
+    the ones saved in the Order's price; Orders priced before the rule, imported prices and stops closed by a
+    dispatcher override are not charged."""
     from .models import OrderStop, RouteStop
     pricing = order.pricing or {}
     rule = (pricing.get('context') or {}).get('settings') or {}
@@ -299,16 +309,19 @@ def apply_extra_time(db, actor, order):
         RouteStop.arrived_at.is_not(None), RouteStop.completed_at.is_not(None))).all()
     names = stop_names(order)
     reasons = stop_reasons_by_stop(db, actor, order)
+    policy = stop_reasons.company_policy(db, actor)
+    review_above = settings(db, actor)[1].extra_time_review_above
     stops = []
     for visit, stop in sorted(visits, key=lambda row: row[0].arrived_at):
         if (visit.movements or {}).get('completed_by') == 'DISPATCHER': continue
         over, blocks = blocks_over(minutes_free, visit.arrived_at, visit.completed_at)
         if not blocks: continue
         said = reasons.get(stop.id, [])
-        side = stop_reasons.stop_responsibility(said) if said else 'UNDECIDED'
+        total = money(blocks * amount)
+        side, status = extra_time_status(policy, said, total, review_above)
         stops.append({'stop_id': str(stop.id), 'stop': names.get(str(stop.id), stop.kind.title()), 'minutes_over': over,
-            'amount': str(money(blocks * amount)), 'reasons': [stop_reasons.label(r) for r in said], 'responsibility': side,
-            'status': 'EXCLUDED' if side == 'CARRIER' else 'CHARGED', 'decided_by_dispatcher': False})
+            'amount': str(total), 'reasons': [policy.label(r) for r in said], 'responsibility': side,
+            'status': status, 'decided_by_dispatcher': False})
     if not stops: return
     retain_price(db, order)
     order.pricing = priced_extra_time({**pricing, 'extra_time': {'minutes_free': minutes_free, 'amount': str(amount), 'stops': stops}})

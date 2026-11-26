@@ -4,7 +4,7 @@ from app.models import Organization
 from app.operations.models import Order,Route
 from .models import Incident,Question
 from .commands import OPEN,question_view
-from .schemas import CHOICES
+from app.operations import stop_reasons
 
 
 def incident_view(db,row):
@@ -16,7 +16,7 @@ def incident_view(db,row):
     return jsonable_encoder({**{field:getattr(row,field) for field in fields},
         'company_name':db.scalar(select(Organization.name).where(Organization.id==row.organization_id)),
         'order_number':order.number if order else '',
-        'driver_reply':q.details or next((c['label'] for c in CHOICES if c['value']==q.reason),'') if q and q.status=='ANSWERED' else None})
+        'driver_reply':q.details or (stop_reasons.policy_for(db,row.organization_id).label(q.reason) if q.reason else '') if q and q.status=='ANSWERED' else None})
 
 
 def incidents(db,actor,status,before,limit):

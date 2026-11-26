@@ -115,10 +115,10 @@ def report_photo(slug: str, identity: UUID, data: EvidenceInput, db: DB, idempot
 
 
 @router.get('/driver/report-reasons', response_model=list[ReasonChoice])
-def report_reasons(slug: str, user: User = Depends(auth.driver)):
-    """Dispatra's fixed stop report reasons, in display order."""
-    from .stop_reasons import choices
-    return choices()
+def report_reasons(slug: str, db: DB, user: User = Depends(auth.driver)):
+    """The company's active stop report reasons in display order, each with the stops it applies to and its notes and photo rules."""
+    from .stop_reasons import company_policy
+    return company_policy(db, user).choices()
 
 
 @router.get('/driver/stops/{identity}/evidence', response_model=list[ProofEvidence])

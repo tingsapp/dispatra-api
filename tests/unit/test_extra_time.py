@@ -34,7 +34,9 @@ def test_responsibility_follows_the_reasons_at_a_stop():
 def test_report_and_reply_share_one_reason_list():
     assert IssueInput(reasons=['DAMAGED_ITEM'], photo_ids=[]).reasons == ['DAMAGED_ITEM']
     assert IssueInput(kind='OTHER', description='Legacy report').reasons == []
-    for bad in [dict(), dict(reasons=['OTHER']), dict(reasons=['NO_PROBLEM']), dict(reasons=['UNSAFE', 'UNSAFE'])]:
+    # Notes and photo rules belong to the company's policy (stop_reasons.Policy.check), not the schema.
+    assert IssueInput(reasons=['OTHER']).reasons == ['OTHER']
+    for bad in [dict(), dict(reasons=['NO_PROBLEM']), dict(reasons=['UNSAFE', 'UNSAFE']), dict(reasons=['not a code'])]:
         with pytest.raises(ValidationError): IssueInput(**bad)
     assert Reply(version=1, reason='TRAFFIC').reasons == ['TRAFFIC']
     assert Reply(version=1, reasons=['WAITING_FOR_STAFF', 'ACCESS_BLOCKED']).reasons == ['WAITING_FOR_STAFF', 'ACCESS_BLOCKED']

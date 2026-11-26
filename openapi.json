@@ -12893,7 +12893,7 @@
           "Driver execution"
         ],
         "summary": "Report Reasons",
-        "description": "Dispatra's fixed stop report reasons, in display order.",
+        "description": "The company's active stop report reasons in display order, each with the stops it applies to and its notes and photo rules.",
         "operationId": "report_reasons_api_v1_companies__slug__driver_report_reasons_get",
         "parameters": [
           {
@@ -33559,28 +33559,31 @@
         "properties": {
           "value": {
             "type": "string",
-            "enum": [
-              "ITEMS_NOT_READY",
-              "WAITING_FOR_STAFF",
-              "HANDLING_IN_PROGRESS",
-              "ACCESS_BLOCKED",
-              "RECIPIENT_UNAVAILABLE",
-              "WRONG_ADDRESS",
-              "MISSING_ITEMS",
-              "DAMAGED_ITEM",
-              "VEHICLE_PROBLEM",
-              "WRONG_EQUIPMENT",
-              "NEED_HELPER",
-              "TRAFFIC",
-              "UNSAFE",
-              "OTHER",
-              "NO_PROBLEM"
-            ],
             "title": "Value"
           },
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "stops": {
+            "type": "string",
+            "enum": [
+              "BOTH",
+              "PICKUP",
+              "DROPOFF"
+            ],
+            "title": "Stops",
+            "default": "BOTH"
+          },
+          "notes_required": {
+            "type": "boolean",
+            "title": "Notes Required",
+            "default": false
+          },
+          "photo_required": {
+            "type": "boolean",
+            "title": "Photo Required",
+            "default": false
           }
         },
         "type": "object",
@@ -38198,6 +38201,7 @@
             "enum": [
               "CHARGED",
               "EXCLUDED",
+              "REVIEW",
               "WAIVED"
             ],
             "title": "Status"
@@ -39265,23 +39269,7 @@
           "reasons": {
             "items": {
               "type": "string",
-              "enum": [
-                "ITEMS_NOT_READY",
-                "WAITING_FOR_STAFF",
-                "HANDLING_IN_PROGRESS",
-                "ACCESS_BLOCKED",
-                "RECIPIENT_UNAVAILABLE",
-                "WRONG_ADDRESS",
-                "MISSING_ITEMS",
-                "DAMAGED_ITEM",
-                "VEHICLE_PROBLEM",
-                "WRONG_EQUIPMENT",
-                "NEED_HELPER",
-                "TRAFFIC",
-                "UNSAFE",
-                "OTHER",
-                "NO_PROBLEM"
-              ]
+              "pattern": "^[A-Z][A-Z0-9_]{1,39}$"
             },
             "type": "array",
             "maxItems": 15,
@@ -39300,7 +39288,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "IssueInput",
-        "description": "A stop report. Current drivers send `reasons` (Dispatra's fixed list) and notes; the kind and description follow.\nOlder clients send a kind and description only."
+        "description": "A stop report. Current drivers send `reasons` (the company's list) and notes; the kind and description follow.\nOlder clients send a kind and description only."
       },
       "IssueResolve": {
         "properties": {
@@ -42124,24 +42112,7 @@
           "reason": {
             "anyOf": [
               {
-                "type": "string",
-                "enum": [
-                  "ITEMS_NOT_READY",
-                  "WAITING_FOR_STAFF",
-                  "HANDLING_IN_PROGRESS",
-                  "ACCESS_BLOCKED",
-                  "RECIPIENT_UNAVAILABLE",
-                  "WRONG_ADDRESS",
-                  "MISSING_ITEMS",
-                  "DAMAGED_ITEM",
-                  "VEHICLE_PROBLEM",
-                  "WRONG_EQUIPMENT",
-                  "NEED_HELPER",
-                  "TRAFFIC",
-                  "UNSAFE",
-                  "OTHER",
-                  "NO_PROBLEM"
-                ]
+                "type": "string"
               },
               {
                 "type": "null"
@@ -42151,24 +42122,7 @@
           },
           "reasons": {
             "items": {
-              "type": "string",
-              "enum": [
-                "ITEMS_NOT_READY",
-                "WAITING_FOR_STAFF",
-                "HANDLING_IN_PROGRESS",
-                "ACCESS_BLOCKED",
-                "RECIPIENT_UNAVAILABLE",
-                "WRONG_ADDRESS",
-                "MISSING_ITEMS",
-                "DAMAGED_ITEM",
-                "VEHICLE_PROBLEM",
-                "WRONG_EQUIPMENT",
-                "NEED_HELPER",
-                "TRAFFIC",
-                "UNSAFE",
-                "OTHER",
-                "NO_PROBLEM"
-              ]
+              "type": "string"
             },
             "type": "array",
             "title": "Reasons"
@@ -42757,28 +42711,31 @@
         "properties": {
           "value": {
             "type": "string",
-            "enum": [
-              "ITEMS_NOT_READY",
-              "WAITING_FOR_STAFF",
-              "HANDLING_IN_PROGRESS",
-              "ACCESS_BLOCKED",
-              "RECIPIENT_UNAVAILABLE",
-              "WRONG_ADDRESS",
-              "MISSING_ITEMS",
-              "DAMAGED_ITEM",
-              "VEHICLE_PROBLEM",
-              "WRONG_EQUIPMENT",
-              "NEED_HELPER",
-              "TRAFFIC",
-              "UNSAFE",
-              "OTHER",
-              "NO_PROBLEM"
-            ],
             "title": "Value"
           },
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "stops": {
+            "type": "string",
+            "enum": [
+              "BOTH",
+              "PICKUP",
+              "DROPOFF"
+            ],
+            "title": "Stops",
+            "default": "BOTH"
+          },
+          "notes_required": {
+            "type": "boolean",
+            "title": "Notes Required",
+            "default": false
+          },
+          "photo_required": {
+            "type": "boolean",
+            "title": "Photo Required",
+            "default": false
           }
         },
         "type": "object",
@@ -42786,16 +42743,17 @@
           "value",
           "label"
         ],
-        "title": "ReasonChoice"
+        "title": "ReasonChoice",
+        "description": "A reason the driver can choose, with the company's rules for it."
       },
-      "Reply": {
+      "ReasonPolicy": {
         "properties": {
-          "version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Version"
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,39}$",
+            "title": "Code"
           },
-          "reason": {
+          "base": {
             "anyOf": [
               {
                 "type": "string",
@@ -42821,28 +42779,92 @@
                 "type": "null"
               }
             ],
+            "title": "Base"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 2,
+            "title": "Label"
+          },
+          "stops": {
+            "type": "string",
+            "enum": [
+              "BOTH",
+              "PICKUP",
+              "DROPOFF"
+            ],
+            "title": "Stops",
+            "default": "BOTH"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": true
+          },
+          "responsibility": {
+            "type": "string",
+            "enum": [
+              "SHIPPER",
+              "CARRIER",
+              "UNDECIDED"
+            ],
+            "title": "Responsibility"
+          },
+          "charge": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "REVIEW",
+              "NEVER"
+            ],
+            "title": "Charge"
+          },
+          "notes_required": {
+            "type": "boolean",
+            "title": "Notes Required",
+            "default": false
+          },
+          "photo_required": {
+            "type": "boolean",
+            "title": "Photo Required",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "responsibility",
+          "charge"
+        ],
+        "title": "ReasonPolicy",
+        "description": "One driver reason in a company's list: a built-in (code = its value, base ignored) or a CUSTOM_ reason on a built-in base."
+      },
+      "Reply": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{1,39}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Reason"
           },
           "reasons": {
             "items": {
               "type": "string",
-              "enum": [
-                "ITEMS_NOT_READY",
-                "WAITING_FOR_STAFF",
-                "HANDLING_IN_PROGRESS",
-                "ACCESS_BLOCKED",
-                "RECIPIENT_UNAVAILABLE",
-                "WRONG_ADDRESS",
-                "MISSING_ITEMS",
-                "DAMAGED_ITEM",
-                "VEHICLE_PROBLEM",
-                "WRONG_EQUIPMENT",
-                "NEED_HELPER",
-                "TRAFFIC",
-                "UNSAFE",
-                "OTHER",
-                "NO_PROBLEM"
-              ]
+              "pattern": "^[A-Z][A-Z0-9_]{1,39}$"
             },
             "type": "array",
             "maxItems": 15,
@@ -43498,6 +43520,31 @@
             "title": "Extra Time Amount",
             "default": "50"
           },
+          "stop_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ReasonPolicy"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Stop Reasons"
+          },
+          "extra_time_review_above": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Time Review Above"
+          },
           "stop_minutes_small_parcel": {
             "type": "integer",
             "maximum": 480.0,
@@ -43749,6 +43796,26 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)",
             "title": "Extra Time Amount",
             "default": "50"
+          },
+          "stop_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ReasonPolicy"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Stop Reasons"
+          },
+          "extra_time_review_above": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Time Review Above"
           },
           "stop_minutes_small_parcel": {
             "type": "integer",

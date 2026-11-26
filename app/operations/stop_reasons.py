@@ -1,12 +1,18 @@
-"""Dispatra's fixed driver reason list, shared by stop reports and progress replies.
+"""Driver reasons for stop reports and progress replies.
 
-Each reason names who is responsible for time lost at the stop (Extra time skips CARRIER stops),
-the Issue kind it files, and whether it holds Order completion until dispatch resolves it.
-Companies cannot edit it: billing and completion rules depend on these values.
+Dispatra's built-in reasons (REASONS) are the fixed base meanings: the Issue kind each files and whether it holds
+Order completion until dispatch resolves it. Those never change per company. Each company's policy (company
+settings `stop_reasons`) can rename, reorder and hide reasons, add custom reasons on top of a built-in base, and set
+per reason who is responsible, how Extra time is charged and what evidence the driver must give.
 """
-from typing import Literal
+from dataclasses import dataclass, replace
+from typing import Annotated, Literal
+from pydantic import StringConstraints
 
 Responsibility = Literal['SHIPPER', 'CARRIER', 'UNDECIDED']
+# AUTO charges Extra time, REVIEW holds it for a dispatcher, NEVER does not charge it.
+Charge = Literal['AUTO', 'REVIEW', 'NEVER']
+Stops = Literal['BOTH', 'PICKUP', 'DROPOFF']
 # value, label, responsibility, issue kind, holds completion, offered on stop reports
 REASONS = [
     ('ITEMS_NOT_READY', 'Goods not ready', 'SHIPPER', 'OTHER', False, True),
@@ -28,39 +34,119 @@ REASONS = [
 Reason = Literal['ITEMS_NOT_READY', 'WAITING_FOR_STAFF', 'HANDLING_IN_PROGRESS', 'ACCESS_BLOCKED', 'RECIPIENT_UNAVAILABLE', 'WRONG_ADDRESS',
     'MISSING_ITEMS', 'DAMAGED_ITEM', 'VEHICLE_PROBLEM', 'WRONG_EQUIPMENT', 'NEED_HELPER', 'TRAFFIC', 'UNSAFE', 'OTHER', 'NO_PROBLEM']
 BY_VALUE = {row[0]: row for row in REASONS}
+# A reason code as stored on reports and replies: a built-in value or a company's CUSTOM_ code.
+ReasonCode = Annotated[str, StringConstraints(pattern=r'^[A-Z][A-Z0-9_]{1,39}$')]
+CUSTOM_PREFIX = 'CUSTOM_'
 # Stop reports filed before reasons existed carry only an Issue kind.
 LEGACY_KIND = {'VEHICLE': 'VEHICLE_PROBLEM', 'FAILED_PICKUP': 'ITEMS_NOT_READY', 'FAILED_DELIVERY': 'RECIPIENT_UNAVAILABLE',
     'WRONG_ADDRESS': 'WRONG_ADDRESS', 'SHORT_LOAD': 'MISSING_ITEMS', 'UNSAFE': 'UNSAFE', 'OTHER': 'OTHER'}
 KIND_PRIORITY = ['UNSAFE', 'VEHICLE', 'WRONG_ADDRESS', 'SHORT_LOAD', 'FAILED_PICKUP', 'FAILED_DELIVERY', 'OTHER']
 
 
-def choices(report=True):
-    return [{'value': value, 'label': label} for value, label, _, _, _, offered in REASONS if offered or not report]
+@dataclass(frozen=True)
+class Row:
+    code: str
+    base: str
+    label: str
+    responsibility: str
+    charge: str
+    stops: str = 'BOTH'
+    active: bool = True
+    notes_required: bool = False
+    photo_required: bool = False
 
 
-def label(reason): return BY_VALUE[reason][1]
-def responsibility(reason): return BY_VALUE[reason][2]
-def holds_completion(reasons): return any(BY_VALUE[r][4] for r in reasons)
+def default_row(value):
+    _, label, side, _, _, _ = BY_VALUE[value]
+    return Row(value, value, label, side, 'NEVER' if side == 'CARRIER' else 'AUTO', notes_required=value == 'OTHER')
 
 
-def issue_kind(reasons):
-    """The most operationally serious Issue kind among the reasons."""
-    kinds = {BY_VALUE[r][3] for r in reasons}
-    return next(kind for kind in KIND_PRIORITY if kind in kinds)
+class Policy:
+    """A company's reasons in display order. Built-ins missing from the settings keep their defaults; an unknown
+    stored code (a removed custom reason) still reads by its code, as Another issue."""
+    def __init__(self, entries=()):
+        rows = {}
+        for entry in entries or ():
+            data = entry if isinstance(entry, dict) else entry.model_dump()
+            code = data['code']
+            if code == 'NO_PROBLEM': continue
+            base = code if code in BY_VALUE else data.get('base') or 'OTHER'
+            rows[code] = replace(default_row(code) if code in BY_VALUE else default_row(base), code=code, base=base,
+                **{k: data[k] for k in ('label', 'responsibility', 'charge', 'stops', 'active', 'notes_required', 'photo_required') if data.get(k) is not None})
+        for value, *_ in REASONS:
+            if value != 'NO_PROBLEM' and value not in rows: rows[value] = default_row(value)
+        self.rows = rows
+        self.progress_normal = default_row('NO_PROBLEM')
+
+    def row(self, code):
+        if code == 'NO_PROBLEM': return self.progress_normal
+        return self.rows.get(code) or replace(default_row('OTHER'), code=code, label=code.removeprefix(CUSTOM_PREFIX).replace('_', ' ').capitalize(), active=False)
+
+    def choices(self, report=True, stop_kind=None):
+        rows = [r for r in self.rows.values() if r.active and (stop_kind is None or r.stops in ('BOTH', stop_kind))]
+        if not report: rows.append(self.progress_normal)
+        return [{'value': r.code, 'label': r.label, 'stops': r.stops, 'notes_required': r.notes_required, 'photo_required': r.photo_required} for r in rows]
+
+    def label(self, code): return self.row(code).label
+    def base(self, code): return self.row(code).base
+    def responsibility(self, code): return self.row(code).responsibility
+    def holds_completion(self, reasons): return any(BY_VALUE[self.base(r)][4] for r in reasons)
+
+    def issue_kind(self, reasons):
+        """The most operationally serious Issue kind among the reasons' bases."""
+        kinds = {BY_VALUE[self.base(r)][3] for r in reasons}
+        return next(kind for kind in KIND_PRIORITY if kind in kinds)
+
+    def primary(self, reasons):
+        """One reason for older single-reason views: the one behind the Issue kind, else the first."""
+        kind = self.issue_kind(reasons)
+        return next((r for r in reasons if BY_VALUE[self.base(r)][3] == kind and kind != 'OTHER'), reasons[0])
+
+    def describe(self, reasons, notes):
+        text = '; '.join(self.label(r) for r in reasons)
+        return f'{text}\n\n{notes.strip()}' if notes.strip() else text
+
+    def stop_responsibility(self, reasons):
+        """CARRIER when any reason is the carrier's, SHIPPER when every reason is the shipper's, else UNDECIDED."""
+        sides = {self.responsibility(r) for r in reasons}
+        return 'CARRIER' if 'CARRIER' in sides else 'SHIPPER' if sides == {'SHIPPER'} else 'UNDECIDED'
+
+    def charge(self, reasons):
+        """NEVER when any reason is never charged, REVIEW when any needs review, else AUTO."""
+        modes = {self.row(r).charge for r in reasons}
+        return 'NEVER' if 'NEVER' in modes else 'REVIEW' if 'REVIEW' in modes else 'AUTO'
+
+    def check(self, reasons, notes, photos, report=True):
+        """The reasons a driver may send now, with the notes and photos their rules ask for. Returns an error or None."""
+        for code in reasons:
+            row = self.row(code)
+            if code == 'NO_PROBLEM' and report or code != 'NO_PROBLEM' and not row.active: return f'{row.label} is no longer offered. Refresh and choose again.'
+            if row.notes_required and len(notes.strip()) < 3: return f'Describe the issue when choosing {row.label}.'
+            if row.photo_required and not photos: return f'Add a photo when choosing {row.label}.'
+        return None
 
 
-def primary(reasons):
-    """One reason for older single-reason views: the one behind the Issue kind, else the first."""
-    kind = issue_kind(reasons)
-    return next((r for r in reasons if BY_VALUE[r][3] == kind and kind != 'OTHER'), reasons[0])
+DEFAULT = Policy()
 
 
-def describe(reasons, notes):
-    text = '; '.join(label(r) for r in reasons)
-    return f'{text}\n\n{notes.strip()}' if notes.strip() else text
+def company_policy(db, actor):
+    return policy_for(db, actor.organization_id)
 
 
-def stop_responsibility(reasons):
-    """CARRIER when any reason is the carrier's, SHIPPER when every reason is the shipper's, else UNDECIDED."""
-    sides = {responsibility(r) for r in reasons}
-    return 'CARRIER' if 'CARRIER' in sides else 'SHIPPER' if sides == {'SHIPPER'} else 'UNDECIDED'
+def policy_for(db, organization_id):
+    """A company's policy from its saved settings; the defaults when it has none."""
+    from sqlalchemy import select
+    from .models import Settings
+    data = db.scalar(select(Settings.data).where(Settings.organization_id == organization_id))
+    return Policy((data or {}).get('stop_reasons') or ())
+
+
+# The default policy for callers without a company (older imports and tests).
+def choices(report=True): return [{'value': c['value'], 'label': c['label']} for c in DEFAULT.choices(report)]
+def label(reason): return DEFAULT.label(reason)
+def responsibility(reason): return DEFAULT.responsibility(reason)
+def holds_completion(reasons): return DEFAULT.holds_completion(reasons)
+def issue_kind(reasons): return DEFAULT.issue_kind(reasons)
+def primary(reasons): return DEFAULT.primary(reasons)
+def describe(reasons, notes): return DEFAULT.describe(reasons, notes)
+def stop_responsibility(reasons): return DEFAULT.stop_responsibility(reasons)

@@ -27,10 +27,12 @@ def report(db, actor, identity, data, key, *, monitor_incident_id=None):
                     or actor.role == 'DRIVER' and evidence.driver_id != actor.driver_id):
                 raise HTTPException(422, 'Report photos must be taken at this stop.')
         fields = data.model_dump(exclude={'reasons', 'photo_ids'})
+        policy = stop_reasons.company_policy(db, actor)
         if data.reasons:
-            fields.update(kind=stop_reasons.issue_kind(data.reasons), description=stop_reasons.describe(data.reasons, data.description))
+            if problem := policy.check(data.reasons, data.description, data.photo_ids): raise HTTPException(422, problem)
+            fields.update(kind=policy.issue_kind(data.reasons), description=policy.describe(data.reasons, data.description))
         row = Issue(organization_id=actor.organization_id, order_id=identity, **fields, reasons=list(data.reasons),
-            photo_ids=[str(p) for p in data.photo_ids], holds_completion=not data.reasons or stop_reasons.holds_completion(data.reasons))
+            photo_ids=[str(p) for p in data.photo_ids], holds_completion=not data.reasons or policy.holds_completion(data.reasons))
         db.add(row); db.flush(); audit(db, actor, 'issue.reported', row.id, actor.organization_id)
         from app.order_watch.commands import reported
         reported(db, actor, row, monitor_incident_id)
