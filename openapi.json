@@ -42797,11 +42797,6 @@
             "title": "Stops",
             "default": "BOTH"
           },
-          "active": {
-            "type": "boolean",
-            "title": "Active",
-            "default": true
-          },
           "responsibility": {
             "type": "string",
             "enum": [
@@ -42819,16 +42814,6 @@
               "NEVER"
             ],
             "title": "Charge"
-          },
-          "notes_required": {
-            "type": "boolean",
-            "title": "Notes Required",
-            "default": false
-          },
-          "photo_required": {
-            "type": "boolean",
-            "title": "Photo Required",
-            "default": false
           }
         },
         "additionalProperties": false,
@@ -42840,7 +42825,7 @@
           "charge"
         ],
         "title": "ReasonPolicy",
-        "description": "One driver reason in a company's list: a built-in (code = its value, base ignored) or a CUSTOM_ reason on a built-in base."
+        "description": "One driver reason in a company's complete list: a built-in (code = its value, base ignored) or a CUSTOM_ reason on a built-in base."
       },
       "Reply": {
         "properties": {
@@ -43526,24 +43511,8 @@
             },
             "type": "array",
             "maxItems": 60,
+            "minItems": 1,
             "title": "Stop Reasons"
-          },
-          "extra_time_review_above": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 10000000.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Extra Time Review Above"
           },
           "stop_minutes_small_parcel": {
             "type": "integer",
@@ -43803,19 +43772,8 @@
             },
             "type": "array",
             "maxItems": 60,
+            "minItems": 1,
             "title": "Stop Reasons"
-          },
-          "extra_time_review_above": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,17}0*$)\\d{0,12}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Extra Time Review Above"
           },
           "stop_minutes_small_parcel": {
             "type": "integer",

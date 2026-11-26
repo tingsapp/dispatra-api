@@ -52,38 +52,52 @@ class Row:
     charge: str
     stops: str = 'BOTH'
     active: bool = True
-    notes_required: bool = False
-    photo_required: bool = False
+
+    @property
+    def notes_required(self): return self.base == 'OTHER'
+
+    @property
+    def photo_required(self): return False
+
+
+ORDER = {value: index for index, (value, *_) in enumerate(REASONS)}
 
 
 def default_row(value):
     _, label, side, _, _, _ = BY_VALUE[value]
-    return Row(value, value, label, side, 'NEVER' if side == 'CARRIER' else 'AUTO', notes_required=value == 'OTHER')
+    return Row(value, value, label, side, 'NEVER' if side == 'CARRIER' else 'AUTO')
+
+
+def place(row):
+    """Fixed display order: built-ins as listed, custom reasons by name before Another issue, which is last."""
+    if row.code == 'OTHER': return (2, 0, '')
+    return (1, 0, row.label.casefold()) if row.code not in BY_VALUE else (0, ORDER[row.code], '')
 
 
 class Policy:
-    """A company's reasons in display order. Built-ins missing from the settings keep their defaults; an unknown
-    stored code (a removed custom reason) still reads by its code, as Another issue."""
+    """A company's reasons. A saved list is complete: a reason left out is deleted (old reports still read by its name).
+    No saved list means Dispatra's built-ins with their defaults."""
     def __init__(self, entries=()):
         rows = {}
         for entry in entries or ():
             data = entry if isinstance(entry, dict) else entry.model_dump()
             code = data['code']
-            if code == 'NO_PROBLEM': continue
+            if code == 'NO_PROBLEM' or data.get('active') is False: continue
             base = code if code in BY_VALUE else data.get('base') or 'OTHER'
             rows[code] = replace(default_row(code) if code in BY_VALUE else default_row(base), code=code, base=base,
-                **{k: data[k] for k in ('label', 'responsibility', 'charge', 'stops', 'active', 'notes_required', 'photo_required') if data.get(k) is not None})
-        for value, *_ in REASONS:
-            if value != 'NO_PROBLEM' and value not in rows: rows[value] = default_row(value)
-        self.rows = rows
+                **{k: data[k] for k in ('label', 'responsibility', 'charge', 'stops') if data.get(k) is not None})
+        if not rows: rows = {value: default_row(value) for value, *_ in REASONS if value != 'NO_PROBLEM'}
+        self.rows = dict(sorted(rows.items(), key=lambda item: place(item[1])))
         self.progress_normal = default_row('NO_PROBLEM')
 
     def row(self, code):
         if code == 'NO_PROBLEM': return self.progress_normal
-        return self.rows.get(code) or replace(default_row('OTHER'), code=code, label=code.removeprefix(CUSTOM_PREFIX).replace('_', ' ').capitalize(), active=False)
+        if code in self.rows: return self.rows[code]
+        if code in BY_VALUE: return replace(default_row(code), active=False)
+        return replace(default_row('OTHER'), code=code, label=code.removeprefix(CUSTOM_PREFIX).replace('_', ' ').capitalize(), active=False)
 
     def choices(self, report=True, stop_kind=None):
-        rows = [r for r in self.rows.values() if r.active and (stop_kind is None or r.stops in ('BOTH', stop_kind))]
+        rows = [r for r in self.rows.values() if stop_kind is None or r.stops in ('BOTH', stop_kind)]
         if not report: rows.append(self.progress_normal)
         return [{'value': r.code, 'label': r.label, 'stops': r.stops, 'notes_required': r.notes_required, 'photo_required': r.photo_required} for r in rows]
 
@@ -117,12 +131,11 @@ class Policy:
         return 'NEVER' if 'NEVER' in modes else 'REVIEW' if 'REVIEW' in modes else 'AUTO'
 
     def check(self, reasons, notes, photos, report=True):
-        """The reasons a driver may send now, with the notes and photos their rules ask for. Returns an error or None."""
+        """The reasons a driver may send now, with notes where they are needed. Returns an error or None."""
         for code in reasons:
             row = self.row(code)
             if code == 'NO_PROBLEM' and report or code != 'NO_PROBLEM' and not row.active: return f'{row.label} is no longer offered. Refresh and choose again.'
             if row.notes_required and len(notes.strip()) < 3: return f'Describe the issue when choosing {row.label}.'
-            if row.photo_required and not photos: return f'Add a photo when choosing {row.label}.'
         return None
 
 

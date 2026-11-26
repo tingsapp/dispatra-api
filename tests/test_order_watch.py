@@ -290,19 +290,19 @@ def test_reports_and_progress_replies_take_at_most_four_photos():
 def test_company_reason_policy_drives_the_driver_list_report_rules_and_labels(setup):
     w=setup;order=new_order(w,scheduled_at=now().isoformat());route=assign(w,order)
     saved=check(w['client'].get(BASE+'/settings'))
-    policy=[dict(code='CUSTOM_DOCK_BUSY',base='WAITING_FOR_STAFF',label='Dock busy',stops='PICKUP',responsibility='SHIPPER',charge='AUTO',notes_required=True),
-        dict(code='DAMAGED_ITEM',label='Item damaged',responsibility='UNDECIDED',charge='REVIEW',photo_required=True),
-        dict(code='TRAFFIC',label='Traffic delay',responsibility='UNDECIDED',charge='AUTO',active=False)]
-    check(w['client'].put(BASE+'/settings',json={'version':saved['version'],'data':{**saved['data'],'stop_reasons':policy,'extra_time_review_above':'100'}},headers={'Idempotency-Key':str(uuid4())}))
-    # The driver's list follows the company's order, names, stops and rules; hidden reasons are gone.
+    assert len(saved['data']['stop_reasons'])==14  # No saved list: Dispatra's built-ins.
+    # A saved list is complete: Traffic delay and the rest are deleted; the order is fixed (built-ins, custom by name, Another issue last).
+    policy=[dict(code='OTHER',label='Another issue',responsibility='UNDECIDED',charge='AUTO'),
+        dict(code='CUSTOM_DOCK_BUSY',base='WAITING_FOR_STAFF',label='Dock busy',stops='PICKUP',responsibility='SHIPPER',charge='AUTO'),
+        dict(code='DAMAGED_ITEM',label='Item damaged',responsibility='UNDECIDED',charge='REVIEW')]
+    stored=check(w['client'].put(BASE+'/settings',json={'version':saved['version'],'data':{**saved['data'],'stop_reasons':policy}},headers={'Idempotency-Key':str(uuid4())}))
+    assert [r['code'] for r in stored['data']['stop_reasons']]==['DAMAGED_ITEM','CUSTOM_DOCK_BUSY','OTHER']
     choices=check(w['mobile'].get(BASE+'/driver/report-reasons'))
-    assert [c['value'] for c in choices][:2]==['CUSTOM_DOCK_BUSY','DAMAGED_ITEM'] and 'TRAFFIC' not in [c['value'] for c in choices]
-    assert choices[0]=={'value':'CUSTOM_DOCK_BUSY','label':'Dock busy','stops':'PICKUP','notes_required':True,'photo_required':False}
+    assert [c['value'] for c in choices]==['DAMAGED_ITEM','CUSTOM_DOCK_BUSY','OTHER']
+    assert choices[1]=={'value':'CUSTOM_DOCK_BUSY','label':'Dock busy','stops':'PICKUP','notes_required':False,'photo_required':False}
     stop=route['stops'][0]['stop_id'];path=BASE+f'/driver/stops/{stop}/issue'
-    refused=post(w['mobile'],path,dict(reasons=['CUSTOM_DOCK_BUSY']))
-    assert refused.status_code==422 and 'Describe the issue when choosing Dock busy' in refused.text
-    assert 'Add a photo when choosing Item damaged' in post(w['mobile'],path,dict(reasons=['DAMAGED_ITEM'],description='Crushed')).text
     assert 'no longer offered' in post(w['mobile'],path,dict(reasons=['TRAFFIC'])).text
+    assert 'Describe the issue when choosing Another issue' in post(w['mobile'],path,dict(reasons=['OTHER'])).text
     check(post(w['mobile'],path,dict(reasons=['CUSTOM_DOCK_BUSY'],description='Two trucks ahead')),201)
     with Session(owner_engine) as db:
         issue=db.scalar(select(Issue).where(Issue.order_id==UUID(order['id'])))

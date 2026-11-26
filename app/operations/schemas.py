@@ -99,16 +99,13 @@ def default_work_hours():
 
 
 class ReasonPolicy(Input):
-    """One driver reason in a company's list: a built-in (code = its value, base ignored) or a CUSTOM_ reason on a built-in base."""
+    """One driver reason in a company's complete list: a built-in (code = its value, base ignored) or a CUSTOM_ reason on a built-in base."""
     code: ReasonCode
     base: Reason | None = None
     label: Annotated[str, Field(min_length=2, max_length=60)]
     stops: Stops = 'BOTH'
-    active: StrictBool = True
     responsibility: Responsibility
     charge: Charge
-    notes_required: StrictBool = False
-    photo_required: StrictBool = False
 
     @model_validator(mode='after')
     def known_base(self):
@@ -123,8 +120,7 @@ class ReasonPolicy(Input):
 def default_reason_policies():
     """Dispatra's built-in reasons with their defaults, so every company sees and edits a complete list."""
     from .stop_reasons import DEFAULT
-    return [ReasonPolicy(code=r.code, label=r.label, stops=r.stops, responsibility=r.responsibility, charge=r.charge,
-        notes_required=r.notes_required, photo_required=r.photo_required) for r in DEFAULT.rows.values()]
+    return [ReasonPolicy(code=r.code, label=r.label, stops=r.stops, responsibility=r.responsibility, charge=r.charge) for r in DEFAULT.rows.values()]
 
 
 class SettingsData(Input):
@@ -151,10 +147,8 @@ class SettingsData(Input):
     # Extra time: the first N minutes at each stop are free, then each started N minutes costs the amount; 0 disables.
     extra_time_minutes: int = Field(default=30, ge=5, le=480)
     extra_time_amount: Money = Decimal('50')
-    # Driver reasons in display order: the company's policy over Dispatra's built-ins (see stop_reasons).
-    stop_reasons: list[ReasonPolicy] = Field(default_factory=default_reason_policies, max_length=60)
-    # Extra time above this amount at one stop waits for dispatcher review even when its reasons charge automatically.
-    extra_time_review_above: Money | None = None
+    # The company's complete driver reason list (see stop_reasons); a reason left out is deleted. Order is fixed on read.
+    stop_reasons: list[ReasonPolicy] = Field(default_factory=default_reason_policies, min_length=1, max_length=60)
     # Planned time at each stop by load size; bookings that omit a stop's service minutes use it (routing, Hourly prices, Order Watch).
     stop_minutes_small_parcel: int = Field(default=10, ge=0, le=480)
     stop_minutes_ltl: int = Field(default=20, ge=0, le=480)
@@ -182,13 +176,29 @@ class SettingsData(Input):
             raise ValueError('Dispatch zones must not have overlapping postal prefixes')
         return self
 
+    @model_validator(mode='before')
+    @classmethod
+    def earlier_reason_fields(cls, data):
+        # Saved by the first Stop reasons page (2026-11-26): switched-off reasons were deleted ones; per-reason notes,
+        # photo and active flags and the review amount are gone.
+        if not isinstance(data, dict): return data
+        data = {k: v for k, v in data.items() if k != 'extra_time_review_above'}
+        rows = data.get('stop_reasons')
+        if isinstance(rows, list) and any(isinstance(row, dict) and 'active' in row for row in rows):
+            keep = [{k: v for k, v in row.items() if k not in ('active', 'notes_required', 'photo_required')}
+                for row in data['stop_reasons'] if isinstance(row, dict) and row.get('active') is not False]
+            data['stop_reasons'] = keep or None
+            if data['stop_reasons'] is None: data.pop('stop_reasons')
+        return data
+
     @model_validator(mode='after')
     def reason_list(self):
         codes = [r.code for r in self.stop_reasons]
         if len(set(codes)) != len(codes): raise ValueError('Each reason can be listed once')
         labels = [r.label.casefold() for r in self.stop_reasons]
         if len(set(labels)) != len(labels): raise ValueError('Reason names must be unique')
-        if self.stop_reasons and not any(r.active for r in self.stop_reasons): raise ValueError('Keep at least one reason active')
+        from .stop_reasons import place
+        self.stop_reasons.sort(key=place)
         return self
 
     @model_validator(mode='after')
@@ -700,7 +710,7 @@ class ExtraTimeStop(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     responsibility: Literal['SHIPPER', 'CARRIER', 'UNDECIDED']
     # CHARGED automatically; EXCLUDED for a carrier or never-charged reason; REVIEW waits for a dispatcher (a reason
-    # set to review, or above the company's review amount); WAIVED or CHARGED once a dispatcher decides.
+    # set to review); WAIVED or CHARGED once a dispatcher decides.
     status: Literal['CHARGED', 'EXCLUDED', 'REVIEW', 'WAIVED']
     decided_by_dispatcher: bool = False
 
