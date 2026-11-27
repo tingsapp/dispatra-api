@@ -14,15 +14,18 @@ def fact(label, value, source, at=None):
     return dict(label=label,value=str(value),source=source,at=at.isoformat() if at else None)
 
 
-def location_usable(location, duty, current):
-    # Native sends during active tracking; reject stale, future, inaccurate or closed-duty samples.
-    if not location or not duty or duty.ended_at is not None: return False
+def accurate(location):
     accuracy = location.data.get('accuracy_m')
     if isinstance(accuracy,bool): return False
     try: accuracy = float(accuracy)
     except (ValueError,TypeError): return False
-    return (math.isfinite(accuracy) and 0 < accuracy <= 75
-        and duty.started_at <= location.captured_at <= current
+    return math.isfinite(accuracy) and 0 < accuracy <= 75
+
+
+def location_usable(location, duty, current):
+    # Native sends during active tracking; reject stale, future, inaccurate or closed-duty samples.
+    if not location or not duty or duty.ended_at is not None: return False
+    return (accurate(location) and duty.started_at <= location.captured_at <= current
         and current-location.captured_at <= timedelta(minutes=2))
 
 
@@ -33,6 +36,23 @@ def separation(location, address):
     dlat,dlng=b-a,math.radians(float(lng)-float(location.data['longitude']))
     angle=2*math.asin(min(1,math.sqrt(math.sin(dlat/2)**2+math.cos(a)*math.cos(b)*math.sin(dlng/2)**2)))
     return round(6_371_000*angle)
+
+
+NEAR_METRES = 100  # The driver app's Confirm arrival radius.
+
+
+def near_since(samples, address, duty, current):
+    """Start of the driver's unbroken run of accurate fixes within NEAR_METRES of the stop (samples newest first).
+    None unless the newest fix is usable and near. Being near is evidence for a question, never a recorded arrival."""
+    if not samples or not location_usable(samples[0],duty,current): return None
+    since = None
+    for sample in samples:
+        if sample.captured_at < duty.started_at: break
+        if not accurate(sample): continue  # An inaccurate fix neither breaks nor extends the run.
+        metres = separation(sample,address)
+        if metres is None or metres > NEAR_METRES: break
+        since = sample.captured_at
+    return since
 
 
 def deadline(order, stop):

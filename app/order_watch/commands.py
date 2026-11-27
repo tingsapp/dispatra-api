@@ -115,19 +115,27 @@ def reported(db, actor, issue, monitor_incident_id=None):
 
 def question_view(db,row,actor=None):
     order=db.get(Order,row.order_id)
-    # RLS hides incidents from drivers: widen to company scope for the incident's stop id only.
-    stop=select(Incident.stop_id).where(Incident.organization_id==row.organization_id,Incident.id==row.incident_id)
+    # RLS hides incidents from drivers: widen to company scope for the incident's stop id and kind only.
+    stop=select(Incident.stop_id,Incident.kind).where(Incident.organization_id==row.organization_id,Incident.id==row.incident_id)
     if actor:
-        with company_scope(db,actor):stop_id=db.scalar(stop)
-    else:stop_id=db.scalar(stop)
+        with company_scope(db,actor):stop_id,incident_kind=db.execute(stop).one()
+    else:stop_id,incident_kind=db.execute(stop).one()
     from app.operations.models import OrderStop
     kind=db.scalar(select(OrderStop.kind).where(OrderStop.organization_id==row.organization_id,OrderStop.id==stop_id)) if stop_id else None
     # The company's reasons for this question's stop kind, plus Progress is normal.
     choices=stop_reasons.policy_for(db,row.organization_id).choices(report=False,stop_kind=kind)
     return jsonable_encoder(dict(id=row.id,version=row.version,order_id=row.order_id,order_number=order.number if order else '',prompt=row.prompt,
-        stop_id=stop_id,choices=choices,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
+        stop_id=stop_id,kind=incident_kind,choices=choices,status=row.status,reason=row.reason,reasons=row.reasons or ([row.reason] if row.reason else []),
         details=row.details,estimated_ready_at=row.estimated_ready_at,
         created_at=row.created_at,answered_at=row.answered_at))
+
+
+def arrival_confirmed(db, actor, route, visit):
+    """The driver's Confirm arrival answers the near-stop question at once instead of on the next scan."""
+    with company_scope(db,actor):
+        row=db.scalar(select(Incident).where(Incident.organization_id==actor.organization_id,
+            Incident.fingerprint==f'near:{visit.id}:{route.generation}',Incident.status.in_(OPEN)).with_for_update())
+        if row:close(db,system(actor.organization_id),row,'The driver confirmed arrival.')
 
 
 def own_question(db, actor, identity, lock=False):

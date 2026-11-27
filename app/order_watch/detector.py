@@ -1,8 +1,11 @@
 """Pure, contextual signals from authoritative milestones and qualified provider estimates."""
 from datetime import timedelta
 from app.dispatch.explanations import no_candidate_summary, exclusion_lines
-from .evidence import assignment_deadline,deadline,fact,instant
+from .evidence import NEAR_METRES,assignment_deadline,deadline,fact,instant
 from .playbooks import suggestions
+
+
+UNCONFIRMED_MINUTES=5  # Near the stop this long without Confirm arrival: ask the driver.
 
 
 def signal(key,kind,title,description,evidence,stop_id=None,severity='WARNING',certainty='OBSERVED',due=None):
@@ -18,7 +21,8 @@ def extra_time_free_minutes(order):
     return int(rule['extra_time_minutes']) if float(rule['extra_time_amount']) > 0 else None
 
 
-def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
+def evaluate(order,route,visits,stops,estimate,current,no_candidate=None,near_since=None):
+    """`near_since`: when the driver's run of accurate fixes near the route's next stop began (`evidence.near_since`)."""
     result=[]
     if order.status in {'COMPLETED','CANCELLED'}:return result
     if order.route_id is None:
@@ -59,6 +63,15 @@ def evaluate(order,route,visits,stops,estimate,current,no_candidate=None):
                 'Arrival deadline passed; arrival not recorded.',
                 [fact('Arrival deadline',due.isoformat(),'Booked stop window'),fact('Arrival','Not recorded','Stop execution',current)],
                 stop.id,'CRITICAL','NEEDS_CONFIRMATION',due))
+        if visit.arrived_at is None and near_since and next_visit and visit.id==next_visit.id and route.status=='IN_PROGRESS':
+            near=int((current-near_since).total_seconds()//60)
+            if near>=UNCONFIRMED_MINUTES:
+                place='pickup' if stop.kind=='PICKUP' else 'drop-off'
+                # Proximity asks the driver; only the driver's Confirm arrival records arrival.
+                result.append(signal(f'near:{visit.id}:{route.generation}','ARRIVAL_UNCONFIRMED','Arrival not confirmed',
+                    f'Near the {place} for {near} min; arrival not confirmed.',
+                    [fact('Driver location',f'Within {NEAR_METRES} m of the stop since {near_since.isoformat()}','Driver GPS, accuracy 75 m or better',current),
+                     fact('Arrival','Not confirmed by the driver','Stop execution',current)],stop.id,certainty='NEEDS_CONFIRMATION',due=due))
         if visit.arrived_at is not None and next_visit and visit.id==next_visit.id:
             planned_minutes=stop.data.get('service_minutes')
             first=next((s for s in order.facts['stops'] if s['kind']=='PICKUP'),None)

@@ -42052,6 +42052,17 @@
             ],
             "title": "Stop Id"
           },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
           "choices": {
             "items": {
               "$ref": "#/components/schemas/Choice"

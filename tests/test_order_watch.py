@@ -309,3 +309,45 @@ def test_company_reason_policy_drives_the_driver_list_report_rules_and_labels(se
         assert issue.reasons==['CUSTOM_DOCK_BUSY'] and issue.kind=='OTHER' and issue.holds_completion is False
     feed=check(w['client'].get(BASE+f'/orders/{order["id"]}/progress-updates'))
     assert [(r['reasons'],r['responsibility'],r['notes']) for r in feed]==[(['Dock busy'],'SHIPPER','Two trucks ahead')]
+
+
+def test_near_stop_without_confirmed_arrival_asks_driver_and_arrival_closes_it(setup,monkeypatch):
+    from app.operations.models import DutySession,Location
+    w=setup;order=new_order(w,scheduled_at=now().isoformat());route=assign(w,order)
+    route=check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/start',dict(version=route['version'],generation=route['generation'])))
+    visit=route['stops'][0];current=now()+timedelta(minutes=20)
+    monkeypatch.setattr(scan,'now',lambda:current)
+    def fix(minutes_ago,metres=0,accuracy=20):
+        with Session(owner_engine) as db,db.begin():
+            stop=db.get(OrderStop,UUID(visit['stop_id']));point=stop.data['address']
+            duty=db.scalar(select(DutySession).where(DutySession.driver_id==UUID(w['driver']['id']),DutySession.ended_at.is_(None)))
+            db.add(Location(organization_id=stop.organization_id,driver_id=duty.driver_id,duty_id=duty.id,captured_at=current-timedelta(minutes=minutes_ago),
+                data=dict(latitude=point['latitude']+metres/111_320,longitude=point['longitude'],accuracy_m=accuracy)))
+    def near_questions():
+        return [q for q in check(w['mobile'].get(BASE+'/driver/operational/questions')) if q['kind']=='ARRIVAL_UNCONFIRMED']
+    # Three minutes near the stop since a fix 400 m away: not yet asked.
+    fix(10,400);fix(3,30);fix(0,10)
+    review(w);assert not near_questions()
+    # An inaccurate far fix neither breaks nor extends the run; eight minutes near asks the driver once.
+    fix(8,20);fix(5,900,accuracy=200)
+    review(w);review(w)
+    rows=[r for r in owner_reports(w) if r['kind']=='ARRIVAL_UNCONFIRMED']
+    assert len(rows)==1 and rows[0]['certainty']=='NEEDS_CONFIRMATION' and rows[0]['stop_id']==visit['stop_id']
+    questions=near_questions()
+    assert len(questions)==1 and questions[0]['stop_id']==visit['stop_id'] and 'tap Arrived' in questions[0]['prompt']
+    # Confirm arrival closes the observation and its question in the same transaction.
+    check(post(w['mobile'],BASE+f'/driver/routes/{route["id"]}/stops/{visit["id"]}/arrive',dict(version=route['version'],generation=route['generation'],captured_at=now().isoformat())))
+    assert not near_questions()
+    assert not any(r['kind']=='ARRIVAL_UNCONFIRMED' for r in owner_reports(w))
+
+
+def test_near_stop_needs_a_fresh_accurate_newest_fix():
+    from app.order_watch.evidence import near_since
+    current=now();duty=SimpleNamespace(started_at=current-timedelta(hours=1),ended_at=None);point=dict(latitude=49.26,longitude=-123.11)
+    def sample(minutes_ago,metres=0,accuracy=20):
+        return SimpleNamespace(captured_at=current-timedelta(minutes=minutes_ago),data=dict(latitude=49.26+metres/111_320,longitude=-123.11,accuracy_m=accuracy))
+    assert near_since([sample(0),sample(6)],point,duty,current)==current-timedelta(minutes=6)
+    assert near_since([sample(3),sample(6)],point,duty,current) is None  # Newest fix is stale.
+    assert near_since([sample(0,accuracy=100),sample(6)],point,duty,current) is None
+    assert near_since([sample(0,150),sample(6)],point,duty,current) is None
+    assert near_since([sample(0),sample(2,300),sample(6)],point,duty,current)==current

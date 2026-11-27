@@ -1,12 +1,13 @@
+from datetime import timedelta
 from sqlalchemy import select
 from app.models import now
-from app.operations.models import Order,OrderStop,Route,RouteStop,Issue,DutySession
+from app.operations.models import Order,OrderStop,Route,RouteStop,Issue,DutySession,Location
 from app.operations.common import company_lock
 from app.dispatch.models import DispatchDecision
 from .models import Incident,Question,RouteEstimate
 from .commands import OPEN,apply,ask,close,reported,follow_up_ready_time
 from .detector import evaluate
-from .evidence import assignment_deadline,deadline,instant
+from .evidence import assignment_deadline,deadline,instant,near_since
 
 
 def scan_company(db,actor):
@@ -22,7 +23,7 @@ def scan_company(db,actor):
     decisions=db.scalars(select(DispatchDecision).where(DispatchDecision.organization_id==actor.organization_id,DispatchDecision.order_id.in_([o.id for o in orders])).order_by(DispatchDecision.created_at.desc())).all()
     reports=db.scalars(select(Issue).where(Issue.organization_id==actor.organization_id,Issue.resolved.is_(False))).all()
     for issue in reports:reported(db,actor,issue)
-    seen=set()
+    seen,near=set(),{}
     for order in orders:
         route=routes.get(order.route_id);route_visits=[v for v in visits if v.route_id==order.route_id]
         estimate=estimates.get(order.route_id)
@@ -33,13 +34,23 @@ def scan_company(db,actor):
             or (current-estimate.captured_at).total_seconds()>120 or (current-estimate.observed_at).total_seconds()>180):estimate=None
         decision=next((d for d in decisions if d.order_id==order.id and d.order_version==order.version),None)
         if decision and decision.status!='NO_CANDIDATE':decision=None
-        for observation in evaluate(order,route,route_visits,stops,estimate,current,decision):
+        if route and route.id not in near:near[route.id]=driver_near(db,actor,route,duty,next_visit,stops,current)
+        for observation in evaluate(order,route,route_visits,stops,estimate,current,decision,near.get(route.id) if route else None):
             row=apply(db,actor,order,observation);seen.add(row.id)
             if row.certainty=='REPORTED':follow_up_ready_time(db,actor,row,route,current)
             if row.status in OPEN and row.certainty=='NEEDS_CONFIRMATION':
-                ask(db,actor,row,route,f'{order.number}: {row.description} When safe, tell us what is happening.')
+                ask(db,actor,row,route,f'{order.number}: {row.description} '+('If you are at the stop, tap Arrived. If not, tell us what is happening.'
+                    if row.kind=='ARRIVAL_UNCONFIRMED' else 'When safe, tell us what is happening.'))
     reconcile(db,actor,seen)
     return len(orders)
+
+
+def driver_near(db,actor,route,duty,visit,stops,current):
+    """When the driver's run of accurate fixes near the route's next, unarrived stop began, from the last hour of this duty."""
+    if route.status!='IN_PROGRESS' or not duty or not visit or visit.arrived_at is not None or visit.stop_id not in stops:return None
+    samples=db.scalars(select(Location).where(Location.organization_id==actor.organization_id,Location.driver_id==route.driver_id,
+        Location.duty_id==duty.id,Location.captured_at>=current-timedelta(hours=1)).order_by(Location.captured_at.desc()).limit(720)).all()
+    return near_since(samples,stops[visit.stop_id].data['address'],duty,current)
 
 
 def reconcile(db,actor,seen):
@@ -77,7 +88,7 @@ def reconcile(db,actor,seen):
             visit=db.scalar(select(RouteStop).where(RouteStop.organization_id==actor.organization_id,RouteStop.stop_id==row.stop_id,
                 RouteStop.route_id==order.route_id))
             if not visit:close(db,actor,row,'Assignment or published visit changed; review the new plan.',superseded=True);continue
-            if visit.status=='COMPLETED' or row.kind in {'ARRIVAL_OVERDUE','ARRIVAL_RISK','TRAFFIC_RISK'} and visit.arrived_at:
+            if visit.status=='COMPLETED' or row.kind in {'ARRIVAL_OVERDUE','ARRIVAL_RISK','TRAFFIC_RISK','ARRIVAL_UNCONFIRMED'} and visit.arrived_at:
                 close(db,actor,row,'Recorded stop progress verifies this timing observation has ended.');continue
             if row.kind in {'ARRIVAL_RISK','TRAFFIC_RISK'}:
                 estimate=db.scalar(select(RouteEstimate).where(RouteEstimate.organization_id==actor.organization_id,RouteEstimate.route_id==order.route_id))

@@ -80,6 +80,8 @@ class QuestionView(BaseModel):
     order_number: str
     prompt: str
     stop_id: UUID | None = None
+    # What the question is about: the Order Watch observation kind, e.g. ARRIVAL_UNCONFIRMED offers Arrived.
+    kind: str | None = None
     choices: list[Choice]
     status: Literal['OPEN','ANSWERED','CLOSED']
     reason: str | None

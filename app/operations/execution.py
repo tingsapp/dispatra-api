@@ -251,6 +251,8 @@ def arrive_stop(db, actor, identity, visit_id, data, key):
             changed(db, actor, order, 'order.started')
         visit.arrived_at = data.captured_at
         changed(db,actor,visit,'stop.arrived');changed(db,actor,route,'route.progress')
+        from app.order_watch.commands import arrival_confirmed
+        arrival_confirmed(db,actor,route,visit)
         return route_view(db,actor,route)
     return command(db,actor,key,'arrive:' + str(visit_id),data.model_dump(mode='json'),run)
 

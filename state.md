@@ -1,3 +1,6 @@
+2026-11-27 Near-stop arrival question: Order Watch raises ARRIVAL_UNCONFIRMED after 5 min of accurate GPS within 100 m of the next unarrived stop, asks the driver (prompt says tap Arrived) and closes it when arrival is recorded (same transaction) or on the next scan; QuestionView gains `kind` (openapi.json already carried it). No migration; not released.
+Checks: on dispatra_events_test, new near-stop tests 2/2 plus reply, closed-stop, ready-time, stopless-photo and location tests pass (one closed-stop login error in a shared-DB run passed on rerun).
+
 Published 2026-11-27T05:35Z as delay_rows_20261127: web bf325d5 only (Delay reasons table without lines between rows). No API files, migration (0078) or restart; previous assets kept. Backup /var/backups/dispatra/delay-rows-20261127T053540Z; previous web /opt/dispatra/.web-delay-rows-old-41b9e024-eef6-4030-a574-7fcd25e07cc2; stage ../work/delay-rows-release-20261127.
 Checks: live index and App bundle match the build (fetched from this machine); availability ok. Settings page not checked signed in.
 

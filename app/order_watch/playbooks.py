@@ -3,6 +3,7 @@ ACTIONS = {
     'UNASSIGNED': ['Ask the Dispatch agent to evaluate suitable drivers and vehicles.', 'Confirm a revised pickup window if no feasible assignment is available.'],
     'START_OVERDUE': ['Ask the driver for departure status and the reason for the delay.', 'Review replacement options through the Dispatch agent before pickup.'],
     'ARRIVAL_OVERDUE': ['Confirm the driver\'s progress and explain the missed commitment to dispatch.', 'Review the next stops and any receiving deadlines.'],
+    'ARRIVAL_UNCONFIRMED': ['Ask the driver whether they are at the stop and why arrival is not confirmed.', 'Check access, parking or contact details for this stop.'],
     'STOP_OVERRUN': ['Ask whether the driver is waiting or loading/unloading, and request an expected finish time.', 'Confirm readiness or access with the pickup/delivery contact.', 'Review later orders on the same route.'],
     'EXTRA_TIME_STARTED': ['Tell the shipper that billable Extra time has started at this stop.', 'Ask the driver or site contact for an expected finish time.'],
     'TRAFFIC_RISK': ['Ask the driver to confirm current road conditions when safe.', 'Review an alternative route that satisfies vehicle and access restrictions.', 'Review affected delivery windows with dispatch.'],
