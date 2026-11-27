@@ -1,3 +1,7 @@
+Published 2026-11-27T18:45:31Z as chat_status_guard_20261127: API 6d67679 (redirect chat order status edits to lifecycle actions without schema prompts; app/assistant/provider.py, app/assistant/changes.py, tests/test_assistant_changes_unit.py, hash-checked against e934ae3, no drift). No migration (0078); only dispatra-api.service restarted; web 748aa06 & driver 2879b5e unchanged. Backup /var/backups/dispatra/chat-status-guard-20261127T184453Z; stage ../work/chat-status-guard-release-20261127.
+Checks: on-host unit gate live 143/143, candidate 144/144; live /ready & /api/v1/availability ok, file hashes verified, no API errors.
+
+
 2026-11-27 Chat order-status guard: map order status changes in `provider.PLAN` and `changes._order_status_redirect()` directly to lifecycle operations (`UNASSIGN`/`CANCEL`/`COMPLETE`/`ASSIGN`) or plain-language refusals (never drafting `OrderUpdate` or leaking schema jargon). No migration.
 Checks: py_compile ok; pytest dispatch policy + unit & assistant unit suites 144/144 passed; local `dispatra-local-api` restarted. Not released.
 
