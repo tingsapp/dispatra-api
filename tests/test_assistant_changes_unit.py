@@ -381,6 +381,30 @@ class PrepareTests(unittest.TestCase):
             self.assertEqual(changes.run_order_batch_archive(None, ACTOR, body, 'chat-key-0123456789'), {'updated': 2})
         self.assertEqual([call.args[4] for call in archive_order.call_args_list], [f'chat-key-0123456789:{first.id}', f'chat-key-0123456789:{second.id}'])
 
+    def test_order_status_change_via_update_redirects_without_drafting_schema_errors(self):
+        in_progress = SimpleNamespace(id=uuid4(), number='DTO-7479', status='IN_PROGRESS', version=3, route_id=uuid4(), booking={'shipper': {'name': 'Pacific Office Supply'}})
+        with patch.object(records, 'find', return_value=[in_progress]), patch.object(provider, 'generate') as generate:
+            result = changes.prepare(None, ACTOR, plan('ORDER', 'UPDATE', 'DTO-7479', 'change the status of dto-7479 to new'))
+        self.assertIsNone(result['change'])
+        self.assertIn('already on the road', result['message'])
+        self.assertNotIn('schema', result['message'].lower())
+        generate.assert_not_called()
+
+        assigned = SimpleNamespace(id=uuid4(), number='DTO-7480', status='ASSIGNED', version=2, route_id=uuid4(), booking={'shipper': {'name': 'Pacific'}})
+        route = SimpleNamespace(id=assigned.route_id, status='PLANNED', locked=False, version=1, generation=1, driver_id=uuid4())
+        alex = SimpleNamespace(id=route.driver_id, name='Alex Chen')
+        db = Mock(); db.scalars.return_value.all.return_value = []
+        with patch.object(records, 'find', return_value=[assigned]), patch.object(changes, 'record', side_effect=[route, alex]), \
+             patch.object(provider, 'generate') as generate:
+            result = changes.prepare(db, ACTOR, plan('ORDER', 'UPDATE', 'DTO-7480', 'change status to new'))
+        self.assertEqual(result['change'].operation, 'ORDER.UNASSIGN')
+        generate.assert_not_called()
+
+        with patch.object(records, 'find', return_value=[in_progress]), patch.object(provider, 'generate') as generate:
+            done = changes.prepare(None, ACTOR, plan('ORDER', 'UPDATE', 'DTO-7479', 'change status to completed'))
+        self.assertEqual(done['change'].operation, 'ORDER.COMPLETE')
+        generate.assert_not_called()
+
 
 class ConfirmTests(unittest.TestCase):
     def confirm(self, operation, body, target_id=None, result=None):

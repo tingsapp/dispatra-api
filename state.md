@@ -1,3 +1,7 @@
+2026-11-27 Chat order-status guard: map order status changes in `provider.PLAN` and `changes._order_status_redirect()` directly to lifecycle operations (`UNASSIGN`/`CANCEL`/`COMPLETE`/`ASSIGN`) or plain-language refusals (never drafting `OrderUpdate` or leaking schema jargon). No migration.
+Checks: py_compile ok; pytest dispatch policy + unit & assistant unit suites 144/144 passed; local `dispatra-local-api` restarted. Not released.
+
+
 Published 2026-11-27T18:20:21Z as chat_dispatch_20261127: API e934ae3 (Monitor chat intelligence, multi-order batch ops, DUE alert dismissal, dispatch wait-time consolidation; 19 files, hash-checked against 6845151, no drift) and web 748aa06 (Monitor chat selection context & card history, schema.d.ts, homepage Driver map backdrop); driver 2879b5e unchanged. No migration (0078); all 13 services restarted. Backup /var/backups/dispatra/chat-dispatch-20261127T181938Z; previous web /opt/dispatra/.web-chat-dispatch-old-2e0d77de-dc52-43ef-b8e4-09e9f53bdaa5; stage ../work/chat-dispatch-release-20261127.
 Checks: on-host unit gate live 128/128, candidate 143/143; live /ready, /api/v1/availability ok, OpenAPI has AssistantContext & extra_wait_minutes, web entry & driver-portal-map.webp served, no service errors.
 

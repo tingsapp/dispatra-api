@@ -26,6 +26,8 @@ PLURAL_TARGETS = {'all', 'both', 'them', 'these', 'those', 'all of them', 'both 
 ORDER_BATCH_EDIT_LIMIT = 10
 ORDER_BATCH_CLOSE_LIMIT = 50
 ORDER_NUMBER_PATTERN = re.compile(r'\b[A-Z]{2,6}-[A-Z0-9-]{2,20}\b')
+ORDER_STATUS_TARGET = re.compile(r'\b(?:to|as|back\s+to)\s+(new|unassigned|assigned|in[\s_-]?progress|on\s+the\s+road|completed?|done|delivered|cancel(?:led|ed)?)\b', re.I)
+ORDER_BOOKING_WORDS = re.compile(r'\b(pickup|pick\s*up|drop[\s-]?off|delivery|address|time|date|today|tomorrow|window|item|weight|size|pallet|note|contact|phone|service|shipper|rate|price|quantity)\b', re.I)
 
 
 def _selected_row(db, org, entity, context):
@@ -212,8 +214,31 @@ def _resolve_and_validate(db, actor, entity, op, plan, shown, facts, zone, befor
             repair = error.problems
 
 
+def _order_status_redirect(db, actor, row, request_text):
+    """If an ORDER.UPDATE request only asks to change status, route to the real lifecycle command or explain plainly."""
+    text = (request_text or '').strip()
+    if not text or ORDER_BOOKING_WORDS.search(text): return None
+    match = ORDER_STATUS_TARGET.search(text)
+    if not match and 'status' not in text.lower(): return None
+    if not match:
+        return reply(f'Order {row.number}’s status can’t be edited directly. Ask me to assign, unassign, complete or cancel it instead.', reference('ORDER', row))
+    wanted = re.sub(r'[\s_-]+', '', match.group(1).lower())
+    if wanted in {'new', 'unassigned'}:
+        if row.status == 'NEW':
+            return reply(f'Order {row.number} is already unassigned.', reference('ORDER', row))
+        return unassign(db, actor, 'ORDER.UNASSIGN', records.OPERATIONS['ORDER']['UNASSIGN'], row)
+    if wanted.startswith('cancel'):
+        return close(db, actor, 'ORDER', 'ORDER.CANCEL', records.OPERATIONS['ORDER']['CANCEL'], row)
+    if wanted in {'complete', 'completed', 'done', 'delivered'}:
+        return close(db, actor, 'ORDER', 'ORDER.COMPLETE', records.OPERATIONS['ORDER']['COMPLETE'], row)
+    if wanted == 'assigned':
+        return reply(f'To assign order {row.number}, tell me which driver should take it (or ask me to assign the best driver).', reference('ORDER', row))
+    return reply(f'Order {row.number} moves to on the road only when the driver starts the route in the driver app.', reference('ORDER', row))
+
+
 def update(db, actor, entity, name, op, plan, row, subject):
     if entity == 'ORDER':
+        if redirected := _order_status_redirect(db, actor, row, plan.request): return redirected
         if row.status in {'COMPLETED', 'CANCELLED'}:
             return reply(f'Order {row.number} is {STATUS[row.status].lower()}, so it can’t be edited.', reference(entity, row))
         if row.status == 'ASSIGNED' and row.route_id and db is not None:
@@ -372,6 +397,8 @@ def unassign_request(db, actor, name, op, plan, context=None):
 
 def unassign(db, actor, name, op, order):
     refs = reference('ORDER', order)
+    if order.status == 'IN_PROGRESS':
+        return reply(f'Order {order.number} is already on the road, so it can’t be unassigned or changed back to new. You can mark it completed once delivered.', refs)
     if order.status != 'ASSIGNED' or not order.route_id:
         return reply(f'Order {order.number} is {STATUS[order.status].lower()}, so there is no driver to take it off.', refs)
     route = record(db, Route, actor, order.route_id)
