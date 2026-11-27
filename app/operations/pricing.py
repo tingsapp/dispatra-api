@@ -145,6 +145,14 @@ def price_context(db, actor, booking):
         'discount': shipper.discount if shipper else Discount().model_dump(mode='json')}
 
 
+def matching_zones(card, postal):
+    """Ids of the card's Zones whose postal prefix matches `postal` most specifically; one id is an unambiguous match."""
+    postal = (postal or '').replace(' ', '').upper()
+    matches = [(len(code.replace(' ', '')), z.id) for z in card.zones for code in z.postal_codes if postal.startswith(code.replace(' ', '').upper())]
+    longest = max((size for size, _ in matches), default=0)
+    return {z for size, z in matches if size == longest}
+
+
 def freight_amount(booking, card):
     if card.method == 'FIXED': return money(card.fixed_amount)
     if card.method == 'BASE_PLUS_DISTANCE':
@@ -166,11 +174,8 @@ def freight_amount(booking, card):
         total = ZERO
         for (_, delivery_id), (actual, dimensional) in movements.items():
             weight = max(actual, dimensional)
-            postal = stops[delivery_id].address.postal_code.replace(' ', '').upper()
-            matches = [(len(code.replace(' ', '')), z.id) for z in card.zones for code in z.postal_codes if postal.startswith(code.replace(' ', '').upper())]
-            if not matches: raise HTTPException(409, 'Destination does not match a configured pricing Zone.')
-            longest = max(m[0] for m in matches)
-            zone_ids = {z for size, z in matches if size == longest}
+            zone_ids = matching_zones(card, stops[delivery_id].address.postal_code)
+            if not zone_ids: raise HTTPException(409, 'Destination does not match a configured pricing Zone.')
             if len(zone_ids) != 1: raise HTTPException(409, 'Destination matches conflicting Zones.')
             zone_id = zone_ids.pop()
             bands = [b for b in sorted(card.weight_bands, key=lambda b: b.from_kg) if b.from_kg <= weight <= b.to_kg]

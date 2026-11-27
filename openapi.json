@@ -32678,6 +32678,18 @@
             "title": "Zone Match",
             "default": false
           },
+          "home_zone_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Zone Match",
+            "description": "Morning pass for a Zone Rate Card Order: whether the vehicle parks in its delivery zone; null when the rule does not apply"
+          },
           "direction": {
             "type": "string",
             "title": "Direction",
@@ -35652,59 +35664,6 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Discount"
-      },
-      "DispatchZone-Input": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 160,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "postal_codes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 200,
-            "minItems": 1,
-            "title": "Postal Codes"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "name",
-          "postal_codes"
-        ],
-        "title": "DispatchZone"
-      },
-      "DispatchZone-Output": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 160,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "postal_codes": {
-            "items": {
-              "type": "string",
-              "pattern": "^(?:[A-Za-z]\\d[A-Za-z]|\\d{3}|\\d{5})$"
-            },
-            "type": "array",
-            "maxItems": 200,
-            "minItems": 1,
-            "title": "Postal Codes"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "name",
-          "postal_codes"
-        ],
-        "title": "DispatchZone"
       },
       "DispatcherCreate": {
         "properties": {
@@ -43558,14 +43517,6 @@
             "title": "Dispatch Mode",
             "default": "MANUAL"
           },
-          "dispatch_zones": {
-            "items": {
-              "$ref": "#/components/schemas/DispatchZone-Input"
-            },
-            "type": "array",
-            "maxItems": 100,
-            "title": "Dispatch Zones"
-          },
           "work_hours": {
             "items": {
               "$ref": "#/components/schemas/WorkDay"
@@ -43818,14 +43769,6 @@
             ],
             "title": "Dispatch Mode",
             "default": "MANUAL"
-          },
-          "dispatch_zones": {
-            "items": {
-              "$ref": "#/components/schemas/DispatchZone-Output"
-            },
-            "type": "array",
-            "maxItems": 100,
-            "title": "Dispatch Zones"
           },
           "work_hours": {
             "items": {

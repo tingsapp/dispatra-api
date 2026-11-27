@@ -16,12 +16,12 @@ from app.events import publish
 from app.models import now, Organization
 from app.services import audit
 from app.operations import dispatch
-from app.operations.calendar import closed_reason
+from app.operations.calendar import closed_reason, day_bounds
 from app.operations.common import command, company_lock, record, settings
 from app.operations.models import Order, Route, Settings
 from app.operations.schemas import Assignment
 from . import rank
-from .policy import priority, prefer_proposal, ordered as policy_ordered
+from .policy import tier, prefer_proposal, ordered as policy_ordered
 from .candidates import blocker, evaluate
 from .explanations import no_candidate_summary
 from .models import DispatchDecision
@@ -31,7 +31,7 @@ from app.agents.telemetry import monitor_run, step
 SYSTEM = SimpleNamespace(id=None, role=None)
 RETRY = timedelta(minutes=5)
 REUSE = timedelta(minutes=2)
-RULES_SUMMARY = 'Prioritizes feasible route consolidation, then route detour, delivery area and workload.'
+RULES_SUMMARY = 'Prioritizes vehicles parked in the Order zone in the morning, then feasible route consolidation, route detour, delivery area and workload.'
 
 
 class AgentDispatcher:
@@ -62,7 +62,7 @@ def ranked(order_brief, candidates, organization_id=None):
         first = ordered[0]['driver_id']
         order_index = {c['driver_id']:i for i,c in enumerate(ordered)}
         policy_candidates = list(candidates)
-        ordered.sort(key=lambda c:(priority(c, policy_candidates), int(c['score']//5),order_index[c['driver_id']]))
+        ordered.sort(key=lambda c:(*tier(c, policy_candidates), int(c['score']//5),order_index[c['driver_id']]))
         if ordered[0]['driver_id'] != first: summary = RULES_SUMMARY
         return ordered, 'AI', summary, None
     except rank.Unavailable as error:
@@ -163,14 +163,16 @@ def auto_companies():
 
 
 def due(organization_id, limit=100):
-    """Priced, unassigned Orders, with bounded retry cooldown. AUTO dispatch works only while the company is open
-    (work hours and holidays, company time zone): Orders booked while closed wait, and all are assigned from opening time."""
+    """Priced, unassigned Orders whose scheduled pickup is today or earlier, with bounded retry cooldown. AUTO dispatch
+    works only while the company is open (work hours and holidays, company time zone): Orders booked while closed wait,
+    and all are assigned from opening time. Later pickups wait for their own day; booking date never matters."""
     with Session(engine) as db, db.begin():
         context(db, organization_id)
         config = settings(db, AgentDispatcher(organization_id))[1]
         if closed_reason(config, now()): return []
         orders = db.scalars(select(Order).where(Order.organization_id == organization_id, Order.status == 'NEW',
-            Order.pricing['status'].astext == 'PRICED').order_by(Order.scheduled_at).limit(limit * 3)).all()
+            Order.pricing['status'].astext == 'PRICED', Order.scheduled_at < day_bounds(config, now())[1])
+            .order_by(Order.scheduled_at).limit(limit * 3)).all()
         result = []
         for order in orders:
             previous = latest(db, organization_id, order.id)

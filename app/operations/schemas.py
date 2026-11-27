@@ -66,11 +66,6 @@ class Address(Input):
         return self
 
 
-class DispatchZone(Input):
-    name: Name
-    postal_codes: list[Fsa] = Field(min_length=1, max_length=200)
-
-
 WEEKDAYS = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
 ClockTime = Annotated[str, Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')]
 
@@ -158,7 +153,6 @@ class SettingsData(Input):
     quote_validity_days: int = Field(default=14, ge=1, le=365)
     # AUTO: the Dispatch agent assigns priced, unassigned Orders inside its horizon; MANUAL: dispatchers assign, the agent only recommends.
     dispatch_mode: Literal['AUTO', 'MANUAL'] = 'MANUAL'
-    dispatch_zones: list[DispatchZone] = Field(default_factory=list, max_length=100)
     # Company operating calendar: Shippers book pickups inside it and AUTO dispatch holds pickups outside it.
     work_hours: list[WorkDay] = Field(default_factory=default_work_hours, min_length=7, max_length=7)
     holidays: list[Holiday] = Field(default_factory=list, max_length=100)
@@ -167,22 +161,14 @@ class SettingsData(Input):
     # Email intake falls back to this active PACKAGE_TYPE when it cannot infer an item's type.
     default_package_type_id: UUID | None = None
 
-    @model_validator(mode='after')
-    def dispatch_zone_unique(self):
-        names = [z.name.casefold() for z in self.dispatch_zones]
-        if len(set(names)) != len(names): raise ValueError('Dispatch zone names must be unique')
-        prefixes = [(p.replace(' ', '').upper(), i) for i,z in enumerate(self.dispatch_zones) for p in z.postal_codes]
-        if any(i != j and (a.startswith(b) or b.startswith(a)) for a,i in prefixes for b,j in prefixes):
-            raise ValueError('Dispatch zones must not have overlapping postal prefixes')
-        return self
-
     @model_validator(mode='before')
     @classmethod
     def earlier_reason_fields(cls, data):
         # Saved by the first Stop reasons page (2026-11-26): switched-off reasons were deleted ones; per-reason notes,
-        # photo and active flags and the review amount are gone.
+        # photo and active flags and the review amount are gone. Separate dispatch zones were retired the same day:
+        # Zone Rate Cards supply dispatch zones, so saved or legacy-client lists are dropped.
         if not isinstance(data, dict): return data
-        data = {k: v for k, v in data.items() if k != 'extra_time_review_above'}
+        data = {k: v for k, v in data.items() if k not in ('extra_time_review_above', 'dispatch_zones')}
         rows = data.get('stop_reasons')
         if isinstance(rows, list) and any(isinstance(row, dict) and 'active' in row for row in rows):
             keep = [{k: v for k, v in row.items() if k not in ('active', 'notes_required', 'photo_required')}

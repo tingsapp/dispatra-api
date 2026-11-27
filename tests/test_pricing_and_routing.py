@@ -40,9 +40,7 @@ def test_zone_postal_codes_are_stored_as_three_character_fsa_prefixes():
     card = RateData(name='Zone', method='ZONE', zones=[
         {'id': 'van', 'name': 'Zone 1', 'postal_codes': ['v6a 1e9', 'V5Y']},
     ])
-    settings = SettingsData(dispatch_zones=[{'name': 'Vancouver', 'postal_codes': ['V6A 1E9']}])
     assert card.zones[0].postal_codes == ['V6A', 'V5Y']
-    assert settings.dispatch_zones[0].postal_codes == ['V6A']
     us = RateData(name='Zone', method='ZONE', zones=[{'id': 'sea', 'name': 'Seattle', 'postal_codes': ['981', '98101-1234']}])
     assert us.zones[0].postal_codes == ['981', '98101']
     with pytest.raises(ValueError, match='Canadian three-character postal area'):

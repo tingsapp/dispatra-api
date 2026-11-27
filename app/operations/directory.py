@@ -13,7 +13,7 @@ from .schemas import SettingsView, CatalogView, RateView
 from .common import record, version, company_lock, command, changed, dump, settings, operational_shipper, located
 
 # Older clients omit these lists; keep the saved values instead of resetting them to defaults.
-PRESERVED_WHEN_OMITTED = ('dispatch_zones', 'work_hours', 'holidays')
+PRESERVED_WHEN_OMITTED = ('work_hours', 'holidays')
 
 
 def save_settings(db, actor, data, key):

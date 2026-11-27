@@ -8,7 +8,7 @@ from app.operations.common import settings
 from app.operations.dispatch import mergeable_route, plan_route
 from app.operations.live_dispatch import fixes
 from app.operations.models import Driver, Order, Vehicle, DutySession
-from .geography import km, movement, delivery_zone
+from .geography import km, movement, delivery_zone, morning_zone
 from .workload import measure
 from .policy import ordered
 
@@ -42,6 +42,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
     query = select(Driver).where(Driver.organization_id == actor.organization_id, Driver.active.is_(True), Driver.archived_at.is_(None))
     if driver_id: query = query.where(Driver.id == driver_id)
     drivers = db.scalars(query.order_by(Driver.number)).all()
+    home = morning_zone(order, config, now())
     candidates, excluded = [], []
     for driver in drivers:
         base = {'driver_id': str(driver.id), 'driver_name': driver.name, 'driver_number': driver.number}
@@ -83,23 +84,25 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
                 for v in visits if mine[v['stop_id']]['kind']=='DROPOFF' and mine[v['stop_id']].get('window_end')]
             extra = max(0, plan['travel_minutes']-(baseline['travel_minutes'] if baseline else 0))
             worked, remaining, completed, utilization = measure(db, actor, driver, config, route, plan, on_route+[order])
-            area = delivery_zone(order, config)
-            same_area = bool(on_route and area in {delivery_zone(o,config) for o in on_route})
+            area = delivery_zone(order)
+            same_area = bool(on_route and area in {delivery_zone(o) for o in on_route})
             preferred = str(driver.id) == str(order.facts.get('preferred_driver_id') or '')
             exact = not order.facts.get('vehicle_type_id') or str(vehicle.type_id)==str(order.facts['vehicle_type_id'])
             deadhead = round(km(here,pickups[0]['address']),1) if here else None
             active = sum(o.status not in {'COMPLETED','CANCELLED'} for o in on_route)
             score = extra + (8 if on_route and not same_area else 0) + min(utilization*15,30) + (completed+active)*0.5 + (0 if exact else 2) - (1 if preferred else 0)
+            # The vehicle's parking address, not the driver's position, decides its home zone.
+            in_zone = None if home is None else home.contains(vehicle.data.get('parking_address'))
             facts = []
             if expected: facts.append(f'Expected on duty at {shift_start.isoformat()}; assign once on duty')
+            if in_zone: facts.append(f'Vehicle parks in {home.name} · morning zone plan')
+            elif in_zone is False: facts.append(f'Vehicle parks outside {home.name}; used only when no {home.name} vehicle fits')
             if (order.booking or {}).get('assigned_driver'): facts.append('Shipper’s assigned driver')
             elif preferred: facts.append('Shipper requested this driver')
             if live: facts.append(f'Joins the live route, +{round(extra)} min driving; driver must review')
             elif route: facts.append(f'Joins the planned route ({active} orders), +{round(extra)} min driving')
             else: facts.append(f'New route, about {round(extra)} min driving with the trip to pickup')
-            if area:
-                label = area if any(z.name == area for z in config.dispatch_zones) else 'Nearby delivery area'
-                facts.append(label + (' · compatible delivery area' if same_area else ' · delivery area'))
+            if area: facts.append('Nearby delivery area' + (' · compatible delivery area' if same_area else ' · delivery area'))
             facts.append(f'Today: {round(worked)} min worked, about {round(remaining)} min booked, {completed} done')
             if live: facts.append({'APPROACHING':'Approaching the new pickup', 'MOVING_AWAY':'Moving away; detour counted',
                 'CROSSING':'Travelling across the pickup direction', 'STATIONARY':'Stationary; planned route used', 'UNKNOWN':'Direction unknown; planned route used'}[direction])
@@ -112,7 +115,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
                     'route_orders':active, 'slack_minutes':round(min(slack)) if slack else None, 'preferred':preferred,
                     'exact_vehicle_type':exact, 'zone':area, 'zone_match':same_area, 'direction':direction,
                     'worked_minutes':worked, 'remaining_minutes':remaining, 'completed_orders':completed,
-                    'workload_ratio':utilization, 'live_insertion':live, 'road_verified':plan['is_road_eta'], 'awaiting_duty':expected}})
+                    'workload_ratio':utilization, 'home_zone_match':in_zone, 'live_insertion':live, 'road_verified':plan['is_road_eta'], 'awaiting_duty':expected}})
         except HTTPException as error:
             excluded.append({**base,'reason':str(error.detail)})
     return ordered(candidates), excluded

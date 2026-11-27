@@ -9,6 +9,8 @@ class CandidateMetrics(BaseModel):
     awaiting_duty: bool = False
     zone: str | None = None
     zone_match: bool = False
+    home_zone_match: bool | None = Field(default=None,
+        description='Morning pass for a Zone Rate Card Order: whether the vehicle parks in its delivery zone; null when the rule does not apply')
     direction: str = 'UNKNOWN'
     worked_minutes: float = 0
     remaining_minutes: float = 0

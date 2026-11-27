@@ -1,4 +1,5 @@
 """Dispatch agent: feasible candidates, rule fallback, AI ranking limits, approval, AUTO mode and isolation."""
+import json
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from app.main import app
 from app.dispatch import rank, service, worker
+from app.operations.schemas import RateData
 from conftest import login, company, post, HEADERS, owner_engine
 from test_manual_operations import BASE, check, address, booking, new_order, setup  # noqa: F401  (setup is a fixture)
 
@@ -181,13 +183,44 @@ def test_auto_mode_without_a_driver_flags_once_then_assigns(fleet):
     assert not [item for item in check(client.get(BASE + '/monitor'))['needs_attention'] if item['kind'] == 'NO_DRIVER']
 
 
-def test_auto_mode_evaluates_future_orders_immediately(fleet):
+def test_auto_mode_waits_for_the_scheduled_pickup_day(fleet):
     w = fleet; mode(w['client'], 'AUTO')
     later = new_order(w, scheduled_at=(service.now() + timedelta(days=2)).isoformat())
-    result = worker.cycle()
-    assert sum(result.values()) == 1
-    with owner_engine.connect() as db:
-        assert db.scalar(text('SELECT count(*) FROM dispatch_decisions WHERE order_id=:id'), {'id':later['id']}) == 1
+    assert worker.cycle() == {}
+    with owner_engine.begin() as db:
+        assert db.scalar(text('SELECT count(*) FROM dispatch_decisions WHERE order_id=:id'), {'id':later['id']}) == 0
+        # Its pickup day arrives; how long ago it was booked does not matter.
+        db.execute(text('UPDATE orders SET scheduled_at=now(), created_at=created_at-interval \'3 days\' WHERE id=:id'), {'id':later['id']})
+    assert worker.cycle()['ASSIGNED'] == 1
+
+
+ZONE_CARD = RateData(name='Zones', method='ZONE', zones=[{'id': 'c', 'name': 'Central', 'postal_codes': ['V5Y']},
+    {'id': 'n', 'name': 'North', 'postal_codes': ['V7L']}], weight_bands=[{'from_kg': 0, 'to_kg': 99, 'prices': {'c': 20, 'n': 30}}]).model_dump(mode='json')
+
+
+def booked_yesterday(order, card=None):
+    """Move the booking before today's opening; `card` replaces the frozen pricing card (a Zone Rate Card)."""
+    with owner_engine.begin() as db:
+        db.execute(text("UPDATE orders SET created_at=created_at-interval '1 day' WHERE id=:id"), {'id': order['id']})
+        if card: db.execute(text("UPDATE orders SET pricing=jsonb_set(pricing, '{context,card}', CAST(:card AS jsonb)) WHERE id=:id"),
+            {'id': order['id'], 'card': json.dumps(card)})
+
+
+def test_morning_zone_priced_orders_prefer_vehicles_parked_in_the_rate_card_zone(fleet):
+    w = fleet; client = w['client']
+    central = new_order(w); booked_yesterday(central, ZONE_CARD)
+    payload = booking(w['shipper']['id'], w['service'], w['type_id'])
+    payload['stops'][1]['address'] = address(city='North Vancouver', postal='V7L 1A1', lat=49.32, lng=-123.07)
+    north = check(post(client, BASE + '/orders', payload), 201); booked_yesterday(north, ZONE_CARD)
+    # Dana's van parks in V5Y: home zone for the Central Order, fallback only for the North one.
+    first = check(suggest(client, central))['candidates'][0]
+    assert first['metrics']['home_zone_match'] is True and 'Vehicle parks in Central' in first['facts'][0]
+    fallback = check(suggest(client, north))['candidates'][0]
+    assert fallback['driver_id'] == w['driver']['id'] and fallback['metrics']['home_zone_match'] is False
+    fixed = new_order(w); booked_yesterday(fixed)  # Fixed-price card: distance rules only
+    assert check(suggest(client, fixed))['candidates'][0]['metrics']['home_zone_match'] is None
+    later = new_order(w)  # booked after opening: distance rules only
+    assert check(suggest(client, later))['candidates'][0]['metrics']['home_zone_match'] is None
 
 
 def test_dispatch_mode_values_and_access(fleet):

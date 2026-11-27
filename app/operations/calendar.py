@@ -1,5 +1,5 @@
 """Company work hours and holidays applied to an Order's scheduled pickup and planned deliveries, in the company time zone."""
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 DAY_NAMES = {'MON': 'Monday', 'TUE': 'Tuesday', 'WED': 'Wednesday', 'THU': 'Thursday', 'FRI': 'Friday', 'SAT': 'Saturday', 'SUN': 'Sunday'}
@@ -17,6 +17,20 @@ def closed_reason(config, at: datetime) -> str | None:
     end = '24:00' if day.end == '23:59' else day.end
     if not day.start <= f'{local:%H:%M}' < end: return f'{name} pickups are {day.start}–{end}.'
     return None
+
+
+def day_bounds(config, at: datetime) -> tuple[datetime, datetime]:
+    """Company-local start of `at`'s day and of the next day, as aware datetimes."""
+    zone = ZoneInfo(config.time_zone)
+    day = at.astimezone(zone).date()
+    return datetime.combine(day, time.min, zone), datetime.combine(day + timedelta(days=1), time.min, zone)
+
+
+def opening(config, at: datetime) -> datetime:
+    """When the company opens on `at`'s day (its work-hours start), even when that day is closed."""
+    start, _ = day_bounds(config, at)
+    hour, minute = map(int, config.work_hours[start.weekday()].start.split(':'))
+    return start.replace(hour=hour, minute=minute)
 
 
 def off_day(config, at: datetime) -> bool:

@@ -9,7 +9,6 @@ from app.main import app
 from app.models import now
 from app.dispatch import service
 from app.dispatch.geography import movement, zone
-from app.operations.schemas import SettingsData
 from app.operations.routing import optimize
 from conftest import HEADERS, login, company, post, owner_engine
 from test_manual_operations import BASE, check, address, booking, new_order, assign, setup
@@ -129,18 +128,13 @@ def test_live_direct_assignment_explicit_opt_in_and_tenant_review_boundaries(fle
         assert shipper.post(BASE+'/dispatch-plan').status_code==403
 
 
-def test_dispatch_zones_are_separate_preserved_and_overlap_rejected(fleet):
+def test_retired_dispatch_zone_lists_are_dropped_and_areas_are_automatic(fleet):
     w=fleet;client=w['client'];current=check(client.get(BASE+'/settings'))
-    zones=[{'name':'South','postal_codes':['V5Y']}]
-    saved=check(client.put(BASE+'/settings',json={'version':current['version'],'data':current['data']|{'dispatch_zones':zones}},headers={'Idempotency-Key':str(uuid4())}))
-    legacy={k:v for k,v in saved['data'].items() if k!='dispatch_zones'}
-    again=check(client.put(BASE+'/settings',json={'version':saved['version'],'data':legacy},headers={'Idempotency-Key':str(uuid4())}))
-    assert again['data']['dispatch_zones']==zones
-    order=new_order(w);decision=check(suggest(client,order));assert decision['candidates'][0]['metrics']['zone']=='South'
-    bad=again['data']|{'dispatch_zones':zones+[{'name':'Other','postal_codes':['V5Y 1V4']}]}
-    assert client.put(BASE+'/settings',json={'version':again['version'],'data':bad},headers={'Idempotency-Key':str(uuid4())}).status_code==422
-    config=SettingsData.model_validate(again['data'])
-    assert zone(address(postal='V6B 1A1'),config).startswith('Area ')
+    legacy=current['data']|{'dispatch_zones':[{'name':'South','postal_codes':['V5Y']}]}
+    saved=check(client.put(BASE+'/settings',json={'version':current['version'],'data':legacy},headers={'Idempotency-Key':str(uuid4())}))
+    assert 'dispatch_zones' not in saved['data']
+    order=new_order(w);decision=check(suggest(client,order));assert decision['candidates'][0]['metrics']['zone'].startswith('Area ')
+    assert zone(address(postal='V6B 1A1')).startswith('Area ')
 
 
 def test_fleet_proposal_has_no_assignment_side_effect_and_approvals_revalidate(fleet):
