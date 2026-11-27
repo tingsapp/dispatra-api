@@ -1,3 +1,6 @@
+Published 2026-11-27T11:55:26Z as next_stop_pickup_rule_20261127: API 6845151 (a drop-off may go next only once its pickups are done): app/operations/next_stop.py and tests/test_driver_next_stop.py only, hash-checked against 20c1d2d, no drift; no migration (0078); only dispatra-api.service restarted; driver 2879b5e pushed only. Backup /var/backups/dispatra/next-stop-pickup-rule-20261127T115442Z; stage ../work/next-stop-pickup-rule-release-20261127.
+Checks: unit gate 71/71 live and candidate (test_regions excluded); ready and availability ok, live file matches the commit, no API errors.
+
 2026-11-27 Next stop: a drop-off may go next only once all its pickups are completed (409 otherwise), restoring the earlier validation; any qualifying stop, even the last, can still be chosen. No schema or migration change.
 Checks: tests/test_driver_next_stop.py 4/4 on dispatra_events_test (new: drop-offs refused before their pickup, allowed after it).
 
