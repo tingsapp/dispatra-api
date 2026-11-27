@@ -1,3 +1,6 @@
+Published 2026-11-27T10:15:40Z as next_stop_any_20261127: API 20c1d2d (any stop may go next, a drop-off brings its pending pickups along): app/operations/next_stop.py and tests/test_driver_next_stop.py only, hash-checked against 710b82f, no drift; no migration (0078); only dispatra-api.service restarted; web and driver apps unchanged on the server (driver af814bd pushed only). Backup /var/backups/dispatra/next-stop-any-20261127T101500Z; stage ../work/next-stop-any-release-20261127.
+Checks: unit gate 71/71 live and candidate (test_regions excluded: imports the retired DispatchZone); ready and availability ok (five availability 503s only during the restart); read-only proposal on Maya's route put the DTO-5701 pickup and drop-off first; on the Infinix, Go here next on the last stop reordered the route and the dispatcher notice arrived.
+
 2026-11-27 Next stop: any pending visit may be chosen, even the last; a drop-off whose goods are not on board brings its pending pickups along just ahead of it; an unchanged order is refused. driver_moves records the chosen visit and the visit that was next. No schema or migration change; not released.
 Checks: tests/test_driver_next_stop.py 4/4 on dispatra_events_test (new: last stop brings its pickup along, repeat refused).
 
