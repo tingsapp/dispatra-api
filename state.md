@@ -1,3 +1,6 @@
+Published 2026-11-27T05:35Z as delay_rows_20261127: web bf325d5 only (Delay reasons table without lines between rows). No API files, migration (0078) or restart; previous assets kept. Backup /var/backups/dispatra/delay-rows-20261127T053540Z; previous web /opt/dispatra/.web-delay-rows-old-41b9e024-eef6-4030-a574-7fcd25e07cc2; stage ../work/delay-rows-release-20261127.
+Checks: live index and App bundle match the build (fetched from this machine); availability ok. Settings page not checked signed in.
+
 Published 2026-11-27T05:29Z as delay_reasons_20261127: web eecf125 only (Settings › Extra time: Stop reasons renamed Delay reasons, reason rows as one flat table). No API files, migration (0078) or restart; previous assets kept. Backup /var/backups/dispatra/delay-reasons-20261127T052903Z; previous web /opt/dispatra/.web-delay-reasons-old-037cd156-c8eb-42e5-af7f-e837d9a99ee2; stage ../work/delay-reasons-release-20261127.
 Checks: live entry and App bundle byte-match the build and contain Delay reasons (also fetched from this machine); availability ok; caddy and api active. Settings page not checked signed in.
 
