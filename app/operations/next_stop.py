@@ -1,8 +1,7 @@
-"""The driver picks which pending visit comes next, any of them. The other pending visits keep their relative order.
+"""The driver picks which pending visit comes next, even the last. The other pending visits keep their relative order.
 
-A drop-off whose goods are not on board brings its pending pickups along, just ahead of it. An arrival-confirmed
-current visit is locked and the vehicle never overloads. Late delivery windows are warnings the driver must accept.
-ETAs are re-estimated for the new order.
+A drop-off may go next only once all its pickups are completed, an arrival-confirmed current visit is locked and the
+vehicle never overloads. Late delivery windows are warnings the driver must accept. ETAs are re-estimated for the new order.
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -46,15 +45,15 @@ def proposal(db, actor, route, visit_id):
     orders = list(db.scalars(select(Order).where(Order.organization_id == actor.organization_id, Order.route_id == route.id)))
     stops = {s['id']: s for o in orders for s in o.facts['stops']}
     items = [i for o in orders for i in o.facts['items']]
-    # The chosen drop-off's goods still to collect: their pickups come first, in their current order.
-    needed = {i['pickup_id'] for i in items if i['delivery_id'] == str(chosen.stop_id)}
-    first = [v for v in pending if str(v.stop_id) in needed] + [chosen]
-    sequence = first + [v for v in pending if v not in first]
-    if sequence == pending: raise HTTPException(409, 'This visit is already next.')
+    if chosen is pending[0]: raise HTTPException(409, 'This visit is already next.')
+    # A destination is never offered before its goods are collected.
+    loaded = {str(v.stop_id) for v in completed}
+    if any(i['delivery_id'] == str(chosen.stop_id) and i['pickup_id'] not in loaded for i in items):
+        raise HTTPException(409, 'Pick up the goods for this delivery first.')
+    sequence = [chosen] + [v for v in pending if v is not chosen]
     vehicle = record(db, Vehicle, actor, route.vehicle_id).data
     capacities = (Decimal(str(vehicle['payload_kg'])), Decimal(str(vehicle['volume_m3'])), Decimal(vehicle.get('pallet_capacity', 0)))
     load = confirmed_load(completed, items)
-    loaded = {str(v.stop_id) for v in completed}
     points = fixes(db, actor, record(db, Driver, actor, route.driver_id))
     last = stops.get(str(completed[-1].stop_id)) if completed else None
     origin = points[0].data if points else last['address'] if last else None

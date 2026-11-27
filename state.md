@@ -1,3 +1,6 @@
+2026-11-27 Next stop: a drop-off may go next only once all its pickups are completed (409 otherwise), restoring the earlier validation; any qualifying stop, even the last, can still be chosen. No schema or migration change.
+Checks: tests/test_driver_next_stop.py 4/4 on dispatra_events_test (new: drop-offs refused before their pickup, allowed after it).
+
 Published 2026-11-27T10:15:40Z as next_stop_any_20261127: API 20c1d2d (any stop may go next, a drop-off brings its pending pickups along): app/operations/next_stop.py and tests/test_driver_next_stop.py only, hash-checked against 710b82f, no drift; no migration (0078); only dispatra-api.service restarted; web and driver apps unchanged on the server (driver af814bd pushed only). Backup /var/backups/dispatra/next-stop-any-20261127T101500Z; stage ../work/next-stop-any-release-20261127.
 Checks: unit gate 71/71 live and candidate (test_regions excluded: imports the retired DispatchZone); ready and availability ok (five availability 503s only during the restart); read-only proposal on Maya's route put the DTO-5701 pickup and drop-off first; on the Infinix, Go here next on the last stop reordered the route and the dispatcher notice arrived.
 
