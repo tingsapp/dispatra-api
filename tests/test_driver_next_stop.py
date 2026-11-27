@@ -26,9 +26,6 @@ def test_driver_moves_a_later_pickup_up_and_dispatch_hears_about_it(setup):
     url = BASE + f'/driver/routes/{route["id"]}/stops'
     first, *rest = pending(route)
     pickup = next(v for v in rest if v['stop']['kind'] == 'PICKUP')
-    # Nothing is loaded yet, so no delivery can come next.
-    blocked = next(v for v in rest if v['stop']['kind'] == 'DROPOFF')
-    assert mobile.get(url + f'/{blocked["id"]}/next-preview').status_code == 409
     assert mobile.get(url + f'/{first["id"]}/next-preview').status_code == 409
 
     preview = check(mobile.get(url + f'/{pickup["id"]}/next-preview'))
@@ -84,3 +81,23 @@ def test_a_missed_window_needs_the_drivers_confirmation(setup):
     body = dict(version=route['version'], generation=route['generation'])
     assert post(mobile, url + '/next', body).status_code == 409
     assert check(post(mobile, url + '/next', body | {'accept_late': True}))['stops'][0]['id'] == visit['id']
+
+
+def test_choosing_the_last_stop_brings_its_pickup_along(setup):
+    w = setup; mobile = w['mobile']
+    route = started(w)
+    url = BASE + f'/driver/routes/{route["id"]}/stops'
+    visits = pending(route)
+    last = visits[-1]
+    assert last['stop']['kind'] == 'DROPOFF'
+    pickups = {i['pickup_id'] for i in route['items'] if i['delivery_id'] == last['stop_id']}
+    ahead = [v for v in visits if v['stop_id'] in pickups]
+    expected = ahead + [last] + [v for v in visits if v not in ahead and v is not last]
+    preview = check(mobile.get(url + f'/{last["id"]}/next-preview'))
+    assert [v['id'] for v in preview['visits']] == [v['id'] for v in expected]
+    moved = check(post(mobile, url + f'/{last["id"]}/next', dict(version=route['version'], generation=route['generation'], accept_late=True)))
+    assert [v['id'] for v in moved['stops']] == [v['id'] for v in expected]
+    assert moved['plan']['driver_moves'][-1]['stop_id'] == last['stop_id']
+    assert moved['plan']['driver_moves'][-1]['before_stop_id'] == visits[0]['stop_id']
+    # The same choice again changes nothing and is refused.
+    assert post(mobile, url + f'/{last["id"]}/next', dict(version=moved['version'], generation=moved['generation'], accept_late=True)).status_code == 409

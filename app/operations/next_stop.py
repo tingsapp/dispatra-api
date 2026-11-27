@@ -1,7 +1,8 @@
-"""The driver picks which pending visit comes next. The other pending visits keep their relative order.
+"""The driver picks which pending visit comes next, any of them. The other pending visits keep their relative order.
 
-An arrival-confirmed current visit is locked, a delivery never comes before its pickup and the vehicle never
-overloads. Late delivery windows are warnings the driver must accept. ETAs are re-estimated for the new order.
+A drop-off whose goods are not on board brings its pending pickups along, just ahead of it. An arrival-confirmed
+current visit is locked and the vehicle never overloads. Late delivery windows are warnings the driver must accept.
+ETAs are re-estimated for the new order.
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -42,11 +43,14 @@ def proposal(db, actor, route, visit_id):
         if any(v.id == visit_id for v in visits): raise HTTPException(409, 'This visit is already completed.')
         raise HTTPException(404, 'Visit not found.')
     if pending[0].arrived_at: raise HTTPException(409, 'Finish the visit you arrived at first.')
-    if chosen is pending[0]: raise HTTPException(409, 'This visit is already next.')
-    sequence = [chosen] + [v for v in pending if v is not chosen]
     orders = list(db.scalars(select(Order).where(Order.organization_id == actor.organization_id, Order.route_id == route.id)))
     stops = {s['id']: s for o in orders for s in o.facts['stops']}
     items = [i for o in orders for i in o.facts['items']]
+    # The chosen drop-off's goods still to collect: their pickups come first, in their current order.
+    needed = {i['pickup_id'] for i in items if i['delivery_id'] == str(chosen.stop_id)}
+    first = [v for v in pending if str(v.stop_id) in needed] + [chosen]
+    sequence = first + [v for v in pending if v not in first]
+    if sequence == pending: raise HTTPException(409, 'This visit is already next.')
     vehicle = record(db, Vehicle, actor, route.vehicle_id).data
     capacities = (Decimal(str(vehicle['payload_kg'])), Decimal(str(vehicle['volume_m3'])), Decimal(vehicle.get('pallet_capacity', 0)))
     load = confirmed_load(completed, items)
@@ -98,14 +102,16 @@ def choose(db, actor, identity, visit_id, data, key):
         completed, schedule, basis = proposal(db, actor, route, visit_id)
         if any(row['late'] for row in schedule) and not data.accept_late:
             raise HTTPException(409, 'A stop would miss its time window. Confirm to continue.')
-        before = schedule[1]['stop_id']
+        # The visit that was next before this change.
+        before = str(min((row['visit'] for row in schedule), key=lambda v: v.position).stop_id)
+        chosen = next(row['stop_id'] for row in schedule if row['visit'].id == visit_id)
         for row in schedule: row['visit'].position += 10000
         db.flush()
         for position, row in enumerate(schedule, len(completed)):
             row['visit'].position, row['visit'].planned_at = position, row['planned_at']
         done = {str(v.stop_id) for v in completed}
         prior = route.plan
-        moves = [*prior.get('driver_moves', []), {'stop_id': schedule[0]['stop_id'], 'before_stop_id': before, 'at': now().isoformat()}]
+        moves = [*prior.get('driver_moves', []), {'stop_id': chosen, 'before_stop_id': before, 'at': now().isoformat()}]
         route.plan = {**prior, 'revision': int(prior.get('revision', 1)) + 1, 'resequenced_basis': basis, 'driver_moves': moves[-MOVES_KEPT:],
             'stops': [s for s in prior['stops'] if s['stop_id'] in done] + [{'stop_id': row['stop_id'], 'planned_at': row['planned_at'].isoformat(),
                 'load_kg': row['load_kg'], 'volume_m3': row['volume_m3'], 'pallets': row['pallets']} for row in schedule]}
