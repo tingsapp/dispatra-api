@@ -26,7 +26,7 @@ def profile(slug: str, db: DB, user: User = Depends(auth.driver)):
     return {'time_zone': config.time_zone, 'id': row.id, 'version': row.version, 'number': row.number, 'name': row.name, 'email': row.email, 'phone': row.phone,
         'address': row.address, 'service_city': row.service_city, 'vehicle_id': row.vehicle_id,
         'duty': DutyView.model_validate(duty).model_dump(mode='json') if duty else None,
-        'location_permission': row.location_permission,
+        'location_permission': row.location_permission, 'avatar_url': row.data.get('avatar_url', ''),
         'vehicle_name': ' · '.join(filter(None, [vehicle.data.get('name'), vehicle.data.get('plate')])) if vehicle else None}
 
 
@@ -35,6 +35,12 @@ def profile_update(slug: str, data: DriverProfileUpdate, db: DB, idempotency_key
     def run():
         row = record(db,Driver,user,user.driver_id,True); version(row,data.version)
         row.phone = data.phone.strip()
+        if data.name is not None: row.name = data.name
+        if data.address is not None:
+            # The residence never sets dispatch origin, so a driver may change it during a Route.
+            row.address = data.address.model_dump(mode='json')
+            row.service_city = ' '.join(data.address.city.casefold().split())
+        if data.avatar_url is not None: row.data = {**row.data, 'avatar_url': data.avatar_url}
         changed(db,user,row,'driver.profile_updated')
         return {'driver_id': str(row.id)}
     command(db,user,idempotency_key,'driver-profile',data.model_dump(mode='json'),run)

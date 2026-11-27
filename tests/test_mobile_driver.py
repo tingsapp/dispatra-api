@@ -1,4 +1,5 @@
 """Native bearer authentication and private assignment inbox on restricted PostgreSQL."""
+import base64
 from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi.testclient import TestClient
@@ -59,6 +60,48 @@ def test_driver_timezone_is_company_owned_and_updates_with_settings(setup):
         assert edited['time_zone'] == 'Asia/Tokyo'
         assert native.get(BASE + '/settings').status_code == 403
         assert native.get('/api/v1/companies/other/driver/profile').status_code == 404
+
+
+def test_driver_sets_own_avatar_and_phone_only_edits_keep_it(setup):
+    w = setup
+    avatar = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'0' * 32).decode()
+    with TestClient(app, headers={'X-Requested-With': 'Dispatra'}) as native:
+        native_login(native, w)
+        profile = check(native.get(BASE + '/driver/profile'))
+        assert profile['avatar_url'] == ''
+        patch = lambda body: native.patch(BASE + '/driver/profile', json={'version': profile['version'], 'phone': profile['phone'], **body}, headers={'Idempotency-Key': str(uuid4())})
+        assert patch({'avatar_url': 'javascript:alert(1)'}).status_code == 422
+        profile = check(patch({'avatar_url': avatar}))
+        assert profile['avatar_url'] == avatar
+        # The driver app sends only the phone; that must not clear the avatar.
+        profile = check(patch({}))
+        assert profile['avatar_url'] == avatar
+        driver = check(w['client'].get(BASE + f'/drivers/{w["driver"]["id"]}'))
+        assert driver['data']['avatar_url'] == avatar
+        # A dispatcher edit keeps the driver's uploaded image.
+        check(w['client'].put(BASE + f'/drivers/{driver["id"]}', json={'version': driver['version'], 'data': driver['data']}, headers={'Idempotency-Key': str(uuid4())}))
+        profile = check(native.get(BASE + '/driver/profile'))
+        assert profile['avatar_url'] == avatar
+        assert check(patch({'avatar_url': ''}))['avatar_url'] == ''
+
+
+def test_driver_edits_own_name_and_address_but_not_email(setup):
+    w = setup
+    home = {'text': '1055 West Hastings Street, Vancouver, BC V6E 2E9', 'city': 'Vancouver', 'province': 'BC', 'postal_code': 'V6E 2E9', 'latitude': 49.2876, 'longitude': -123.1184}
+    with TestClient(app, headers={'X-Requested-With': 'Dispatra'}) as native:
+        native_login(native, w)
+        profile = check(native.get(BASE + '/driver/profile'))
+        patch = lambda body: native.patch(BASE + '/driver/profile', json={'version': profile['version'], 'phone': profile['phone'], **body}, headers={'Idempotency-Key': str(uuid4())})
+        assert patch({'email': 'new@example.com'}).status_code == 422
+        profile = check(patch({'name': 'Dana Renamed', 'address': home}))
+        assert (profile['name'], profile['address']['text'], profile['email']) == ('Dana Renamed', home['text'], w['driver']['email'])
+        assert profile['service_city'] == 'vancouver'
+        assert check(w['client'].get(BASE + f'/drivers/{w["driver"]["id"]}'))['name'] == 'Dana Renamed'
+        # The residence is not a dispatch origin, so it stays editable during a Route.
+        assign(w, new_order(w))
+        profile = check(native.get(BASE + '/driver/profile'))
+        moved = check(patch({'address': {**home, 'text': '800 Robson Street, Vancouver, BC V6Z 3B7', 'postal_code': 'V6Z 3B7'}}))
+        assert moved['address']['postal_code'] == 'V6Z 3B7'
 
 
 def test_notification_ownership_replay_and_release(setup):

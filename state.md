@@ -1,3 +1,6 @@
+2026-11-27 PATCH /driver/profile also takes optional name, address and avatar_url (validate_logo: PNG/JPEG data URL up to 200 KB or HTTP(S)); omitted fields keep saved values, so the phone-only driver app is unaffected. DriverProfileView adds avatar_url; DriverData.avatar_url now goes through the same validator (max 280000). openapi.json regenerated.
+Checks: py_compile ok; tests/unit 71/71 (test_regions skipped: imports the retired DispatchZone); Pydantic accept/reject checks pass; new test_mobile_driver avatar and name/address tests not run (no PostgreSQL test database available here). Not deployed.
+
 2026-11-27 Near-stop arrival question: Order Watch raises ARRIVAL_UNCONFIRMED after 5 min of accurate GPS within 100 m of the next unarrived stop, asks the driver (prompt says tap Arrived) and closes it when arrival is recorded (same transaction) or on the next scan; QuestionView gains `kind` (openapi.json already carried it). No migration; not released.
 Checks: on dispatra_events_test, new near-stop tests 2/2 plus reply, closed-stop, ready-time, stopless-photo and location tests pass (one closed-stop login error in a shared-DB run passed on rerun).
 

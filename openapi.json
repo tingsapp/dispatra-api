@@ -36821,7 +36821,7 @@
           },
           "avatar_url": {
             "type": "string",
-            "maxLength": 2000,
+            "maxLength": 280000,
             "title": "Avatar Url",
             "default": ""
           },
@@ -37274,6 +37274,41 @@
             "maxLength": 50,
             "minLength": 3,
             "title": "Phone"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Address"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 280000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
           }
         },
         "additionalProperties": false,
@@ -37358,6 +37393,11 @@
               }
             ],
             "title": "Vehicle Name"
+          },
+          "avatar_url": {
+            "type": "string",
+            "title": "Avatar Url",
+            "default": ""
           }
         },
         "type": "object",

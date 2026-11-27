@@ -430,7 +430,7 @@ class VehicleUpdate(Version):
 
 class DriverData(Input):
     name: Name
-    avatar_url: str = Field(default='', max_length=2000)
+    avatar_url: str = Field(default='', max_length=280000)
     email: EmailStr
     phone: Annotated[str, Field(min_length=3, max_length=50)]
     address: Address
@@ -443,6 +443,12 @@ class DriverData(Input):
     shift_end: AwareDatetime | None = None
     maximum_work_minutes: int = Field(default=480, ge=1, le=1440)
     active: bool = True
+
+    @field_validator('avatar_url')
+    @classmethod
+    def driver_avatar(cls, value):
+        return validate_logo(value)
+
     @model_validator(mode='after')
     def validate_driver(self):
         self.email = str(self.email).lower()
@@ -924,10 +930,20 @@ class DriverProfileView(BaseModel):
     duty: DutyView | None
     location_permission: str
     vehicle_name: str | None = None
+    avatar_url: str = ''
 
 
 class DriverProfileUpdate(Version):
     phone: Annotated[str, Field(min_length=3, max_length=50)]
+    # Omitted fields keep their saved values, so clients that edit only the phone change nothing else.
+    name: Name | None = None
+    address: Address | None = None
+    avatar_url: Annotated[str, Field(max_length=280000)] | None = None
+
+    @field_validator('avatar_url')
+    @classmethod
+    def driver_avatar(cls, value):
+        return value if value is None else validate_logo(value)
 
 
 class DriverOrderStop(BaseModel):
