@@ -25,6 +25,7 @@ EVENT_SIGNALS = {
     'evidence.accepted': ('delivery', 'data', 'Delivery proof accepted', 'INFO'),
     'order.completed': ('delivery', 'data', 'Order completed', 'INFO'),
     'route.completed': ('delivery', 'data', 'Route completed', 'INFO'),
+    'route.resequenced': ('delivery', 'data', 'Stop order changed by driver', 'INFO'),
     'order.completion_held': ('delivery', 'data', 'Completion needs review', 'WARNING'),
     'dispatch.no_candidate': ('data', 'DISPATCH', 'Waiting for an eligible driver', 'WARNING'),
     'watch.detected': ('data', 'OPERATIONAL', 'Order risk detected', 'WARNING'),

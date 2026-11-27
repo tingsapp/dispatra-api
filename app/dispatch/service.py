@@ -276,5 +276,5 @@ def resource_changed(db, organization_id, since):
     from app.events.models import Event
     return db.scalar(select(Event.id).where(Event.organization_id==organization_id, Event.created_at>since,
         Event.type.in_(['driver.updated','vehicle.updated','driver.location_updated','duty.started','duty.started_by_dispatcher',
-            'route.progress','route.completed','route.acknowledged','issue.resolved','watch.detected',
+            'route.progress','route.resequenced','route.completed','route.acknowledged','issue.resolved','watch.detected',
             'watch.escalated','watch.resolved','watch.driver_replied','settings.updated'])).limit(1)) is not None

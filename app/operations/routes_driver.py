@@ -160,6 +160,22 @@ def arrive(slug: str, identity: UUID, visit_id: UUID, data: ArrivalCommand, db: 
     return execution.arrive_stop(db,user,identity,visit_id,data,idempotency_key)
 
 
+from .schemas import NextStopCommand, NextStopPreview
+
+
+@router.get('/driver/routes/{identity}/stops/{visit_id}/next-preview', response_model=NextStopPreview)
+def next_stop_preview(slug: str, identity: UUID, visit_id: UUID, db: DB, user: User = Depends(auth.driver)):
+    from . import next_stop
+    return next_stop.preview(db,user,identity,visit_id)
+
+
+@router.post('/driver/routes/{identity}/stops/{visit_id}/next', response_model=DriverRouteView)
+def choose_next_stop(slug: str, identity: UUID, visit_id: UUID, data: NextStopCommand, db: DB, idempotency_key: OperationKey, user: User = Depends(auth.driver)):
+    """Make a pending visit the next one; the other pending visits keep their order."""
+    from . import next_stop
+    return next_stop.choose(db,user,identity,visit_id,data,idempotency_key)
+
+
 from .schemas import IssueInput, IssueView
 
 @router.post('/driver/stops/{identity}/issue', response_model=IssueView, status_code=201)

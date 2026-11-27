@@ -1,3 +1,6 @@
+2026-11-27 Driver-chosen next stop: GET /driver/routes/{id}/stops/{visit_id}/next-preview and POST .../next (next_stop.py) make one pending visit next on an executing route; others keep their order, with precedence/capacity checks (confirmed_load shared with live_dispatch), road or straight-line ETAs and accept_late for late windows. route.resequenced notifies dispatch and feeds activity/machine events. openapi.json regenerated.
+Checks: py_compile ok; tests/unit 71/71; openapi.json matches the app; new tests/test_driver_next_stop.py (3) not run here (no PostgreSQL test database). Not deployed.
+
 2026-11-27 PATCH /driver/profile also takes optional name, address and avatar_url (validate_logo: PNG/JPEG data URL up to 200 KB or HTTP(S)); omitted fields keep saved values, so the phone-only driver app is unaffected. DriverProfileView adds avatar_url; DriverData.avatar_url now goes through the same validator (max 280000). openapi.json regenerated.
 Checks: py_compile ok; tests/unit 71/71 (test_regions skipped: imports the retired DispatchZone); Pydantic accept/reject checks pass; new test_mobile_driver avatar and name/address tests not run (no PostgreSQL test database available here). Not deployed.
 

@@ -115,6 +115,14 @@ def notes(db, action, entity_id, audience, actor, recipients):
             + (to(dispatch(), 'INFO', 'Order unassigned', f'{number} is waiting for a driver.') if actor.kind == 'USER' else []))
     if action == 'route.updated':
         return to(driver(), 'WARNING', 'Route updated', 'New stops added. Review your route when safe.')
+    if action == 'route.resequenced':
+        route = db.get(m.Route, entity_id)
+        moved = (route.plan.get('driver_moves') or [{}])[-1] if route else {}
+        stop = db.get(m.OrderStop, moved['stop_id']) if moved.get('stop_id') else None
+        target = db.get(m.Order, stop.order_id) if stop else None
+        chosen = db.get(m.Driver, route.driver_id) if route else None
+        what = f"the {'pickup' if stop.kind == 'PICKUP' else 'drop-off'} for {target.number}" if stop and target else 'another stop'
+        return to(dispatch(), 'INFO', 'Stop order changed', f'{chosen.name if chosen else "The driver"} is going to {what} next.')
     if action == 'route.released':
         return to(driver(), 'INFO', 'Assignment changed', 'A planned route was removed.')
     if action == 'order.started' and order:

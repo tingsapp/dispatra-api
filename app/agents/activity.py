@@ -18,7 +18,7 @@ LABELS = {
     'order.cancelled': 'Order cancelled', 'order.archived': 'Order archived', 'order.restored': 'Order restored', 'order.completion_held': 'Completion needs review',
     'route.created': 'Route prepared', 'route.optimized': 'Route optimized',
     'route.started': 'Route started', 'route.released': 'Route released',
-    'route.completed': 'Route completed', 'stop.arrived': 'Arrival recorded',
+    'route.completed': 'Route completed', 'route.resequenced': 'Stop order changed by driver', 'stop.arrived': 'Arrival recorded',
     'stop.completed': 'Stop completed', 'evidence.accepted': 'Delivery evidence accepted',
     'issue.reported': 'Operational issue reported', 'issue.resolved': 'Operational issue resolved',
     'intake.received': 'Email received', 'intake.order_created': 'Email converted to order',

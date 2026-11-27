@@ -42,6 +42,11 @@ def state(db, actor, route, orders, driver):
         else: pending.append(visit)
     if not pending: raise HTTPException(409, 'Finish the current route before assigning another Order.')
     items = [i for order in orders for i in order.facts['items']]
+    return completed, pending, confirmed_load(completed, items), points
+
+
+def confirmed_load(completed, items):
+    """Weight, volume and pallets on board after the driver's confirmed loads and unloads."""
     load = [Decimal(0)] * 3
     for visit in completed:
         linked = {i['id']: i for i in items if str(visit.stop_id) in (i['pickup_id'], i['delivery_id'])}
@@ -54,7 +59,7 @@ def state(db, actor, route, orders, driver):
             load[0] += qty * Decimal(str(item['weight_kg']))
             load[1] += qty * Decimal(str(item['length_cm'])) * Decimal(str(item['width_cm'])) * Decimal(str(item['height_cm'])) / 1000000
             load[2] += qty * Decimal(item.get('pallets', 0))
-    return completed, pending, load, points
+    return load
 
 
 def plan(db, actor, route, orders, driver, vehicle, *, road=True):

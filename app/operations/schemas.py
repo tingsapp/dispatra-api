@@ -584,6 +584,23 @@ class ArrivalCommand(RouteCommand):
     captured_at: AwareDatetime
 
 
+class NextStopCommand(RouteCommand):
+    accept_late: StrictBool = Field(default=False, description='True once the driver has seen that a stop would miss its time window.')
+
+
+class NextStopVisit(BaseModel):
+    id: UUID
+    stop_id: UUID
+    planned_at: datetime
+    window_end: datetime | None = None
+    late: bool
+
+
+class NextStopPreview(BaseModel):
+    travel_basis: Literal['ROAD', 'STRAIGHT_LINE']
+    visits: list[NextStopVisit]
+
+
 class StopCommand(RouteCommand):
     quantities: dict[UUID, int]
     recipient_name: str = Field(default='', max_length=160)
