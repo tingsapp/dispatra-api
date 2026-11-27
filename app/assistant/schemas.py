@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from app.operations.schemas import OrderUpdate
 
 Kind = Literal['ORDER', 'DRIVER', 'VEHICLE', 'SHIPPER']
 Status = Literal['NEW', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
@@ -31,6 +32,24 @@ class IssueRef(BaseModel):
     model_config = ConfigDict(extra='forbid')
     id: UUID
     version: int = Field(ge=1)
+
+
+class OrderBatchUpdateItem(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    id: UUID
+    body: OrderUpdate
+
+
+class OrderBatchUpdate(BaseModel):
+    """Edit multiple Orders in one confirmed batch; each runs through `orders.update_order`."""
+    model_config = ConfigDict(extra='forbid')
+    items: list[OrderBatchUpdateItem] = Field(min_length=1, max_length=10)
+
+
+class OrderBatchClose(BaseModel):
+    """Cancel, archive, complete or restore multiple Orders in one confirmed batch."""
+    model_config = ConfigDict(extra='forbid')
+    items: list[IssueRef] = Field(min_length=1, max_length=50)
 
 
 class AlertClear(BaseModel):
@@ -89,8 +108,16 @@ class AssistantQuestion(BaseModel):
         return value
 
 
+class AssistantContext(BaseModel):
+    """Optional Monitor selection hints sent by the client; always re-verified inside the caller's company."""
+    model_config = ConfigDict(extra='forbid')
+    selected_order_id: UUID | None = None
+    selected_driver_id: UUID | None = None
+
+
 class WorkspaceAssistantQuestion(AssistantQuestion):
     kind: Literal['CHAT', 'BRIEFING'] = 'CHAT'
+    context: AssistantContext | None = None
 
 
 class SearchPlan(BaseModel):

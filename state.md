@@ -1,3 +1,11 @@
+2026-11-27 Dispatch consolidation wait-time awareness: `candidates.wait_minutes()` measures idle gaps between stops (`extra_wait_minutes` added to `CandidateMetrics`, rule score and `policy.priority()`), so merging across large pickup-window gaps no longer beats an idle driver while tight consolidation still wins. `openapi.json` and `schema.d.ts` regenerated; no migration.
+Checks: pytest `test_dispatch_policy.py` + unit & assistant unit suites 143/143 passed; `dispatra-local-api` & `dispatra-local-dispatch` restarted and ready. Not released.
+
+
+2026-11-27 Dispatcher Monitor chat intelligence: enriched search/workspace snapshot (driver duty/GPS/routes, order assigned driver/pricing/windows, Needs Attention, waiting requests, config, dispatch candidates), driver-based ORDER.UNASSIGN, best-driver & fallback ASSIGN, DUE pickup dismissal in ALERT.CLEAR_ALL/order_attention, multi-order batch edit/cancel/archive/complete/restore with history target resolution, drafting self-repair, and Monitor selection context. openapi.json regenerated; no migration.
+Checks: py_compile ok; pytest unit suite + assistant unit tests 131/131 passed (test_regions excluded; PostgreSQL integration tests not run here). Not released.
+
+
 Published 2026-11-27T11:55:26Z as next_stop_pickup_rule_20261127: API 6845151 (a drop-off may go next only once its pickups are done): app/operations/next_stop.py and tests/test_driver_next_stop.py only, hash-checked against 20c1d2d, no drift; no migration (0078); only dispatra-api.service restarted; driver 2879b5e pushed only. Backup /var/backups/dispatra/next-stop-pickup-rule-20261127T115442Z; stage ../work/next-stop-pickup-rule-release-20261127.
 Checks: unit gate 71/71 live and candidate (test_regions excluded); ready and availability ok, live file matches the commit, no API errors.
 

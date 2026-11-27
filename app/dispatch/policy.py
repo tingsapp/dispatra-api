@@ -5,8 +5,14 @@ def zone_tier(candidate):
     return 1 if candidate['metrics'].get('home_zone_match') is False else 0
 
 
+def added_minutes(candidate):
+    """Total added route time: extra driving plus any extra idle waiting between stops."""
+    metrics = candidate['metrics']
+    return metrics['extra_minutes'] + metrics.get('extra_wait_minutes', 0)
+
+
 def priority(candidate, candidates):
-    """Prefer a feasible existing-route insertion when it uses no more driving than a new route.
+    """Prefer a feasible existing-route insertion when it uses no more total added time (driving + wait) than a new route.
 
     Capacity, timing, duty, custody and road restrictions are checked by the planner
     before candidates reach this policy. Workload only breaks ties within a tier.
@@ -14,9 +20,9 @@ def priority(candidate, candidates):
     metrics = candidate['metrics']
     if not metrics.get('route_orders') or metrics.get('awaiting_duty'):
         return 1
-    standalone = [c['metrics']['extra_minutes'] for c in candidates
+    standalone = [added_minutes(c) for c in candidates
                   if not c['metrics'].get('route_orders') and not c['metrics'].get('awaiting_duty')]
-    return 0 if not standalone or metrics['extra_minutes'] <= min(standalone) else 1
+    return 0 if not standalone or added_minutes(candidate) <= min(standalone) else 1
 
 
 def tier(candidate, candidates):

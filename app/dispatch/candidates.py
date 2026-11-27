@@ -28,6 +28,17 @@ def blocker(order):
     return None
 
 
+def wait_minutes(plan, orders):
+    """Idle waiting time inside a planned route (elapsed span minus driving and stop service)."""
+    if not plan or not plan.get('stops'): return 0.0
+    stop_map = {s['id']: s for o in orders for s in o.facts['stops']}
+    start = datetime.fromisoformat(plan['planned_at'])
+    last = plan['stops'][-1]
+    span = max(0.0, (datetime.fromisoformat(last['planned_at']) - start).total_seconds() / 60) + stop_map[last['stop_id']].get('service_minutes', 0)
+    service = sum(stop_map[v['stop_id']].get('service_minutes', 0) for v in plan['stops'])
+    return max(0.0, span - float(plan['travel_minutes']) - service)
+
+
 def planned_start(order, driver, route):
     """When the driver's Route would begin with this Order: an existing Route keeps its time; a new one waits for the schedule and shift."""
     start = route.planned_at if route else max(order.scheduled_at, now())
@@ -83,6 +94,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             slack = [(datetime.fromisoformat(mine[v['stop_id']]['window_end'])-datetime.fromisoformat(v['planned_at'])).total_seconds()/60
                 for v in visits if mine[v['stop_id']]['kind']=='DROPOFF' and mine[v['stop_id']].get('window_end')]
             extra = max(0, plan['travel_minutes']-(baseline['travel_minutes'] if baseline else 0))
+            extra_wait = max(0.0, wait_minutes(plan, on_route+[order])-(wait_minutes(baseline, on_route) if baseline else 0.0))
             worked, remaining, completed, utilization = measure(db, actor, driver, config, route, plan, on_route+[order])
             area = delivery_zone(order)
             same_area = bool(on_route and area in {delivery_zone(o) for o in on_route})
@@ -90,7 +102,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             exact = not order.facts.get('vehicle_type_id') or str(vehicle.type_id)==str(order.facts['vehicle_type_id'])
             deadhead = round(km(here,pickups[0]['address']),1) if here else None
             active = sum(o.status not in {'COMPLETED','CANCELLED'} for o in on_route)
-            score = extra + (8 if on_route and not same_area else 0) + min(utilization*15,30) + (completed+active)*0.5 + (0 if exact else 2) - (1 if preferred else 0)
+            score = extra + extra_wait + (8 if on_route and not same_area else 0) + min(utilization*15,30) + (completed+active)*0.5 + (0 if exact else 2) - (1 if preferred else 0)
             # The vehicle's parking address, not the driver's position, decides its home zone.
             in_zone = None if home is None else home.contains(vehicle.data.get('parking_address'))
             facts = []
@@ -99,8 +111,9 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             elif in_zone is False: facts.append(f'Vehicle parks outside {home.name}; used only when no {home.name} vehicle fits')
             if (order.booking or {}).get('assigned_driver'): facts.append('Shipper’s assigned driver')
             elif preferred: facts.append('Shipper requested this driver')
-            if live: facts.append(f'Joins the live route, +{round(extra)} min driving; driver must review')
-            elif route: facts.append(f'Joins the planned route ({active} orders), +{round(extra)} min driving')
+            wait_note = f', +{round(extra_wait)} min wait' if extra_wait >= 5 else ''
+            if live: facts.append(f'Joins the live route, +{round(extra)} min driving{wait_note}; driver must review')
+            elif route: facts.append(f'Joins the planned route ({active} orders), +{round(extra)} min driving{wait_note}')
             else: facts.append(f'New route, about {round(extra)} min driving with the trip to pickup')
             if area: facts.append('Nearby delivery area' + (' · compatible delivery area' if same_area else ' · delivery area'))
             facts.append(f'Today: {round(worked)} min worked, about {round(remaining)} min booked, {completed} done')
@@ -111,7 +124,7 @@ def evaluate(db, actor, order, allocations=None, *, road=True, include_expected=
             candidates.append({**base, 'vehicle_id':str(vehicle.id), 'vehicle_name':vehicle.data.get('name') or vehicle.number,
                 'route_id':str(route.id) if route and route.id else None, 'route_version':getattr(route,'version',None),
                 'planned_at':start.isoformat(), 'first_arrival':visits[0]['planned_at'], 'score':round(score,2), 'reason':'', 'facts':facts,
-                'metrics':{'extra_minutes':round(extra,1), 'deadhead_km':deadhead, 'position':source,
+                'metrics':{'extra_minutes':round(extra,1), 'extra_wait_minutes':round(extra_wait,1), 'deadhead_km':deadhead, 'position':source,
                     'route_orders':active, 'slack_minutes':round(min(slack)) if slack else None, 'preferred':preferred,
                     'exact_vehicle_type':exact, 'zone':area, 'zone_match':same_area, 'direction':direction,
                     'worked_minutes':worked, 'remaining_minutes':remaining, 'completed_orders':completed,

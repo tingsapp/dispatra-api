@@ -61,3 +61,21 @@ def test_hidden_warnings_return_when_the_order_changes_or_an_incident_gets_worse
     assert rows([hide('PRICING'), hide('OPERATIONAL:LATE_PICKUP', severity='CRITICAL')]) == {'PRICING': True, 'OPERATIONAL:LATE_PICKUP': True}
     assert rows([hide('PRICING', version=3)])['PRICING'] is False, 'an edited order shows its warnings again'
     assert rows([hide('OPERATIONAL:LATE_PICKUP', severity='WARNING')])['OPERATIONAL:LATE_PICKUP'] is False, 'a worse incident shows again'
+
+
+def test_due_pickup_warning_is_hidden_once_dismissed_at_current_order_version():
+    from types import SimpleNamespace
+    from unittest.mock import Mock, patch
+    from uuid import uuid4
+    from app.operations import reporting
+    order = SimpleNamespace(id=uuid4(), version=2, status='NEW', archived_at=None, scheduled_at=AT, created_at=AT,
+        facts={'stops': [{'id': 'pickup', 'kind': 'PICKUP'}]})
+    def rows(dismissals):
+        db = Mock(); db.scalars.side_effect = [Mock(all=Mock(return_value=[])), dismissals]
+        with patch.object(reporting, 'attention_flags', return_value=[]), patch.object(reporting, 'no_driver', return_value={}):
+            return reporting.order_attention(db, uuid4(), [order], {}, AT)[order.id]
+    shown = rows([])
+    assert [(row['key'], row['hidden']) for row in shown] == [('DUE', False)]
+    hidden = rows([SimpleNamespace(order_id=order.id, key='DUE', order_version=2, severity=None)])
+    assert [(row['key'], row['hidden']) for row in hidden] == [('DUE', True)]
+    assert reporting.attention_order_ids([order], {order.id: hidden}, set(), {}, AT) == set()

@@ -15,7 +15,7 @@ from .cards import reply, proposal, reference
 
 SHOWN = 10  # item lines on a bulk card; the rest are counted
 DEFAULT_NOTE = 'Resolved from Dispatra chat.'
-LABELS = {'PRICING': 'price review', 'LATE_START': 'late start', 'AT_RISK': 'delivery at risk', 'NO_DRIVER': 'no driver'}
+LABELS = {'PRICING': 'price review', 'LATE_START': 'late start', 'AT_RISK': 'delivery at risk', 'NO_DRIVER': 'no driver', 'DUE': 'pickup due'}
 
 
 def notifications(db, actor, name, op):

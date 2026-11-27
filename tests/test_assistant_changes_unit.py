@@ -288,6 +288,99 @@ class PrepareTests(unittest.TestCase):
         self.assertIsInstance(result, AssistantReply)
         self.assertEqual(result.message, 'Which driver?'); prepare.assert_called_once()
 
+    def test_unassign_by_driver_name_proposes_releasing_their_planned_route(self):
+        alex = driver_row(); alex.name = 'Alex Chen'
+        route = SimpleNamespace(id=uuid4(), status='PLANNED', locked=False, version=2, generation=1, driver_id=alex.id)
+        order = SimpleNamespace(id=uuid4(), number='ORD-123', status='ASSIGNED', version=3, route_id=route.id, booking={'shipper': {'name': 'Acme'}})
+        db = Mock()
+        db.scalar.return_value = route
+        db.scalars.return_value.all.return_value = [order]
+        with patch.object(records, 'find', side_effect=[[], [alex]]):
+            result = changes.prepare(db, ACTOR, plan('ORDER', 'UNASSIGN', 'Alex'))
+        change = result['change']
+        self.assertEqual((change.operation, change.target_id, change.body), ('ORDER.UNASSIGN', route.id, {'version': 2, 'generation': 1}))
+        self.assertEqual([line.model_dump() for line in change.lines], [{'field': 'Order ORD-123', 'before': 'Alex Chen', 'after': 'Unassigned'}])
+
+    def test_unassign_by_driver_entity_handles_multiple_assigned_orders(self):
+        alex = driver_row(); alex.name = 'Alex Chen'
+        route = SimpleNamespace(id=uuid4(), status='PLANNED', locked=False, version=4, generation=2, driver_id=alex.id)
+        orders = [
+            SimpleNamespace(id=uuid4(), number='ORD-1', status='ASSIGNED', version=1, route_id=route.id, booking={'shipper': {'name': 'Acme'}}),
+            SimpleNamespace(id=uuid4(), number='ORD-2', status='ASSIGNED', version=1, route_id=route.id, booking={'shipper': {'name': 'Acme'}}),
+        ]
+        db = Mock(); db.scalar.return_value = route; db.scalars.return_value.all.return_value = orders
+        with patch.object(records, 'find', return_value=[alex]):
+            result = changes.prepare(db, ACTOR, plan('DRIVER', 'UNASSIGN', 'Alex'))
+        change = result['change']
+        self.assertEqual((change.operation, change.subject, change.target_id), ('ORDER.UNASSIGN', 'Alex Chen’s 2 assigned orders', route.id))
+        self.assertEqual([line.field for line in change.lines], ['Order ORD-1', 'Order ORD-2'])
+
+    def test_completed_or_cancelled_orders_refuse_edit_before_drafting(self):
+        order = SimpleNamespace(id=uuid4(), number='ORD-99', status='COMPLETED', version=2, route_id=None, booking={'shipper': {'name': 'Acme'}})
+        with patch.object(records, 'find', return_value=[order]), patch.object(provider, 'generate') as generate:
+            result = changes.prepare(None, ACTOR, plan('ORDER', 'UPDATE', 'ORD-99', 'change pickup time'))
+        self.assertIsNone(result['change'])
+        self.assertIn('completed', result['message'])
+        generate.assert_not_called()
+
+    def test_drafting_repairs_once_on_validation_error(self):
+        row = driver_row()
+        bad = DraftedRecord(record_json=json.dumps({'data': {**records.editable(None, ACTOR, 'DRIVER', row)['data'], 'email': 'not-an-email'}}), missing=[])
+        good = DraftedRecord(record_json=json.dumps({'data': {**records.editable(None, ACTOR, 'DRIVER', row)['data'], 'phone': '(604) 555-0199'}}), missing=[])
+        with patch.object(records, 'find', return_value=[row]), patch.object(provider, 'generate', side_effect=[bad, good]) as generate, \
+             patch.object(changes, 'context', return_value=(None, {})), patch.object(drafting, 'humanize', side_effect=lambda db, org, data: data):
+            result = changes.prepare(None, ACTOR, plan('DRIVER', 'UPDATE', 'Driver', 'change phone to 604 555 0199'))
+        self.assertEqual(generate.call_count, 2)
+        self.assertIn('previous_errors', generate.call_args_list[1].args[2][0]['content'])
+        self.assertEqual(result['change'].operation, 'DRIVER.UPDATE')
+
+    def test_clearing_alerts_includes_due_pickups(self):
+        order = SimpleNamespace(id=uuid4(), number='DTO-100', version=2)
+        due = {'key': 'DUE', 'flag': 'DUE', 'description': 'Scheduled pickup time reached; pickup is still pending.', 'at': None, 'severity': None, 'hidden': False}
+        db = Mock(); db.execute.return_value.all.return_value = []
+        with patch.object(cleanup, 'open_attention', return_value=({order.id: order}, {order.id: [due]})), \
+             patch.object(records, 'open_issues', return_value=[]), patch.object(records, 'waiting_requests', return_value=0):
+            change = changes.prepare(db, ACTOR, plan('ALERT', 'CLEAR_ALL'))['change']
+        self.assertEqual(change.body['hide'], [{'order_id': str(order.id), 'key': 'DUE', 'order_version': 2, 'severity': None}])
+        self.assertEqual(change.lines[0].field, 'DTO-100 pickup due')
+
+    def test_search_tokens_and_order_number_cleaning(self):
+        from app.assistant import search
+        self.assertEqual(records.clean_order_term('#123'), '123')
+        self.assertEqual(records.clean_order_term('order #ORD-42'), 'ORD-42')
+        self.assertEqual(search.tokens('Alex Burnaby'), ['Alex', 'Burnaby'])
+        self.assertEqual(search.tokens('%'), ['%'])
+        self.assertEqual(search.tokens('604-555-0102'), ['604-555-0102'])
+
+    def test_multi_order_edit_from_conversation_history_prepares_one_batch_card(self):
+        first = SimpleNamespace(id=uuid4(), number='DDO-3967', status='NEW', version=1, route_id=None, booking={'shipper': {'name': 'Zia'}}, facts={'scheduled_at': '2026-11-25T20:00:00+00:00'})
+        second = SimpleNamespace(id=uuid4(), number='DDO-2067', status='NEW', version=2, route_id=None, booking={'shipper': {'name': 'Zia'}}, facts={'scheduled_at': '2026-11-25T20:00:00+00:00'})
+        db = Mock(); db.scalars.return_value.all.return_value = [first, second]
+        history = [SimpleNamespace(role='assistant', content='Yes, there are 2 orders:\n- order DDO-3967\n- order DDO-2067')]
+        updated = lambda row: {'version': row.version, 'booking': {'scheduled_at': '2026-11-27T20:00:00+00:00'}}
+        with patch.object(changes, 'context', return_value=(None, {})), \
+             patch.object(drafting, 'humanize', side_effect=lambda db, org, data: data), \
+             patch.object(changes, '_resolve_and_validate', side_effect=[updated(first), updated(second)]), \
+             patch.object(changes, 'normalized', side_effect=lambda db, actor, op, body: {k: v for k, v in body.items() if k != 'version'}):
+            result = changes.prepare(db, ACTOR, plan('ORDER', 'UPDATE', '', 'change scheduled pickup to today'), history=history)
+        change = result['change']
+        self.assertEqual((change.operation, change.subject, change.target_id), ('ORDER.UPDATE_MANY', '2 orders', None))
+        self.assertEqual([item['id'] for item in change.body['items']], [str(first.id), str(second.id)])
+        self.assertEqual([line.field for line in change.lines], ['DDO-3967 Scheduled at', 'DDO-2067 Scheduled at'])
+
+    def test_multi_order_archive_splits_comma_targets_and_uses_per_order_keys(self):
+        from app.assistant.schemas import OrderBatchClose
+        first = SimpleNamespace(id=uuid4(), number='DDO-3967', status='NEW', version=1, route_id=None, booking={'shipper': {'name': 'Zia'}})
+        second = SimpleNamespace(id=uuid4(), number='DDO-2067', status='NEW', version=3, route_id=None, booking={'shipper': {'name': 'Zia'}})
+        with patch.object(records, 'find', side_effect=[[first], [second]]):
+            change = changes.prepare(None, ACTOR, plan('ORDER', 'DELETE', 'DDO-3967, DDO-2067'))['change']
+        self.assertEqual((change.operation, change.destructive, change.target_id), ('ORDER.ARCHIVE_MANY', True, None))
+        self.assertEqual(change.body, {'items': [{'id': str(first.id), 'version': 1}, {'id': str(second.id), 'version': 3}]})
+        body = OrderBatchClose.model_validate(change.body)
+        with patch('app.operations.orders.archive_order') as archive_order:
+            self.assertEqual(changes.run_order_batch_archive(None, ACTOR, body, 'chat-key-0123456789'), {'updated': 2})
+        self.assertEqual([call.args[4] for call in archive_order.call_args_list], [f'chat-key-0123456789:{first.id}', f'chat-key-0123456789:{second.id}'])
+
 
 class ConfirmTests(unittest.TestCase):
     def confirm(self, operation, body, target_id=None, result=None):

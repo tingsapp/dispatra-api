@@ -33,8 +33,15 @@ def order_attention(db, org, orders, visits_by_stop, observed_at):
 
     `key` names a row the dispatcher can hide: the warning kind, or `OPERATIONAL:<incident kind>`. A hidden row stays
     hidden while its Order keeps the version it had when hidden and an incident does not become more severe."""
+    from .monitor_day import due_pickup
     from app.order_watch.models import Incident as OperationalIncident
-    attention = {order.id: [(flag, text, order.created_at) for flag, text in attention_flags(order, visits_by_stop, observed_at)] for order in orders}
+    attention = {}
+    for order in orders:
+        rows = [(flag, text, order.created_at) for flag, text in attention_flags(order, visits_by_stop, observed_at)]
+        if getattr(order, 'status', None) in ('NEW', 'ASSIGNED') and getattr(order, 'scheduled_at', None) is not None and getattr(order, 'facts', None):
+            if reminder := due_pickup(order, visits_by_stop, observed_at):
+                rows.append(('DUE', reminder['description'], reminder['at']))
+        attention[order.id] = rows
     watched = db.scalars(select(OperationalIncident).where(OperationalIncident.organization_id == org,
         OperationalIncident.status.in_(('OPEN','ACKNOWLEDGED')), OperationalIncident.source_issue_id.is_(None))).all()
     explained, incidents = set(), {}
@@ -172,7 +179,7 @@ def attention_order_ids(orders, attention, issue_ids, visits, observed):
     return {order.id for order in orders if order.archived_at is None
         and order.status in ('NEW','ASSIGNED','IN_PROGRESS') and
         (order.id in issue_ids or any(not row['hidden'] for row in attention.get(order.id, []))
-         or due_pickup(order, visits, observed))}
+         or (not any(row.get('key') == 'DUE' for row in attention.get(order.id, [])) and due_pickup(order, visits, observed)))}
 
 
 @router.get('/order-attention-count', response_model=dict[str, int])
@@ -230,7 +237,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
     needs_attention.extend({'id':None,'order_id':str(o.id),'kind':row['flag'],'description':row['description'],'at':alert_time(o, row['flag'], observed_at, visits_by_stop) if row['flag'] in ('LATE_START','AT_RISK') else row['at']}
         for o in orders for row in attention[o.id] if not row['hidden'])
     for order in orders:
-        if reminder := due_pickup(order, visits_by_stop, observed_at):
+        if not any(row.get('key') == 'DUE' for row in attention.get(order.id, ())) and (reminder := due_pickup(order, visits_by_stop, observed_at)):
             needs_attention.append(reminder)
     needs_attention.sort(key=lambda item: (item['at'], str(item.get('id') or item['order_id']) + item['kind']), reverse=True)
     return {'drivers':[{'id':str(d.id),'name':d.name,'vehicle_id':str(d.vehicle_id) if d.vehicle_id else None,
@@ -242,7 +249,7 @@ def monitor(slug: str, db: DB, user: User = Depends(auth.dispatcher)):
                    'estimate':estimates.get(r.id)} for r in routes],
         'orders':[{'id':str(o.id),'number':o.number,'status':o.status,'route_id':str(o.route_id) if o.route_id else None,
                    'pricing_status':o.pricing.get('status'),'review_reason':o.pricing.get('review_reason'),
-                   'attention_flags':[row['flag'] for row in attention[o.id]]} for o in orders],
+                   'attention_flags':[row['flag'] for row in attention[o.id] if row['flag'] != 'DUE']} for o in orders],
         'needs_attention':needs_attention}
 
 

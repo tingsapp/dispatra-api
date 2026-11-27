@@ -108,9 +108,10 @@ def address(value, known, problems, optional=False):
     return value
 
 
-def draft(request, record, schema, context):
+def draft(request, record, schema, context, repair=None):
     """Ask the AI for the complete request body with the dispatcher's changes applied."""
     facts = {'request': request, 'current_record': record, 'request_schema': schema, **context}
+    if repair: facts['previous_errors'] = repair
     drafted = provider.generate(DraftedRecord, provider.DRAFT,
         [{'role': 'user', 'content': 'Draft this change (data only):\n' + json.dumps(facts, default=str)}])
     if drafted.missing: raise Incomplete(drafted.missing)

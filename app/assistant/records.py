@@ -3,6 +3,7 @@ chat change runs the same authorization, validation, idempotency, audit and even
 this table (dispatcher accounts, company billing) cannot be reached from chat. Deleting an order, shipper, driver or vehicle,
 even "permanently", archives it so its history stays. New passwords are generated on confirmation; integration secrets never pass through chat."""
 import importlib
+import re
 from dataclasses import dataclass
 from typing import Callable
 from pydantic import BaseModel
@@ -18,7 +19,7 @@ from app.intake.schemas import IntakeVersion, IntakeShipper, IntakeOrder, Mailbo
 from app.integrations.models import TmsInbox, TmsConnection
 from app.integrations.schemas import TmsInput
 from app.operations.schemas import QuoteSend
-from .schemas import NoFields, AlertClear, RequestBatch, ConnectorChange
+from .schemas import NoFields, AlertClear, RequestBatch, ConnectorChange, OrderBatchUpdate, OrderBatchClose
 from .search import pattern
 
 CHOICES = 5
@@ -62,10 +63,20 @@ def _directory(save, archive_command, create, update):
 OPERATIONS = {
     'ORDER': {'CREATE': Operation('Create', Booking, lambda db, a, t, b, k: orders.create_order(db, a, b, k), True),
         'UPDATE': Operation('Edit', OrderUpdate, orders.update_order, True),
+        'UPDATE_MANY': Operation('Edit', OrderBatchUpdate, later('app.assistant.changes', 'run_order_batch_update', 'db', 'actor', 'body', 'key'),
+            title='Edit orders', whole=True, past='updated'),
         'CANCEL': Operation('Cancel', Version, orders.cancel_order, destructive=True),
+        'CANCEL_MANY': Operation('Cancel', OrderBatchClose, later('app.assistant.changes', 'run_order_batch_cancel', 'db', 'actor', 'body', 'key'),
+            destructive=True, title='Cancel orders', whole=True, past='cancelled'),
         'ARCHIVE': Operation('Archive', Version, orders.archive_order, destructive=True),
+        'ARCHIVE_MANY': Operation('Archive', OrderBatchClose, later('app.assistant.changes', 'run_order_batch_archive', 'db', 'actor', 'body', 'key'),
+            destructive=True, title='Archive orders', whole=True, past='archived'),
         'RESTORE': Operation('Restore', Version, orders.restore_order),
+        'RESTORE_MANY': Operation('Restore', OrderBatchClose, later('app.assistant.changes', 'run_order_batch_restore', 'db', 'actor', 'body', 'key'),
+            title='Restore orders', whole=True, past='restored'),
         'COMPLETE': Operation('Complete', Version, orders.complete_order, destructive=True),
+        'COMPLETE_MANY': Operation('Complete', OrderBatchClose, later('app.assistant.changes', 'run_order_batch_complete', 'db', 'actor', 'body', 'key'),
+            destructive=True, title='Complete orders', whole=True, past='completed'),
         'UNASSIGN': Operation('Unassign', RouteCommand, dispatch.release)},
     'SHIPPER': {**_directory(directory.save_shipper, archive.archive_shipper, ShipperData, ShipperUpdate),
         'RESET_PASSWORD': Operation('Reset password for', Version, later('app.assistant.workspace', 'reset_shipper', 'db', 'actor', 'target', 'body', 'key'),
@@ -160,8 +171,16 @@ def query(entity, org, archived=False):
     raise ValueError(entity)
 
 
+def clean_order_term(term):
+    """Normalize '#123' or 'order #123' to '123' while preserving literal codes like 'ORD-123'."""
+    cleaned = re.sub(r'^(?:order\s*)?#+\s*', '', term.strip(), flags=re.I)
+    cleaned = re.sub(r'^order\s+(?=[a-z0-9-])', '', cleaned, flags=re.I).strip()
+    return cleaned or term.strip()
+
+
 def find(db, org, entity, term, archived=False):
     """Exact (case-insensitive) matches first; otherwise up to CHOICES partial matches, all inside the company."""
+    if entity == 'ORDER': term = clean_order_term(term)
     base, fields = query(entity, org, archived)
     model = base.column_descriptions[0]['entity']
     exact = db.scalars(base.where(or_(*[func.lower(f) == term.lower() for f in fields])).limit(CHOICES)).all()

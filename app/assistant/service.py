@@ -11,23 +11,27 @@ from .schemas import SearchPlan, GroundedAnswer, AssistantReply, BriefingComment
 def ask(db, actor, question):
     if actor.role != 'DISPATCHER' or not getattr(actor, 'id', None): raise HTTPException(403, 'Dispatcher access required.')
     if question.kind == 'BRIEFING': return brief(db, actor)
+    ui_context = getattr(question, 'context', None)
     messages = [turn.model_dump() for turn in question.history] + [{'role': 'user', 'content': question.message}]
+    hint = search.selected_hint(db, actor.organization_id, ui_context) if ui_context else None
+    plan_messages = (messages[:-1] + [{'role': 'user', 'content': f'{hint}\n{question.message}'}]) if hint else messages
     with monitor_run('CHAT') as progress:
         progress.step('Understanding a workspace question.', 10, actor.organization_id)
         ai = True
-        try: plan = provider.generate(SearchPlan, provider.PLAN, messages)
+        try: plan = provider.generate(SearchPlan, provider.PLAN, plan_messages)
         except provider.Unavailable:
             ai = False
-            query = re.sub(r'^(?:find|search(?: for)?|look up|show)\s+', '', question.message, flags=re.I)[:120]
+            query = re.sub(r'^(?:please\s+)?(?:find|search(?:\s+for)?|look\s+up|show(?:\s+me)?|list|get)\s+', '', question.message, flags=re.I)[:120]
             plan = SearchPlan(include_records=True, query=query, kinds=[], order_statuses=[], action='NONE', order_number='', driver='', entity='NONE', operation='NONE', target='', request='')
         if plan.action == 'ASSIGN':
             progress.step('Checking a requested assignment.', 40, actor.organization_id)
-            prepared = actions.prepare(db, actor, plan)
+            prepared = actions.prepare(db, actor, plan, context=ui_context) if ui_context else actions.prepare(db, actor, plan)
             progress.step('Assignment check prepared.', 95, actor.organization_id)
             return AssistantReply(**prepared, mode='AI', observed_at=now(), limited=False)
         if plan.action == 'CHANGE':
             progress.step('Preparing a requested record change.', 40, actor.organization_id)
-            prepared = changes.prepare(db, actor, plan)
+            kwargs = {**({'context': ui_context} if ui_context else {}), **({'history': question.history} if question.history else {})}
+            prepared = changes.prepare(db, actor, plan, **kwargs) if kwargs else changes.prepare(db, actor, plan)
             progress.step('Record change prepared for confirmation.', 95, actor.organization_id)
             return AssistantReply(**prepared, mode='AI', observed_at=now(), limited=False)
         progress.step('Searching authorized company records.', 40, actor.organization_id)
@@ -37,6 +41,8 @@ def ask(db, actor, question):
         facts = {'observed_at': observed.isoformat(), 'overview': search.overview(db, actor.organization_id),
             'matched_counts': counts, 'records': [ref.model_dump() for ref in refs],
             'limited': plan.include_records and any(count > search.LIMIT for count in counts.values())}
+        if ai and plan.include_records:
+            facts['workspace'] = search.workspace_context(db, actor, refs, question.message, observed, ui_context)
         if ai:
             progress.step('Preparing a grounded answer.', 75, actor.organization_id)
             try:

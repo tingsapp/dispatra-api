@@ -32068,6 +32068,38 @@
         ],
         "title": "AssistantChangeResult"
       },
+      "AssistantContext": {
+        "properties": {
+          "selected_order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Order Id"
+          },
+          "selected_driver_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Driver Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AssistantContext",
+        "description": "Optional Monitor selection hints sent by the client; always re-verified inside the caller's company."
+      },
       "AssistantReference": {
         "properties": {
           "key": {
@@ -33016,6 +33048,12 @@
             "type": "number",
             "title": "Extra Minutes",
             "description": "Estimated extra fleet driving: trip to pickup plus the Order, or the increase of a planned Route"
+          },
+          "extra_wait_minutes": {
+            "type": "number",
+            "title": "Extra Wait Minutes",
+            "description": "Additional idle wait time between stops introduced when joining a Route",
+            "default": 0
           },
           "deadhead_km": {
             "anyOf": [
@@ -47193,6 +47231,16 @@
             ],
             "title": "Kind",
             "default": "CHAT"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistantContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

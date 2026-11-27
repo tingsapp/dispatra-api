@@ -1,6 +1,7 @@
 """Chat assignments: the assistant prepares a checked proposal, the dispatcher confirms it, and the shared assignment
 command re-validates and saves it. Provider text only selects literal search terms; it never reaches a write."""
 from types import SimpleNamespace
+from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy import select, func, or_
 from app.models import now
@@ -9,10 +10,12 @@ from app.operations import dispatch
 from app.operations.common import command, record
 from app.operations.models import Order, Driver, Vehicle, Route
 from app.operations.schemas import RouteCommand
+from . import records
 from .schemas import AssistantAction, AssistantReference
-from .search import pattern
+from .search import pattern, company_zone, stop_window_problem
 
 CHOICES = 5
+BEST_DRIVER_TERMS = {'best', 'best driver', 'auto', 'closest', 'nearest', 'anyone', 'available', 'available driver', 'any driver', 'recommended'}
 # Assignment rule failures in plain words; anything else is shown as the rule states it.
 FRIENDLY = {
     'Driver must be On Duty before assignment.': '{driver} is off duty. They need to start their shift in the driver app first.',
@@ -75,29 +78,72 @@ def movable(db, org, order, route):
     return None
 
 
-def prepare(db, actor, plan):
+def _prepare_best_driver(db, actor, order, route, current):
+    """Pick the top eligible driver from the shared candidate planner and return a checked proposal."""
+    from app.dispatch.candidates import blocker, evaluate
+    refs = [order_reference(order)]
+    if order.status == 'IN_PROGRESS':
+        return reply(f'Order {order.number} is already on the road with {current.name if current else "a driver"}, so its driver can’t be changed now.', refs)
+    if order.status in {'COMPLETED', 'CANCELLED'}:
+        return reply(f'Order {order.number} is {order.status.lower()}, so it can’t be assigned.', refs)
+    if order.status == 'ASSIGNED':
+        reason = movable(db, actor.organization_id, order, route)
+        if reason: return reply(f'Order {order.number} is assigned to {current.name if current else "another driver"}. {reason}', refs)
+    reason = blocker(SimpleNamespace(status='NEW', pricing=order.pricing))
+    if reason: return reply(f'I can’t assign order {order.number} yet. {friendly(reason, SimpleNamespace(name="The driver"))}', refs)
+    candidates, excluded = evaluate(db, actor, order, road=False)
+    if current: candidates = [c for c in candidates if c['driver_id'] != str(current.id)]
+    if not candidates:
+        if db is not None and getattr(order, 'scheduled_at', None) is not None and getattr(order, 'facts', None):
+            if window_issue := stop_window_problem(order, company_zone(db, actor.organization_id), now()):
+                return reply(f'No active driver can take order {order.number} right now. {window_issue}', refs)
+        reasons = '; '.join(f"{e['driver_name']}: {friendly(e['reason'], SimpleNamespace(name=e['driver_name']))}" for e in excluded[:3])
+        return reply(f'No active driver can take order {order.number} right now.{" " + reasons if reasons else ""}', refs)
+    best = candidates[0]
+    driver = record(db, Driver, actor, UUID(best['driver_id']))
+    vehicle = record(db, Vehicle, actor, UUID(best['vehicle_id']))
+    refs.append(driver_reference(driver))
+    action = AssistantAction(kind='ASSIGN', order_id=order.id, order_version=order.version, order_number=order.number,
+        driver_id=driver.id, driver_name=driver.name, vehicle_name=vehicle_name(vehicle), current_driver_name=current.name if current else None)
+    others = f' ({len(candidates) - 1} other {"driver is" if len(candidates) == 2 else "drivers are"} also eligible.)' if len(candidates) > 1 else ''
+    message = (f'Move order {order.number} from {current.name} to {driver.name} ({action.vehicle_name})?{others} Confirm below.' if current
+        else f'{driver.name} is the best match for order {order.number} ({action.vehicle_name}).{others} Confirm below.')
+    return reply(message, refs, action)
+
+
+def prepare(db, actor, plan, context=None):
     """Resolve the order and driver the dispatcher named and check the assignment without saving anything."""
     from app.dispatch.candidates import blocker, evaluate
     org = actor.organization_id
-    order_term, driver_term = plan.order_number.strip(), plan.driver.strip()
+    order_term = records.clean_order_term(plan.order_number) if plan.order_number.strip() else ''
+    driver_term = plan.driver.strip()
+    if not order_term and db is not None and getattr(context, 'selected_order_id', None):
+        selected = db.scalar(select(Order).where(Order.organization_id == org, Order.id == context.selected_order_id, Order.archived_at.is_(None)))
+        if selected is not None: order_term = selected.number
     if not order_term:
         # "Assign that order" after a count answer: the only unassigned order is unambiguous; the card names it for confirmation.
-        waiting = db.scalars(select(Order.number).where(Order.organization_id == org, Order.status == 'NEW').limit(2)).all()
+        waiting = db.scalars(select(Order.number).where(Order.organization_id == org, Order.status == 'NEW', Order.archived_at.is_(None)).limit(2)).all()
         if len(waiting) != 1: return reply('Which order should I assign? Tell me its order number.')
         order_term = waiting[0]
-    if not driver_term: return reply(f'Who should take order {order_term}? Tell me the driver’s name.')
+    if not driver_term and db is not None and getattr(context, 'selected_driver_id', None):
+        selected_driver = db.scalar(select(Driver).where(Driver.organization_id == org, Driver.id == context.selected_driver_id,
+            Driver.archived_at.is_(None), Driver.active.is_(True)))
+        if selected_driver is not None: driver_term = selected_driver.name
+    if not driver_term: return reply(f'Who should take order {order_term}? Tell me the driver’s name, or ask me to pick the best available driver.')
     orders = matches(db, org, Order, [Order.number], order_term)
     if not orders: return reply(f'I couldn’t find an order matching “{order_term}”. Check the number and try again.')
     if len(orders) > 1:
         return reply(f'More than one order matches “{order_term}”. Which one do you mean?', map(order_reference, orders))
     order = orders[0]
+    route, current = driver_on(db, org, order)
+    if driver_term.lower() in BEST_DRIVER_TERMS:
+        return _prepare_best_driver(db, actor, order, route, current)
     drivers = matches(db, org, Driver, [Driver.name, Driver.number], driver_term)
     if not drivers: return reply(f'I couldn’t find an active driver matching “{driver_term}”.')
     if len(drivers) > 1:
         names = ', '.join(d.name for d in drivers[:-1]) + f' or {drivers[-1].name}'
         return reply(f'I found more than one driver matching “{driver_term}”: {names}. Which one do you mean?', map(driver_reference, drivers))
     driver = drivers[0]
-    route, current = driver_on(db, org, order)
     refs = [order_reference(order), driver_reference(driver)]
     if order.status == 'ASSIGNED' and current and current.id == driver.id:
         return reply(f'Order {order.number} is already assigned to {driver.name}. Nothing to change.', refs)
@@ -114,7 +160,20 @@ def prepare(db, actor, plan):
     candidates, excluded = evaluate(db, actor, order, road=False, driver_id=driver.id)
     if not candidates:
         reason = excluded[0]['reason'] if excluded else 'They are not available for this order.'
-        return reply(f'{driver.name} can’t take order {order.number} right now. {friendly(reason, driver)}', refs)
+        window_issue = (stop_window_problem(order, company_zone(db, org), now())
+            if db is not None and getattr(order, 'scheduled_at', None) is not None and getattr(order, 'facts', None) else None)
+        if window_issue and 'time windows' in reason.lower():
+            return reply(f'{driver.name} can’t take order {order.number} right now. {window_issue}', refs)
+        message = f'{driver.name} can’t take order {order.number} right now. {friendly(reason, driver)}'
+        if db is not None:
+            alt_candidates, _ = evaluate(db, actor, order, road=False)
+            alts = [c for c in alt_candidates if c['driver_id'] != str(driver.id) and (not current or c['driver_id'] != str(current.id))]
+            if alts:
+                best = alts[0]
+                message += f' {best["driver_name"]} ({best["vehicle_name"]}) can take it instead if you want to assign it to them.'
+                alt_driver = db.scalar(select(Driver).where(Driver.organization_id == org, Driver.id == UUID(best['driver_id'])))
+                if alt_driver: refs.append(driver_reference(alt_driver))
+        return reply(message, refs)
     vehicle = record(db, Vehicle, actor, candidates[0]['vehicle_id'])
     action = AssistantAction(kind='ASSIGN', order_id=order.id, order_version=order.version, order_number=order.number,
         driver_id=driver.id, driver_name=driver.name, vehicle_name=vehicle_name(vehicle), current_driver_name=current.name if current else None)

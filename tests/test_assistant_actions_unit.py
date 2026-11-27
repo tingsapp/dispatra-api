@@ -95,6 +95,44 @@ class PrepareTests(unittest.TestCase):
         self.assertIsInstance(result, AssistantReply)
         self.assertEqual((result.message, calls), ('Which one?', [SearchPlan]))
 
+    def test_best_driver_assignment_picks_top_eligible_candidate(self):
+        target = order(); best_person = driver('Ali Khan'); vehicle_id = uuid4()
+        with patch.object(actions, 'matches', return_value=[target]), \
+             patch.object(actions, 'driver_on', return_value=(None, None)), \
+             patch('app.dispatch.candidates.evaluate', return_value=([{'driver_id': str(best_person.id), 'vehicle_id': str(vehicle_id)}], [])), \
+             patch.object(actions, 'record', side_effect=[best_person, SimpleNamespace(data={'name': 'Van 3'}, number='V-3', plate='VAN3')]):
+            result = actions.prepare(None, ACTOR, plan(order='#1042', driver='best'))
+        action = result['action']
+        self.assertEqual((action.order_id, action.driver_id, action.driver_name), (target.id, best_person.id, 'Ali Khan'))
+        self.assertIn('best match', result['message'])
+        self.assertIn('Confirm below', result['message'])
+
+    def test_unavailable_driver_suggests_eligible_alternative_when_available(self):
+        from unittest.mock import Mock
+        target = order(); alex = driver('Alex Chen'); ali = driver('Ali Khan')
+        db = Mock(); db.scalar.return_value = ali
+        with patch.object(actions, 'matches', side_effect=[[target], [alex]]), \
+             patch.object(actions, 'driver_on', return_value=(None, None)), \
+             patch('app.dispatch.candidates.evaluate', side_effect=[
+                 ([], [{'reason': 'Driver must be On Duty before assignment.'}]),
+                 ([{'driver_id': str(ali.id), 'driver_name': 'Ali Khan', 'vehicle_name': 'Van 3'}], []),
+             ]):
+            result = actions.prepare(db, ACTOR, plan(order='1042', driver='Alex'))
+        self.assertIsNone(result['action'])
+        self.assertIn('Alex Chen is off duty', result['message'])
+        self.assertIn('Ali Khan (Van 3) can take it instead', result['message'])
+        self.assertEqual([ref.label for ref in result['references']], ['ORD-1042', 'Alex Chen', 'Ali Khan'])
+
+    def test_expired_dropoff_window_is_explained_explicitly(self):
+        from zoneinfo import ZoneInfo
+        from app.assistant.search import stop_window_problem
+        observed = now()
+        bad_order = SimpleNamespace(scheduled_at=observed + timedelta(hours=1),
+            facts={'stops': [{'kind': 'DROPOFF', 'window_end': (observed - timedelta(days=2)).isoformat()}]})
+        problem = stop_window_problem(bad_order, ZoneInfo('America/Vancouver'), observed)
+        self.assertIn('Drop-off deadline', problem)
+        self.assertIn('earlier than the scheduled pickup', problem)
+
 
 class MovableTests(unittest.TestCase):
     def test_locked_or_shared_routes_cannot_move(self):

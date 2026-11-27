@@ -19,6 +19,7 @@ class CandidateMetrics(BaseModel):
     live_insertion: bool = False
     road_verified: bool = False
     extra_minutes: float = Field(description='Estimated extra fleet driving: trip to pickup plus the Order, or the increase of a planned Route')
+    extra_wait_minutes: float = Field(default=0, description='Additional idle wait time between stops introduced when joining a Route')
     deadhead_km: float | None = Field(description='Straight-line distance from the driver to the first pickup')
     position: Literal['GPS', 'PARKING', 'HOME'] | None = Field(description='GPS or vehicle parking address; HOME is retained only for historical decisions')
     route_orders: int = Field(description='Orders already on the planned Route this Order would join')

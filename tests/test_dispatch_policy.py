@@ -43,3 +43,37 @@ def test_rule_fallback_preserves_consolidation(monkeypatch):
     def unavailable(*args):raise service.rank.Unavailable('AI_NOT_CONFIGURED')
     monkeypatch.setattr(service.rank,'rank',unavailable)
     assert service.ranked({},[idle,merge])[0][0]['driver_id']=='merge'
+
+
+def test_long_idle_wait_between_windows_does_not_beat_idle_driver():
+    xia = candidate('Xia', 32.9, 126.5, 1, extra_wait_minutes=85.6)
+    driver = candidate('Driver', 46.5, 50.6, 0, extra_wait_minutes=0.0)
+    assert priority(xia, [xia, driver]) == 1
+    assert ordered([xia, driver])[0] is driver
+
+
+def test_small_wait_consolidation_still_beats_idle_driver():
+    xia = candidate('Xia', 20.0, 42.0, 1, extra_wait_minutes=10.0)
+    driver = candidate('Driver', 46.5, 50.6, 0, extra_wait_minutes=0.0)
+    assert priority(xia, [xia, driver]) == 0
+    assert ordered([driver, xia])[0] is xia
+
+
+def test_wait_minutes_measures_idle_gap_between_stops():
+    from types import SimpleNamespace
+    from app.dispatch.candidates import wait_minutes
+    orders = [
+        SimpleNamespace(facts={'stops': [{'id': 'p1', 'service_minutes': 10}, {'id': 'd1', 'service_minutes': 10}]}),
+        SimpleNamespace(facts={'stops': [{'id': 'p2', 'service_minutes': 10}, {'id': 'd2', 'service_minutes': 10}]}),
+    ]
+    tight = {'planned_at': '2026-11-27T11:00:00-07:00', 'travel_minutes': 50.0,
+        'stops': [{'stop_id': 'p1', 'planned_at': '2026-11-27T11:05:00-07:00'}, {'stop_id': 'd2', 'planned_at': '2026-11-27T12:00:00-07:00'}]}
+    gapped = {'planned_at': '2026-11-27T11:00:00-07:00', 'travel_minutes': 51.9,
+        'stops': [
+            {'stop_id': 'p1', 'planned_at': '2026-11-27T11:05:00-07:00'},
+            {'stop_id': 'p2', 'planned_at': '2026-11-27T13:00:00-07:00'},
+            {'stop_id': 'd1', 'planned_at': '2026-11-27T13:37:00-07:00'},
+            {'stop_id': 'd2', 'planned_at': '2026-11-27T13:47:00-07:00'},
+        ]}
+    assert wait_minutes(tight, orders) == 0.0
+    assert round(wait_minutes(gapped, orders), 1) == 85.1
