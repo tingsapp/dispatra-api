@@ -79,7 +79,7 @@ def test_driver_sets_own_avatar_and_phone_only_edits_keep_it(setup):
         driver = check(w['client'].get(BASE + f'/drivers/{w["driver"]["id"]}'))
         assert driver['data']['avatar_url'] == avatar
         # A dispatcher edit keeps the driver's uploaded image.
-        check(w['client'].put(BASE + f'/drivers/{driver["id"]}', json={'version': driver['version'], 'data': driver['data']}, headers={'Idempotency-Key': str(uuid4())}))
+        check(w['client'].put(BASE + f'/drivers/{driver["id"]}', json={'version': driver['version'], 'data': {**w['driver_body'], **driver['data']}}, headers={'Idempotency-Key': str(uuid4())}))
         profile = check(native.get(BASE + '/driver/profile'))
         assert profile['avatar_url'] == avatar
         assert check(patch({'avatar_url': ''}))['avatar_url'] == ''
